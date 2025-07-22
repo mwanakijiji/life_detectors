@@ -1,0 +1,1 @@
+"""Unit tests for the life_detectors package.""" 
