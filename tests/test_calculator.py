@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from life_detectors.core.calculator import NoiseCalculator
+from modules.core.calculator import NoiseCalculator
 
 class TestNoiseCalculator:
     """Test cases for NoiseCalculator class."""
@@ -65,14 +65,14 @@ class TestNoiseCalculator:
     
     def test_init(self, mock_config):
         """Test initialization of NoiseCalculator."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             assert calculator.config == mock_config
             assert len(calculator.wavelength) == 100
     
     def test_generate_wavelength_grid(self, mock_config):
         """Test wavelength grid generation."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             
             assert len(calculator.wavelength) == 100
@@ -82,7 +82,7 @@ class TestNoiseCalculator:
     
     def test_calculate_snr(self, mock_config):
         """Test SNR calculation."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             results = calculator.calculate_snr()
             
@@ -96,7 +96,7 @@ class TestNoiseCalculator:
     
     def test_calculate_noise_budget(self, mock_config):
         """Test noise budget calculation."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             budget = calculator.calculate_noise_budget()
             
@@ -110,7 +110,7 @@ class TestNoiseCalculator:
     
     def test_calculate_optimal_parameters(self, mock_config):
         """Test optimal parameter calculation."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             optimal_params = calculator.calculate_optimal_parameters(target_snr=10.0)
             
@@ -122,7 +122,7 @@ class TestNoiseCalculator:
     
     def test_get_summary(self, mock_config):
         """Test summary generation."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
             calculator = NoiseCalculator(mock_config)
             summary = calculator.get_summary()
             

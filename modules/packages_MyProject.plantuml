@@ -1,0 +1,50 @@
+@startuml packages_MyProject
+set namespaceSeparator none
+package "modules" as modules {
+}
+package "modules.cli" as modules.cli {
+}
+package "modules.cli.main" as modules.cli.main {
+}
+package "modules.config" as modules.config {
+}
+package "modules.config.loader" as modules.config.loader {
+}
+package "modules.config.validator" as modules.config.validator {
+}
+package "modules.core" as modules.core {
+}
+package "modules.core.astrophysical" as modules.core.astrophysical {
+}
+package "modules.core.calculator" as modules.core.calculator {
+}
+package "modules.core.conversions" as modules.core.conversions {
+}
+package "modules.core.instrumental" as modules.core.instrumental {
+}
+package "modules.data" as modules.data {
+}
+package "modules.data.spectra" as modules.data.spectra {
+}
+package "modules.data.units" as modules.data.units {
+}
+package "modules.utils" as modules.utils {
+}
+package "modules.utils.helpers" as modules.utils.helpers {
+}
+modules --> modules.config.loader
+modules --> modules.core.calculator
+modules.cli --> modules.cli.main
+modules.config --> modules.config.loader
+modules.config --> modules.config.validator
+modules.core --> modules.core.astrophysical
+modules.core --> modules.core.calculator
+modules.core --> modules.core.conversions
+modules.core --> modules.core.instrumental
+modules.core.calculator --> modules.core.astrophysical
+modules.core.calculator --> modules.core.conversions
+modules.core.calculator --> modules.core.instrumental
+modules.data --> modules.data.spectra
+modules.data --> modules.data.units
+modules.utils --> modules.utils.helpers
+@enduml

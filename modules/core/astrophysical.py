@@ -1,5 +1,5 @@
 """
-Astrophysical noise calculations for the life_detectors package.
+Astrophysical noise calculations for the modules package.
 
 This module handles calculations of astrophysical noise sources including
 stars, exoplanets, exozodiacal disks, and zodiacal backgrounds.
@@ -16,12 +16,9 @@ from ..data.units import UnitConverter
 logger = logging.getLogger(__name__)
 
 @dataclass
-class AstrophysicalNoise:
+class AstrophysicalSources:
     """
-    Calculates astrophysical noise sources for telescope observations.
-    
-    This class handles the calculation of photon flux from various
-    astrophysical sources and converts them to detector noise.
+    Calculates photon flux from astrophysical sources (incl. noise)
     """
     
     def __init__(self, config: Dict, unit_converter: UnitConverter):
@@ -53,20 +50,23 @@ class AstrophysicalNoise:
                 except Exception as e:
                     logger.error(f"Failed to load spectrum for {source_name}: {e}")
     
-    def calculate_source_flux(self, source_name: str, wavelength: np.ndarray) -> np.ndarray:
+
+    def calculate_incident_flux(self, source_name: str) -> np.ndarray:
         """
-        Calculate flux from a specific astrophysical source.
+        Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
         Args:
             source_name: Name of the source (star, exoplanet, etc.)
-            wavelength: Wavelength array in microns
             
         Returns:
             Flux array in photons/sec/m^2/micron
         """
         if source_name not in self.spectra:
             logger.warning(f"Spectrum not available for {source_name}")
-            return np.zeros_like(wavelength)
+        
+        wavelength = np.linspace(self.config['wavelength_range']['min'], 
+                               self.config['wavelength_range']['max'],
+                               self.config['wavelength_range']['n_points'])
         
         spectrum = self.spectra[source_name]
         
@@ -78,14 +78,19 @@ class AstrophysicalNoise:
         distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
+        '''
         nulling_factor = self.config["target"]["nulling_factor"]
         if source_name in ["star"]:  # Apply nulling to star only
             flux = interpolated_spectrum.flux * distance_correction * nulling_factor
         else:
             flux = interpolated_spectrum.flux * distance_correction
+        '''
+
+        flux = interpolated_spectrum.flux * distance_correction
         
         return flux
     
+
     def calculate_total_astrophysical_flux(self, wavelength: np.ndarray) -> np.ndarray:
         """
         Calculate total astrophysical flux from all sources.

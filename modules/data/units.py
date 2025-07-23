@@ -1,5 +1,5 @@
 """
-Unit definitions and conversions for the life_detectors package.
+Unit definitions and conversions for the modules package.
 
 This module provides unit conversion utilities and defines standard units
 for wavelength, flux, and noise calculations.

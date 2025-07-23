@@ -1,5 +1,5 @@
 """
-Instrumental noise calculations for the life_detectors package.
+Instrumental noise calculations for the modules package.
 
 This module handles calculations of instrumental noise sources including
 dark current, read noise, and other detector effects.

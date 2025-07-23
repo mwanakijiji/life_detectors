@@ -1,5 +1,5 @@
 """
-Configuration validator for the life_detectors package.
+Configuration validator for the modules package.
 
 This module validates configuration files to ensure all required
 parameters are present and have valid values.
@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ConfigValidator:
-    """Validates configuration dictionaries for the life_detectors package."""
+    """Validates configuration dictionaries for the modules package."""
     
     def __init__(self):
         """Initialize the validator with required fields."""

@@ -1,4 +1,4 @@
-"""Configuration management for the life_detectors package."""
+"""Configuration management for the modules package."""
 
 from .loader import load_config, save_config
 from .validator import validate_config, ConfigValidator

@@ -1,5 +1,5 @@
 """
-Command line interface for the life_detectors package.
+Command line interface for the modules package.
 
 This module provides a command-line interface for running noise calculations
 and generating reports.
@@ -15,17 +15,6 @@ from typing import Dict, Any
 
 from ..core import NoiseCalculator
 from ..config import load_config, create_default_config, save_config
-
-def setup_logging(verbose: bool = False) -> None:
-    """Setup logging configuration."""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""

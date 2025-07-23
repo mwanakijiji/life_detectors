@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "life_detectors"
+name = "modules"
 version = "0.1.0"
 description = "Infrared detector noise calculator"
 readme = "README.md"
@@ -42,7 +42,7 @@ docs = [
 ]
 
 [project.scripts]
-life-detectors = "life_detectors.cli.main:main"
+life-detectors = "modules.cli.main:main"
 
 [tool.black]
 line-length = 88
@@ -51,7 +51,7 @@ target-version = ['py38']
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "--cov=life_detectors --cov-report=html --cov-report=term-missing"
+addopts = "--cov=modules --cov-report=html --cov-report=term-missing"
 
 [tool.mypy]
 python_version = "3.8"

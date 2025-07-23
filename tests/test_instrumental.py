@@ -6,8 +6,8 @@ import pytest
 import numpy as np
 from unittest.mock import Mock
 
-from life_detectors.core.instrumental import InstrumentalNoise
-from life_detectors.data.units import UnitConverter
+from modules.core.instrumental import InstrumentalNoise
+from modules.data.units import UnitConverter
 
 class TestInstrumentalNoise:
     """Test cases for InstrumentalNoise class."""

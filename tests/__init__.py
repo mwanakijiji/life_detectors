@@ -1,1 +1,1 @@
-"""Unit tests for the life_detectors package.""" 
+"""Unit tests for the modules package.""" 

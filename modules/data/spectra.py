@@ -1,5 +1,5 @@
 """
-Spectral data handling for the life_detectors package.
+Spectral data handling for the modules package.
 
 This module provides classes and functions for loading and managing
 spectral data from files and handling different spectral formats.

@@ -21,14 +21,14 @@ pip install -e .
 ### Command Line Interface
 
 ```bash
-python -m life_detectors.cli --config config.yaml --output results.json
+python -m modules.cli --config config.yaml --output results.json
 ```
 
 ### Python API
 
 ```python
-from life_detectors.core import NoiseCalculator
-from life_detectors.config import load_config
+from modules.core import NoiseCalculator
+from modules.config import load_config
 
 config = load_config("config.yaml")
 calculator = NoiseCalculator(config)
@@ -38,7 +38,7 @@ results = calculator.calculate_snr()
 ## Package Structure
 
 ```
-life_detectors/
+modules/
 ├── core/                    # Core calculation modules
 │   ├── __init__.py
 │   ├── astrophysical.py    # Astrophysical noise sources
@@ -127,5 +127,3 @@ cd docs && make html
 - GUI frontend using tkinter or web interface
 - 2D array support for resolved objects
 - Transmission maps over field of view
-- Advanced spectral modeling
-- Real-time data integration 

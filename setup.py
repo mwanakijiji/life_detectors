@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 ## ## TO DO: UPDATE THE PACKAGE VERSIONS
 
 setup(
-    name="life_detectors",
+    name="modules",
     version="0.1.0",
     author="Life Team",
     description="Infrared detector noise calculator",
@@ -44,7 +44,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "life-detectors=life_detectors.cli.main:main",
+            "life-detectors=modules.cli.main:main",
         ],
     },
 ) 

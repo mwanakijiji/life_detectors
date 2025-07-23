@@ -1,0 +1,79 @@
+@startuml classes_MyProject
+set namespaceSeparator none
+class "AstrophysicalNoise" as modules.core.astrophysical.AstrophysicalNoise {
+  config : Dict
+  spectra : dict
+  unit_converter
+  calculate_astrophysical_noise_adu(wavelength: np.ndarray, integration_time: float) -> np.ndarray
+  calculate_astrophysical_noise_electrons(wavelength: np.ndarray, integration_time: float) -> np.ndarray
+  calculate_detector_illumination(wavelength: np.ndarray) -> np.ndarray
+  calculate_source_flux(source_name: str, wavelength: np.ndarray) -> np.ndarray
+  calculate_total_astrophysical_flux(wavelength: np.ndarray) -> np.ndarray
+  get_source_contributions(wavelength: np.ndarray) -> Dict[str, np.ndarray]
+}
+class "ConfigValidator" as modules.config.validator.ConfigValidator {
+  required_detector_fields : list
+  required_sections : list
+  required_target_fields : list
+  required_telescope_fields : list
+  required_wavelength_fields : list
+  validate_config(config: Dict[str, Any]) -> List[str]
+}
+class "ConversionEngine" as modules.core.conversions.ConversionEngine {
+  unit_converter
+  calculate_detection_limit(total_noise_adu: np.ndarray, snr_threshold: float) -> np.ndarray
+  calculate_integrated_snr(snr_per_wavelength: np.ndarray, wavelength: np.ndarray) -> float
+  calculate_optimal_integration_time(astrophysical_noise_rate: float, instrumental_noise: float, target_snr: float) -> float
+  calculate_signal_to_noise(signal_adu: np.ndarray, total_noise_adu: np.ndarray) -> np.ndarray
+  calculate_total_noise_adu(astrophysical_noise_adu: np.ndarray, instrumental_noise_adu: float) -> np.ndarray
+  convert_electrons_to_adu(electrons_per_pixel: np.ndarray, gain: float) -> np.ndarray
+  convert_flux_to_electrons(flux_photons_per_sec_m2_um: np.ndarray, collecting_area: float, throughput: float, pixel_area_sr: float, integration_time: float) -> np.ndarray
+}
+class "InstrumentalNoise" as modules.core.instrumental.InstrumentalNoise {
+  config : Dict
+  unit_converter
+  calculate_dark_current_adu(integration_time: float) -> float
+  calculate_dark_current_electrons(integration_time: float) -> float
+  calculate_read_noise_adu() -> float
+  calculate_read_noise_electrons() -> float
+  calculate_total_instrumental_noise_adu(integration_time: float) -> float
+  calculate_total_instrumental_noise_electrons(integration_time: float) -> float
+  get_noise_breakdown_adu(integration_time: float) -> Dict[str, float]
+  get_noise_breakdown_electrons(integration_time: float) -> Dict[str, float]
+}
+class "NoiseCalculator" as modules.core.calculator.NoiseCalculator {
+  astrophysical_noise
+  config : Dict[str, Any]
+  conversion_engine
+  instrumental_noise
+  unit_converter
+  wavelength : ndarray
+  calculate_optimal_parameters(target_snr: float) -> Dict[str, Any]
+  calculate_snr() -> Dict[str, Any]
+  get_summary() -> Dict[str, Any]
+}
+class "SpectralData" as modules.data.spectra.SpectralData {
+  flux : ndarray
+  flux_unit : str
+  metadata : Optional[Dict[str, any]]
+  source_name : str
+  wavelength : ndarray
+  wavelength_unit : str
+  get_flux_at_wavelength(wavelength: float) -> float
+  integrate_flux(wavelength_min: float, wavelength_max: float) -> float
+  interpolate(new_wavelength: np.ndarray) -> 'SpectralData'
+}
+class "UnitConverter" as modules.data.units.UnitConverter {
+  adu_to_electrons(adu: float, gain: float) -> float
+  convert_flux(value: float, wavelength: float, from_unit: str, to_unit: str) -> float
+  convert_wavelength(value: float, from_unit: str, to_unit: str) -> float
+  electrons_to_adu(electrons: float, gain: float) -> float
+}
+modules.core.astrophysical.AstrophysicalNoise --* modules.core.calculator.NoiseCalculator : astrophysical_noise
+modules.core.conversions.ConversionEngine --* modules.core.calculator.NoiseCalculator : conversion_engine
+modules.core.instrumental.InstrumentalNoise --* modules.core.calculator.NoiseCalculator : instrumental_noise
+modules.data.units.UnitConverter --* modules.core.calculator.NoiseCalculator : unit_converter
+modules.data.units.UnitConverter --o modules.core.astrophysical.AstrophysicalNoise : unit_converter
+modules.data.units.UnitConverter --o modules.core.conversions.ConversionEngine : unit_converter
+modules.data.units.UnitConverter --o modules.core.instrumental.InstrumentalNoise : unit_converter
+@enduml

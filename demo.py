@@ -9,48 +9,48 @@ and signal-to-noise ratios for telescope observations.
 import numpy as np
 from pathlib import Path
 import ipdb
+import logging
 
-#from life_detectors.core import NoiseCalculator
-#from life_detectors.config import create_default_config, save_config
-from life_detectors.utils.helpers import create_sample_data
+from modules.core import calculator
+from modules.config import loader 
+from modules.utils.helpers import create_sample_data
+from modules.data.units import UnitConverter
 
-def main():
+def main(config_abs_file_name: str):
     """Run the demonstration."""
     print("Life Detectors - Infrared Detector Noise Calculator")
     print("=" * 60)
 
-    # Initialize logging
-    import logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger(__name__)
-    logger.info("Starting Life Detectors demonstration")
-    
-    # Create sample data directory
-    data_dir = Path("data")
-    data_dir.mkdir(exist_ok=True)
-    
+    # Initialize logging, make directories
+    log_file = loader.setup_logging()
+    logging.info("Starting Life Detectors demonstration")
+
+    # load config file
+    logging.info("Loading config file...")
+    config = loader.load_config(config_file=config_abs_file_name, makedirs = True)
+
     # Generate sample spectral data
-    print("Creating sample spectral data...")
-    create_sample_data(data_dir, overwrite=True, plot=True)
-    
+    logging.info("Creating sample spectral data...")
+    create_sample_data(config, overwrite=True, plot=True)
+
+    # Calculate the astrophysical flux incident on the instrument (no nulling yet)
+    logging.info("Calculating astrophysical flux incident on the primary mirror...")
+    astrophysical_sources = calculator.AstrophysicalSources(config, unit_converter=UnitConverter())
+    flux_incident = astrophysical_sources.calculate_incident_flux(source_name = "star")
     ipdb.set_trace()
 
-    # Create a default configuration
-    print("Creating default configuration...")
-    config = create_default_config()
-    
-    # Save configuration for inspection
-    config_file = "demo_config.yaml"
-    save_config(config, config_file)
-    print(f"Configuration saved to: {config_file}")
+    # Calculate the flux incident on the detector after passing through the telescope
+
+    # Calculate the detector outputs in ADU
+
+    # Find the S/N
     
     # Initialize the noise calculator
+
     print("Initializing noise calculator...")
-    calculator = NoiseCalculator(config)
-    
+    test = calculator.NoiseCalculator(config)
+    ipdb.set_trace()
+    '''
     # Calculate signal-to-noise
     print("Calculating signal-to-noise...")
     results = calculator.calculate_snr()
@@ -93,9 +93,10 @@ def main():
     
     print("\nDemonstration complete!")
     print("\nTo run with your own configuration:")
-    print("  python -m life_detectors.cli --config your_config.yaml")
+    print("  python -m modules.cli --config your_config.yaml")
     print("\nTo create a default configuration file:")
-    print("  python -m life_detectors.cli --create-config my_config.yaml")
+    print("  python -m modules.cli --create-config my_config.yaml")
 
+    '''
 if __name__ == "__main__":
-    main() 
+    main(config_abs_file_name = "/Users/eckhartspalding/Documents/git.repos/life_detectors/modules/config/demo_config.ini") 

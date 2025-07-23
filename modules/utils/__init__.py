@@ -1,4 +1,4 @@
-"""Utility functions for the life_detectors package."""
+"""Utility functions for the modules package."""
 
 from .helpers import *
 

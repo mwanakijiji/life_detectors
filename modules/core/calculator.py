@@ -1,5 +1,5 @@
 """
-Main noise calculator for the life_detectors package.
+Main noise calculator for the modules package.
 
 This module provides the primary interface for calculating total noise
 and signal-to-noise ratios for infrared detector observations.
@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 import logging
 
-from .astrophysical import AstrophysicalNoise
+from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentalNoise
 from .conversions import ConversionEngine
 from ..data.units import UnitConverter
@@ -46,7 +46,7 @@ class NoiseCalculator:
         self.conversion_engine = ConversionEngine(self.unit_converter)
         
         # Initialize noise calculators
-        self.astrophysical_noise = AstrophysicalNoise(config, self.unit_converter)
+        self.astrophysical_sources = AstrophysicalSources(config, self.unit_converter)
         self.instrumental_noise = InstrumentalNoise(config, self.unit_converter)
         
         # Generate wavelength grid

@@ -1,5 +1,5 @@
 """
-Conversion engine for the life_detectors package.
+Conversion engine for the modules package.
 
 This module handles unit conversions and signal-to-noise calculations
 for the noise analysis pipeline.

@@ -1,5 +1,5 @@
 """
-Helper utility functions for the life_detectors package.
+Helper utility functions for the modules package.
 
 This module provides various utility functions used throughout
 the package for data formatting, validation, and sample data generation.
@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Union, Optional
 import logging
 import pandas as pd
+import ipdb
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def validate_file_path(filepath: Union[str, Path]) -> bool:
     except Exception:
         return False
 
-def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False, plot: bool = False) -> None:
+def create_sample_data(config: dict, overwrite: bool = False, plot: bool = False) -> None:
     """
     Create sample spectral data files for testing.
     
@@ -54,7 +55,8 @@ def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False, pl
         output_dir: Directory to create sample files in
         overwrite: Whether to overwrite existing files
     """
-    output_dir = Path(output_dir).resolve()
+
+    output_dir = Path(config['dirs']['data_dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Create wavelength grid

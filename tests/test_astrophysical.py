@@ -6,12 +6,12 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from life_detectors.core.astrophysical import AstrophysicalNoise
-from life_detectors.data.units import UnitConverter
-from life_detectors.data.spectra import SpectralData
+from modules.core.astrophysical import AstrophysicalSources
+from modules.data.units import UnitConverter
+from modules.data.spectra import SpectralData
 
-class TestAstrophysicalNoise:
-    """Test cases for AstrophysicalNoise class."""
+class TestAstrophysicalSources:
+    """Test cases for AstrophysicalSources class."""
     
     @pytest.fixture
     def mock_config(self):
@@ -54,15 +54,15 @@ class TestAstrophysicalNoise:
         return SpectralData(wavelength=wavelength, flux=flux, source_name="test")
     
     def test_init(self, mock_config, unit_converter):
-        """Test initialization of AstrophysicalNoise."""
-        with patch('life_detectors.core.astrophysical.load_spectrum_from_file'):
-            noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        """Test initialization of AstrophysicalSources."""
+        with patch('modules.core.astrophysical.load_spectrum_from_file'):
+            noise_calc = AstrophysicalSources(mock_config, unit_converter)
             assert noise_calc.config == mock_config
             assert noise_calc.unit_converter == unit_converter
     
     def test_calculate_source_flux(self, mock_config, unit_converter, sample_spectrum):
         """Test calculation of source flux."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         
         wavelength = np.array([2.0, 5.0, 8.0])
@@ -74,7 +74,7 @@ class TestAstrophysicalNoise:
     
     def test_calculate_total_astrophysical_flux(self, mock_config, unit_converter, sample_spectrum):
         """Test calculation of total astrophysical flux."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         noise_calc.spectra["exoplanet"] = sample_spectrum
         
@@ -87,7 +87,7 @@ class TestAstrophysicalNoise:
     
     def test_calculate_detector_illumination(self, mock_config, unit_converter, sample_spectrum):
         """Test calculation of detector illumination."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         
         wavelength = np.array([2.0, 5.0, 8.0])
@@ -99,7 +99,7 @@ class TestAstrophysicalNoise:
     
     def test_calculate_astrophysical_noise_electrons(self, mock_config, unit_converter, sample_spectrum):
         """Test calculation of astrophysical noise in electrons."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         
         wavelength = np.array([2.0, 5.0, 8.0])
@@ -113,7 +113,7 @@ class TestAstrophysicalNoise:
     
     def test_calculate_astrophysical_noise_adu(self, mock_config, unit_converter, sample_spectrum):
         """Test calculation of astrophysical noise in ADU."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         
         wavelength = np.array([2.0, 5.0, 8.0])
@@ -127,7 +127,7 @@ class TestAstrophysicalNoise:
     
     def test_get_source_contributions(self, mock_config, unit_converter, sample_spectrum):
         """Test getting source contributions."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         noise_calc.spectra["star"] = sample_spectrum
         noise_calc.spectra["exoplanet"] = sample_spectrum
         
@@ -141,7 +141,7 @@ class TestAstrophysicalNoise:
     
     def test_missing_spectrum(self, mock_config, unit_converter):
         """Test behavior when spectrum is missing."""
-        noise_calc = AstrophysicalNoise(mock_config, unit_converter)
+        noise_calc = AstrophysicalSources(mock_config, unit_converter)
         
         wavelength = np.array([2.0, 5.0, 8.0])
         flux = noise_calc.calculate_source_flux("missing_source", wavelength)
