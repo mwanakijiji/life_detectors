@@ -9,6 +9,8 @@ import numpy as np
 from pathlib import Path
 from typing import Union, Optional
 import logging
+import pandas as pd
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ def validate_file_path(filepath: Union[str, Path]) -> bool:
     except Exception:
         return False
 
-def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False) -> None:
+def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False, plot: bool = False) -> None:
     """
     Create sample spectral data files for testing.
     
@@ -52,7 +54,7 @@ def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False) ->
         output_dir: Directory to create sample files in
         overwrite: Whether to overwrite existing files
     """
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Create wavelength grid
@@ -63,22 +65,26 @@ def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False) ->
         "star_spectrum.txt": {
             "description": "Blackbody spectrum for a Sun-like star",
             "wavelength": wavelength,
-            "flux": 1e10 * wavelength ** (-3) * np.exp(-1.4 / wavelength)  # Approximate blackbody
+            "flux": 1e10 * wavelength ** (-3) * np.exp(-1.4 / wavelength),  # Approximate blackbody
+            "plot_name": "star_spectrum.png"
         },
         "exoplanet_spectrum.txt": {
             "description": "Exoplanet spectrum (much fainter than star)",
             "wavelength": wavelength,
-            "flux": 1e6 * wavelength ** (-2) * np.exp(-2.0 / wavelength)  # Cooler blackbody
+            "flux": 1e6 * wavelength ** (-2) * np.exp(-2.0 / wavelength),  # Cooler blackbody
+            "plot_name": "exoplanet_spectrum.png"
         },
         "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
             "wavelength": wavelength,
-            "flux": 1e8 * wavelength ** (-1.5)  # Power law
+            "flux": 1e8 * wavelength ** (-1.5),  # Power law
+            "plot_name": "exozodiacal_spectrum.png"
         },
         "zodiacal_spectrum.txt": {
             "description": "Zodiacal dust spectrum",
             "wavelength": wavelength,
-            "flux": 1e9 * wavelength ** (-1.2)  # Power law
+            "flux": 1e9 * wavelength ** (-1.2),  # Power law
+            "plot_name": "zodiacal_spectrum.png"
         }
     }
     
@@ -89,23 +95,31 @@ def create_sample_data(output_dir: Union[str, Path], overwrite: bool = False) ->
             logger.info(f"Skipping {filename} (already exists)")
             continue
         
-        # Create header with metadata
-        header_lines = [
-            f"# {data['description']}",
-            "# wavelength_unit=um",
-            "# flux_unit=photon_sec_m2_um",
-            "# Created by life_detectors sample data generator"
-        ]
+        # Create dataframe and write to CSV
+        df = pd.DataFrame({
+            'wavel': data['wavelength'],
+            'flux': data['flux']
+        })
         
-        # Write data
+        # add header with units
         with open(filepath, 'w') as f:
-            for line in header_lines:
-                f.write(line + '\n')
-            
-            for wl, fl in zip(data['wavelength'], data['flux']):
-                f.write(f"{wl:.6f} {fl:.6e}\n")
+            f.write('# wavelength_unit=um\n')
+            f.write('# flux_unit=photon_sec_m2_um\n')
+        df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
+
+        if plot:
+            plt.plot(data['wavelength'], data['flux'])
+            plt.xlabel('Wavelength (um)')
+            plt.ylabel('Flux (photon/sec/m^2/um)')
+            plt.title(data['description'])
+            file_name_plot = output_dir / data['plot_name']
+            plt.savefig(file_name_plot)
+            plt.close()
+            logger.info(f"Wrote plot {file_name_plot}")
+
+
 
 def calculate_photon_energy(wavelength_um: float) -> float:
     """

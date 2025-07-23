@@ -8,15 +8,25 @@ and signal-to-noise ratios for telescope observations.
 
 import numpy as np
 from pathlib import Path
+import ipdb
 
-from life_detectors.core import NoiseCalculator
-from life_detectors.config import create_default_config, save_config
+#from life_detectors.core import NoiseCalculator
+#from life_detectors.config import create_default_config, save_config
 from life_detectors.utils.helpers import create_sample_data
 
 def main():
     """Run the demonstration."""
     print("Life Detectors - Infrared Detector Noise Calculator")
     print("=" * 60)
+
+    # Initialize logging
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    logger.info("Starting Life Detectors demonstration")
     
     # Create sample data directory
     data_dir = Path("data")
@@ -24,8 +34,10 @@ def main():
     
     # Generate sample spectral data
     print("Creating sample spectral data...")
-    create_sample_data(data_dir, overwrite=True)
+    create_sample_data(data_dir, overwrite=True, plot=True)
     
+    ipdb.set_trace()
+
     # Create a default configuration
     print("Creating default configuration...")
     config = create_default_config()
