@@ -55,18 +55,30 @@ def load_config(config_file: str, makedirs: bool = False) -> dict:
 
     logger = logging.getLogger(__name__)
     
-    # Log all sections and their parameters
+    # Convert ConfigParser to regular dictionary
+    config_dict = {}
+    
     for section in config.sections():
-        logger.info(f"[{section}]")
+        config_dict[section] = {}
         for key, value in config[section].items():
+            # Try to convert to float if possible
+            try:
+                config_dict[section][key] = float(value)
+            except ValueError:
+                config_dict[section][key] = value
+
+    # Log all sections and their parameters
+    for section in config_dict:
+        logger.info(f"[{section}]")
+        for key, value in config_dict[section].items():
             logger.info(f"  {key} = {value}")
 
-    if makedirs:
-        for key, value in config['dirs'].items():
+    if makedirs and 'dirs' in config_dict:
+        for key, value in config_dict['dirs'].items():
             os.makedirs(value, exist_ok=True)
             logger.info(f"Created directory: {value}")
 
-    return config
+    return config_dict
 
 
 def setup_logging(log_dir='logs'):

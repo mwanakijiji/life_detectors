@@ -10,10 +10,11 @@ import numpy as np
 from pathlib import Path
 import ipdb
 import logging
+import matplotlib.pyplot as plt
 
-from modules.core import calculator
-from modules.config import loader 
-from modules.utils.helpers import create_sample_data
+from modules.core import calculator, astrophysical #, instrumental
+from modules.config import loader, validator
+from modules.utils.helpers import create_sample_data, load_config
 from modules.data.units import UnitConverter
 
 def main(config_abs_file_name: str):
@@ -27,7 +28,8 @@ def main(config_abs_file_name: str):
 
     # load config file
     logging.info("Loading config file...")
-    config = loader.load_config(config_file=config_abs_file_name, makedirs = True)
+    config = load_config(config_file=config_abs_file_name)
+    validator.validate_config(config)
 
     # Generate sample spectral data
     logging.info("Creating sample spectral data...")
@@ -35,9 +37,8 @@ def main(config_abs_file_name: str):
 
     # Calculate the astrophysical flux incident on the instrument (no nulling yet)
     logging.info("Calculating astrophysical flux incident on the primary mirror...")
-    astrophysical_sources = calculator.AstrophysicalSources(config, unit_converter=UnitConverter())
-    flux_incident = astrophysical_sources.calculate_incident_flux(source_name = "star")
-    ipdb.set_trace()
+    astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
+    incident_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
 
     # Calculate the flux incident on the detector after passing through the telescope
 
@@ -48,12 +49,13 @@ def main(config_abs_file_name: str):
     # Initialize the noise calculator
 
     print("Initializing noise calculator...")
-    test = calculator.NoiseCalculator(config)
-    ipdb.set_trace()
-    '''
+    test = calculator.NoiseCalculator(config, incident_flux=incident_star)
+
     # Calculate signal-to-noise
     print("Calculating signal-to-noise...")
     results = calculator.calculate_snr()
+
+    '''
     
     # Print summary
     summary = calculator.get_summary()

@@ -6,12 +6,16 @@ spectral data from files and handling different spectral formats.
 """
 
 import numpy as np
+import pandas as pd
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
 import warnings
+import logging
+import ipdb
 
-@dataclass
+
+
 class SpectralData:
     """
     Container for spectral data with wavelength and flux arrays.
@@ -24,21 +28,21 @@ class SpectralData:
         source_name: Name of the spectral source
         metadata: Additional metadata dictionary
     """
-    wavelength: np.ndarray
-    flux: np.ndarray
-    wavelength_unit: str = "um"
-    flux_unit: str = "photon_sec_m2_um"
-    source_name: str = "unknown"
-    metadata: Dict[str, any] = None
-    
-    def __post_init__(self):
+
+    def __init__(self, wavelength: np.ndarray, flux: np.ndarray, wavelength_unit: str, flux_unit: str, source_name: str, metadata: Dict[str, any]):
+        self.wavelength = wavelength
+        self.flux = flux
+        self.wavelength_unit = wavelength_unit
+        self.flux_unit = flux_unit
+        self.source_name = source_name
+        self.metadata = metadata
+
         """Validate and initialize spectral data."""
         if self.metadata is None:
             self.metadata = {}
         
         # Ensure arrays are numpy arrays
         self.wavelength = np.asarray(self.wavelength)
-        self.flux = np.asarray(self.flux)
         
         # Validate array shapes
         if self.wavelength.shape != self.flux.shape:
@@ -49,7 +53,14 @@ class SpectralData:
             sort_idx = np.argsort(self.wavelength)
             self.wavelength = self.wavelength[sort_idx]
             self.flux = self.flux[sort_idx]
-    
+
+        object.__setattr__(self, 'flux', np.asarray(flux))
+        object.__setattr__(self, 'wavelength', np.asarray(wavelength))
+        object.__setattr__(self, 'flux_unit', str(flux_unit))
+        object.__setattr__(self, 'source_name', str(source_name))
+        object.__setattr__(self, 'metadata', self.metadata)
+
+
     def interpolate(self, new_wavelength: np.ndarray) -> 'SpectralData':
         """
         Interpolate spectral data to new wavelength grid.
@@ -128,11 +139,19 @@ class SpectralData:
         
         return float(interp_func(wavelength))
 
+
 def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
     """
-    Load spectral data from a file.
+    Load spectral data from a file using pandas.
     
-    Currently supports ASCII files with two columns (wavelength, flux).
+    Supports CSV files with headers and metadata in comments.
+    Expected format:
+    # wavelength_unit=um
+    # flux_unit=photon_sec_m2_um
+    wavelength,flux
+    1.0,1e10
+    2.0,5e9
+    ...
     
     Args:
         filepath: Path to the spectral data file
@@ -145,34 +164,27 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
         ValueError: If the file format is not supported
     """
     filepath = Path(filepath)
-    
-    if not filepath.exists():
-        raise FileNotFoundError(f"Spectral data file not found: {filepath}")
-    
-    # Try to determine file format and load data
-    try:
-        # Load as ASCII file with two columns
-        data = np.loadtxt(filepath, comments='#')
-        
-        if data.shape[1] < 2:
-            raise ValueError(f"File must have at least 2 columns: {filepath}")
-        
-        wavelength = data[:, 0]
-        flux = data[:, 1]
-        
-        # Try to read header for units
-        wavelength_unit = "um"  # Default
-        flux_unit = "photon_sec_m2_um"  # Default
+
+    if filepath.exists():
+
+        # read header for units
+        # Read units from the first two rows (if present)
+        #wavelength_unit = "um"  # Default
+        #flux_unit = "photon_sec_m2_um"  # Default
+        with open(filepath, 'r') as f:
+            for _ in range(2):
+                line = f.readline()
+                if line.startswith("#"):
+                    if "wavelength_unit" in line:
+                        wavelength_unit = line.split("=")[-1].strip()
+                    elif "flux_unit" in line:
+                        flux_unit = line.split("=")[-1].strip()
         
         try:
-            with open(filepath, 'r') as f:
-                for line in f:
-                    if line.startswith('#') and 'wavelength_unit' in line:
-                        wavelength_unit = line.split('=')[1].strip()
-                    elif line.startswith('#') and 'flux_unit' in line:
-                        flux_unit = line.split('=')[1].strip()
-                    elif not line.startswith('#'):
-                        break
+            # open file as dataframe
+            df = pd.read_csv(filepath, sep=',', header=2)
+            wavelength = df['wavel'].values
+            flux = df['flux'].values
         except:
             pass  # Use defaults if header parsing fails
         
@@ -185,8 +197,8 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
             metadata={"filepath": str(filepath)}
         )
         
-    except Exception as e:
-        raise ValueError(f"Failed to load spectral data from {filepath}: {e}")
+    else:
+        logging.error(f"Failed to load spectral data from {filepath}: {e}")
 
 def create_blackbody_spectrum(
     temperature: float, 

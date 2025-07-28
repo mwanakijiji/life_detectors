@@ -9,19 +9,22 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import logging
+import ipdb
+import configparser
+import matplotlib.pyplot as plt
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..data.units import UnitConverter
 
 logger = logging.getLogger(__name__)
 
-@dataclass
+
 class AstrophysicalSources:
     """
     Calculates photon flux from astrophysical sources (incl. noise)
     """
     
-    def __init__(self, config: Dict, unit_converter: UnitConverter):
+    def __init__(self, config: configparser.ConfigParser, unit_converter: UnitConverter):
         """
         Initialize astrophysical noise calculator.
         
@@ -29,29 +32,34 @@ class AstrophysicalSources:
             config: Configuration dictionary
             unit_converter: Unit conversion utility
         """
+
         self.config = config
         self.unit_converter = unit_converter
         self.spectra = {}
         self._load_spectra()
     
+    
     def _load_spectra(self) -> None:
         """Load spectral data for all astrophysical sources."""
-        sources_config = self.config.get("astrophysical_sources", {})
+        #sources_config = self.config.get("astrophysical_sources", {})
         
-        for source_name, source_config in sources_config.items():
-            if source_config.get("enabled", True):
+        sources_section = "astrophysical_sources"
+        if self.config.has_section(sources_section):
+            for source_name in self.config.options(sources_section):
+
                 try:
-                    spectrum_file = source_config.get("spectrum_file")
-                    if spectrum_file:
-                        self.spectra[source_name] = load_spectrum_from_file(spectrum_file)
-                        logger.info(f"Loaded spectrum for {source_name}: {spectrum_file}")
-                    else:
-                        logger.warning(f"No spectrum file specified for {source_name}")
+                    # Get the source name from the section
+                    spectum_file_name = self.config[sources_section][source_name]
+                    self.spectra[source_name] = load_spectrum_from_file(spectum_file_name)
+                    logger.info(f"Loaded spectrum for {source_name}: {spectum_file_name}")
+
                 except Exception as e:
                     logger.error(f"Failed to load spectrum for {source_name}: {e}")
+        else:
+            logger.warning("No [astrophysical_sources] section found in config file.")
     
 
-    def calculate_incident_flux(self, source_name: str) -> np.ndarray:
+    def calculate_incident_flux(self, source_name: str, plot: bool = False) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
@@ -61,20 +69,25 @@ class AstrophysicalSources:
         Returns:
             Flux array in photons/sec/m^2/micron
         """
+
+        incident_dict = {}
+
         if source_name not in self.spectra:
             logger.warning(f"Spectrum not available for {source_name}")
+            return np.array([])
         
-        wavelength = np.linspace(self.config['wavelength_range']['min'], 
-                               self.config['wavelength_range']['max'],
-                               self.config['wavelength_range']['n_points'])
+        wavelength = np.linspace(float(self.config['wavelength_range']['min']), 
+                               float(self.config['wavelength_range']['max']),
+                               int(self.config['wavelength_range']['n_points']))
         
         spectrum = self.spectra[source_name]
         
         # Interpolate to the requested wavelength grid
+        ## ## TO DO: DO I WANT TO INTEGRATE OVER THE FLUX?
         interpolated_spectrum = spectrum.interpolate(wavelength)
         
         # Apply distance correction
-        distance = self.config["target"]["distance"]  # parsecs
+        distance = float(self.config["target"]["distance"])  # parsecs
         distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
@@ -86,9 +99,23 @@ class AstrophysicalSources:
             flux = interpolated_spectrum.flux * distance_correction
         '''
 
-        flux = interpolated_spectrum.flux * distance_correction
+        incident_dict['wavel'] = wavelength
+        incident_dict['flux'] = interpolated_spectrum.flux * distance_correction
+
+
+
+        ipdb.set_trace()
+
+        if plot:
+            plt.scatter(incident_dict['wavel'], incident_dict['flux'])
+            plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
+            plt.ylabel(f"Flux ({spectrum.flux_unit})")
+            plt.title(f"Incident flux from {source_name}")
+            file_name_plot = f"incident_{source_name}.png"
+            plt.savefig(file_name_plot)
+            logging.info("Saved plot of incident flux to " + file_name_plot)
         
-        return flux
+        return incident_dict
     
 
     def calculate_total_astrophysical_flux(self, wavelength: np.ndarray) -> np.ndarray:
@@ -175,6 +202,7 @@ class AstrophysicalSources:
         Returns:
             Noise in ADU per pixel
         """
+        ipdb.set_trace()
         gain = self.config["detector"]["gain"]  # e-/ADU
         
         # Calculate noise in electrons

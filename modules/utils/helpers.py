@@ -12,6 +12,7 @@ import logging
 import pandas as pd
 import ipdb
 import matplotlib.pyplot as plt
+import configparser
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +48,24 @@ def validate_file_path(filepath: Union[str, Path]) -> bool:
     except Exception:
         return False
 
-def create_sample_data(config: dict, overwrite: bool = False, plot: bool = False) -> None:
+
+def load_config(config_file):
+    config = configparser.ConfigParser()
+    config.read(config_file)
+    return config
+
+
+def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False) -> None:
     """
     Create sample spectral data files for testing.
     
     Args:
-        output_dir: Directory to create sample files in
+        config: ConfigParser object
         overwrite: Whether to overwrite existing files
+        plot: Whether to plot the data
+
+    Returns:
+        None (writes to file)
     """
 
     output_dir = Path(config['dirs']['data_dir']).resolve()

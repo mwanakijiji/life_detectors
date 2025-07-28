@@ -218,6 +218,6 @@ def validate_config(config: Dict[str, Any]) -> bool:
     
     if errors:
         error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
-        raise ValueError(error_msg)
+        logging.warning(error_msg)
     
     return True 

@@ -31,11 +31,11 @@ NOISE_UNITS = {
     "adu_per_pixel_sec": "ADU per pixel per second"
 }
 
-@dataclass
+
 class UnitConverter:
     """Handles unit conversions for astronomical calculations."""
     
-    def __post_init__(self):
+    def __init__(self):
         """Initialize conversion factors."""
         self._wavelength_conversions = {
             ("um", "nm"): 1000.0,
@@ -52,11 +52,11 @@ class UnitConverter:
             ("m", "angstrom"): 1e10,
         }
         
-        self._flux_conversions = {
-            ("photon_sec_m2_um", "photon_sec_m2_nm"): 0.001,
-            ("photon_sec_m2_um", "erg_sec_cm2_angstrom"): self._photon_to_erg_conversion,
-            ("photon_sec_m2_um", "watt_m2_um"): self._photon_to_watt_conversion,
-        }
+        #self._flux_conversions = {
+        #    ("photon_sec_m2_um", "photon_sec_m2_nm"): 0.001,
+        #    ("photon_sec_m2_um", "erg_sec_cm2_angstrom"): self._photon_to_erg_conversion,
+        #    ("photon_sec_m2_um", "watt_m2_um"): self._photon_to_watt_conversion,
+        #}
     
     def convert_wavelength(self, value: float, from_unit: str, to_unit: str) -> float:
         """

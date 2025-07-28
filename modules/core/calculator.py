@@ -9,6 +9,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 import logging
+import configparser
+import ipdb
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentalNoise
@@ -18,7 +20,7 @@ from ..config.validator import validate_config
 
 logger = logging.getLogger(__name__)
 
-@dataclass
+
 class NoiseCalculator:
     """
     Main calculator for infrared detector noise analysis.
@@ -28,32 +30,38 @@ class NoiseCalculator:
     comprehensive signal-to-noise analysis.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: configparser.ConfigParser, incident_flux: Dict):
         """
         Initialize the noise calculator.
         
         Args:
             config: Configuration dictionary containing all parameters
+            incident_flux: Optional pre-calculated incident flux dictionary
+                          with keys 'wavel' and 'flux'
             
         Raises:
             ValueError: If configuration is invalid
         """
-        # Validate configuration
-        validate_config(config)
-        
+
+        ipdb.set_trace()
         self.config = config
         self.unit_converter = UnitConverter()
         self.conversion_engine = ConversionEngine(self.unit_converter)
         
+        # Store pre-calculated incident flux if provided
+        self.incident_flux = incident_flux
+        
         # Initialize noise calculators
         self.astrophysical_sources = AstrophysicalSources(config, self.unit_converter)
-        self.instrumental_noise = InstrumentalNoise(config, self.unit_converter)
+        #self.instrumental_noise = InstrumentalNoise(config, self.unit_converter)
         
         # Generate wavelength grid
-        self.wavelength = self._generate_wavelength_grid()
+        #self.wavelength = self._generate_wavelength_grid()
         
         logger.info("NoiseCalculator initialized successfully")
+        ipdb.set_trace()
     
+    '''
     def _generate_wavelength_grid(self) -> np.ndarray:
         """Generate wavelength grid based on configuration."""
         wavelength_config = self.config["wavelength_range"]
@@ -65,6 +73,7 @@ class NoiseCalculator:
         wavelength = np.logspace(np.log10(min_wavelength), np.log10(max_wavelength), n_points)
         
         return wavelength
+    '''
     
     def calculate_snr(self) -> Dict[str, Any]:
         """
@@ -76,12 +85,19 @@ class NoiseCalculator:
         logger.info("Starting SNR calculation")
         
         # Get integration time
-        integration_time = self.config["detector"]["integration_time"]
+        integration_time = float(self.config["detector"]["integration_time"])
+
+        ipdb.set_trace()
         
         # Calculate astrophysical noise
-        astrophysical_noise_adu = self.astrophysical_noise.calculate_astrophysical_noise_adu(
+        astrophysical_noise_adu = self.astrophysical_sources.calculate_astrophysical_noise_electrons(
             self.wavelength, integration_time
         )
+        '''
+        astrophysical_noise_adu = self.astrophysical_sources.calculate_astrophysical_noise_adu(
+            self.wavelength, integration_time
+        )
+        '''
         
         # Calculate instrumental noise
         instrumental_noise_adu = self.instrumental_noise.calculate_total_instrumental_noise_adu(
@@ -94,9 +110,9 @@ class NoiseCalculator:
         )
         
         # Calculate signal (assuming exoplanet is the signal of interest)
-        exoplanet_flux = self.astrophysical_noise.calculate_source_flux("exoplanet", self.wavelength)
-        exoplanet_illumination = self.astrophysical_noise.calculate_detector_illumination(self.wavelength)
-        exoplanet_signal_adu = self.astrophysical_noise.calculate_astrophysical_noise_adu(
+        exoplanet_flux = self.astrophysical_sources.calculate_source_flux("exoplanet", self.wavelength)
+        exoplanet_illumination = self.astrophysical_sources.calculate_detector_illumination(self.wavelength)
+        exoplanet_signal_adu = self.astrophysical_sources.calculate_astrophysical_noise_adu(
             self.wavelength, integration_time
         )
         
@@ -110,7 +126,7 @@ class NoiseCalculator:
         detection_limit = self.conversion_engine.calculate_detection_limit(total_noise_adu)
         
         # Get noise breakdowns
-        astrophysical_breakdown = self.astrophysical_noise.get_source_contributions(self.wavelength)
+        astrophysical_breakdown = self.astrophysical_sources.get_source_contributions(self.wavelength)
         instrumental_breakdown = self.instrumental_noise.get_noise_breakdown_adu(integration_time)
         
         results = {
@@ -196,3 +212,58 @@ class NoiseCalculator:
         }
         
         return summary 
+
+    def calculate_snr_with_incident_flux(self, integration_time: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Calculate SNR using pre-calculated incident flux.
+        
+        Args:
+            integration_time: Integration time in seconds (uses config default if None)
+            
+        Returns:
+            Dictionary containing SNR calculation results
+        """
+        if self.incident_flux is None:
+            raise ValueError("No incident flux provided. Use calculate_snr() instead.")
+        
+        if integration_time is None:
+            integration_time = float(self.config["detector"]["integration_time"])
+        
+        # Extract incident flux data
+        incident_wavelength = self.incident_flux['wavel']
+        incident_flux = self.incident_flux['flux']
+        
+        # Calculate detector illumination using incident flux
+        collecting_area = float(self.config["telescope"]["collecting_area"])
+        throughput = float(self.config["telescope"]["throughput"])
+        plate_scale = float(self.config["telescope"]["plate_scale"])
+        
+        # Convert incident flux to detector illumination
+        pixel_area = (plate_scale ** 2) * (np.pi / (180 * 3600)) ** 2
+        detector_illumination = incident_flux * collecting_area * throughput * pixel_area
+        
+        # Calculate signal in electrons
+        signal_electrons = detector_illumination * integration_time
+        
+        # Calculate noise (shot noise: sqrt(N))
+        noise_electrons = np.sqrt(signal_electrons)
+        
+        # Convert to ADU
+        gain = float(self.config["detector"]["gain"])
+        signal_adu = signal_electrons / gain
+        noise_adu = noise_electrons / gain
+        
+        # Calculate SNR
+        snr = signal_adu / noise_adu
+        integrated_snr = np.sqrt(np.sum(snr**2))
+        
+        return {
+            'wavelength': incident_wavelength,
+            'signal_adu': signal_adu,
+            'noise_adu': noise_adu,
+            'signal_to_noise': snr,
+            'integrated_snr': integrated_snr,
+            'integration_time': integration_time,
+            'incident_flux': incident_flux,
+            'detector_illumination': detector_illumination
+        } 
