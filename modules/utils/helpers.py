@@ -73,19 +73,35 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
     output_dir = Path(config['dirs']['data_dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # stellar radius
+    rad_star = 69.6340 * 1e9 * u.cm
+    # planet radius
+    rad_planet = 0.637 * 1e9 * u.cm
     
     # Create wavelength grid
     wavelength = np.logspace(0, 1, 100)  # 1-10 microns
     wavelength_um = wavelength * u.um
 
     ipdb.set_trace()
+    
     # fluxes
-    # stellar spectrum
+    # stellar BB spectrum, BB_nu
+    # units ergs/(cm^2 Hz sec sr)
     bb_star = BlackBody(temperature=5778*u.K)
-    flux_star = bb_star(wavelength_um)
-    # planet spectrum
+    # stellar surface flux, Fs_nu: multiply by pi steradians
+    # ergs/(cm^2 Hz sec sr) --> ergs/(cm^2 Hz sec)
+    flux_star = np.pi*u.sr * bb_star(wavelength_um)
+    # stellar luminosity, L_nu: rate at which a planet radiates energy in all directions
+    # ergs/(cm^2 Hz sec) --> ergs/(Hz sec)
+    luminosity_star = 4 * np.pi * (rad_star**2) * flux_star
+
+    # planet BB spectrum
     bb_planet = BlackBody(temperature=400*u.K)
-    flux_planet = bb_planet(wavelength_um)
+    # planet surface flux
+    flux_planet = np.pi*u.sr * bb_planet(wavelength_um)
+    # planet luminosity
+    luminosity_planet = 4 * np.pi * (rad_planet**2) * flux_planet
 
     ipdb.set_trace()
     
