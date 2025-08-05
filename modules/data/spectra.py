@@ -147,10 +147,10 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
     Supports CSV files with headers and metadata in comments.
     Expected format:
     # wavelength_unit=um
-    # flux_unit=photon_sec_m2_um
-    wavelength,flux
-    1.0,1e10
-    2.0,5e9
+    # luminosity_photons_unit=photon/um/sec
+    wavel,luminosity_photons
+    1.0,1.0375353709002482e+45
+    1.0235310218990261,1.0064224182952382e+45
     ...
     
     Args:
@@ -177,14 +177,14 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
                 if line.startswith("#"):
                     if "wavelength_unit" in line:
                         wavelength_unit = line.split("=")[-1].strip()
-                    elif "flux_unit" in line:
+                    elif "luminosity_photons_unit" in line:
                         flux_unit = line.split("=")[-1].strip()
         
         try:
             # open file as dataframe
             df = pd.read_csv(filepath, sep=',', header=2)
             wavelength = df['wavel'].values
-            flux = df['flux'].values
+            flux = df['luminosity_photons'].values
         except:
             pass  # Use defaults if header parsing fails
         

@@ -49,9 +49,9 @@ class AstrophysicalSources:
 
                 try:
                     # Get the source name from the section
-                    spectum_file_name = self.config[sources_section][source_name]
-                    self.spectra[source_name] = load_spectrum_from_file(spectum_file_name)
-                    logger.info(f"Loaded spectrum for {source_name}: {spectum_file_name}")
+                    spectrum_file_name = self.config[sources_section][source_name]
+                    self.spectra[source_name] = load_spectrum_from_file(spectrum_file_name)
+                    logger.info(f"Loaded spectrum for {source_name}: {spectrum_file_name}")
 
                 except Exception as e:
                     logger.error(f"Failed to load spectrum for {source_name}: {e}")
@@ -81,8 +81,10 @@ class AstrophysicalSources:
                                int(self.config['wavelength_range']['n_points']))
         
         spectrum = self.spectra[source_name]
+        ipdb.set_trace()
         
         # Interpolate to the requested wavelength grid
+        # (note this is not integrating over wavelength for each interpolated data point) 
         interpolated_spectrum = spectrum.interpolate(wavelength)
         
         # Apply distance correction
@@ -99,14 +101,19 @@ class AstrophysicalSources:
         '''
 
         incident_dict['wavel'] = wavelength
-        incident_dict['astro_flux_ph_sec_m2_um'] = interpolated_spectrum.flux * distance_correction
+        # units ph/um/sec * (1/pc^2) * (pc/3.086e16)^2 <-- last term is for unit consistency
+        # = ph/um/m^2/sec
+        incident_dict['astro_flux_ph_sec_m2_um'] = interpolated_spectrum.flux * distance_correction * (1.0 / (3.086e16)**2)
 
+        ipdb.set_trace()
         if plot:
             plt.scatter(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
+            plt.yscale('log')
             plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
-            plt.ylabel(f"Flux ({spectrum.flux_unit})")
+            plt.ylabel(f"Flux (ph/um/m^2/sec)")
             plt.title(f"Incident flux from {source_name}")
             file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
+            ipdb.set_trace()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)
         

@@ -38,7 +38,8 @@ def main(config_abs_file_name: str):
     # Calculate the astrophysical flux incident on the Earth's surface (no nulling yet)
     logging.info("Calculating astrophysical flux...")
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
-    incident_astro = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
+    #incident_astro = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
+    incident_astro = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
 
     # Calculate the flux incident on the detector after passing through the telescope
 

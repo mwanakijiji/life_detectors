@@ -107,7 +107,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
 
     # planet BB spectrum
-    bb_planet_lambda = BlackBody(temperature=400*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    bb_planet_lambda = BlackBody(temperature=200*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # planet surface flux
     flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
     # planet luminosity
@@ -165,7 +165,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         # add header with units
         with open(filepath, 'w') as f:
             f.write('# wavelength_unit=um\n')
-            f.write('# luminosity_photons_unit=photon_um_sec\n')
+            f.write('# luminosity_photons_unit=photon/um/sec\n')
         df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
@@ -183,7 +183,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             logger.info(f"Wrote plot {file_name_plot}")
 
 
-
+'''
 def calculate_photon_energy(wavelength_um: float) -> float:
     """
     Calculate photon energy in Joules.
@@ -240,3 +240,4 @@ def convert_flux_to_photons(energy_flux_watt: float, wavelength_um: float) -> fl
     photon_flux = energy_flux_watt / photon_energy
     
     return photon_flux 
+'''
