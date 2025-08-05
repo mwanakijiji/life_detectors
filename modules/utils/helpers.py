@@ -16,8 +16,12 @@ import configparser
 from astropy.modeling.physical_models import BlackBody
 from astropy import units as u
 from astropy.visualization import quantity_support
+#from astropy import constants as const
 
 logger = logging.getLogger(__name__)
+
+const_c = 2.99792458e8 * u.m / u.s
+const_h = 6.62607015e-34 * u.J * u.s
 
 def format_number(value: float, precision: int = 2) -> str:
     """
@@ -83,27 +87,34 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     wavelength = np.logspace(0, 1, 100)  # 1-10 microns
     wavelength_um = wavelength * u.um
 
-    ipdb.set_trace()
-    
     # fluxes
     # stellar BB spectrum, BB_nu
     # units ergs/(cm^2 Hz sec sr)
-    bb_star = BlackBody(temperature=5778*u.K)
+    #bb_star_nu = BlackBody(temperature=5778*u.K)
+    # convert BB_nu to BB_lambda
+    bb_star_lambda = BlackBody(temperature=5778*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # stellar surface flux, Fs_nu: multiply by pi steradians
-    # ergs/(cm^2 Hz sec sr) --> ergs/(cm^2 Hz sec)
-    flux_star = np.pi*u.sr * bb_star(wavelength_um)
-    # stellar luminosity, L_nu: rate at which a planet radiates energy in all directions
-    # ergs/(cm^2 Hz sec) --> ergs/(Hz sec)
-    luminosity_star = 4 * np.pi * (rad_star**2) * flux_star
+    # W / (micron m2 sr) --> W / (micron m2)
+    flux_star = np.pi*u.sr * bb_star_lambda(wavelength_um)
+    # stellar luminosity in terms of energy, L_nu: rate at which a planet radiates energy in all directions
+    # W / (micron m2) --> W / micron
+    luminosity_energy_star = 4 * np.pi * (rad_star**2) * flux_star 
+    luminosity_energy_star = luminosity_energy_star.to(u.W / u.micron) # consistent units
+    # stellar luminosity in terms of photons, L_gamma_nu (divide by energy units E=hc/lambda)
+    # W / micron --> photons / (um sec)
+    luminosity_photons_star = luminosity_energy_star / (const_h * const_c / wavelength_um)
+    luminosity_photons_star = luminosity_photons_star.to(1 / u.micron / u.s) # consistent units
+
 
     # planet BB spectrum
-    bb_planet = BlackBody(temperature=400*u.K)
+    bb_planet_lambda = BlackBody(temperature=400*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # planet surface flux
-    flux_planet = np.pi*u.sr * bb_planet(wavelength_um)
+    flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
     # planet luminosity
-    luminosity_planet = 4 * np.pi * (rad_planet**2) * flux_planet
-
-    ipdb.set_trace()
+    luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
+    luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
+    luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
+    luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
     
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
@@ -111,16 +122,20 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         "star_spectrum.txt": {
             "description": "Blackbody spectrum for star",
             "wavelength_um": wavelength_um,
-            "flux": flux_star,  # Approximate blackbody
+            "flux": flux_star,
+            "luminosity_photons": luminosity_photons_star,
             "plot_name": "star_spectrum.png"
         },
         "exoplanet_spectrum.txt": {
             "description": "Exoplanet spectrum",
             "wavelength_um": wavelength_um,
-            "flux": flux_planet,  # Cooler blackbody
+            "flux": flux_planet,
+            "luminosity_photons": luminosity_photons_planet,
             "plot_name": "exoplanet_spectrum.png"
-        },
-        "exozodiacal_spectrum.txt": {
+        }
+    }
+    '''
+            "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
             "wavelength_um": wavelength_um,
             "flux": 1e8 * wavelength_um ** (-1.5),  # Power law
@@ -132,7 +147,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "flux": 1e9 * wavelength_um ** (-1.2),  # Power law
             "plot_name": "zodiacal_spectrum.png"
         }
-    }
+    '''
     
     for filename, data in sample_data.items():
         filepath = output_dir / filename
@@ -141,30 +156,28 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             logger.info(f"Skipping {filename} (already exists)")
             continue
         
-        ipdb.set_trace()
         # Create dataframe and write to CSV
         df = pd.DataFrame({
             'wavel': data['wavelength_um'],
-            'flux': data['flux']
+            'luminosity_photons': data['luminosity_photons']
         })
         
         # add header with units
         with open(filepath, 'w') as f:
             f.write('# wavelength_unit=um\n')
-            f.write('# flux_unit=photon_sec_m2_um\n')
+            f.write('# luminosity_photons_unit=photon_um_sec\n')
         df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
 
         if plot:
-            ipdb.set_trace()
             plt.plot(data['wavelength_um'], data['flux'])
             plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
-            plt.ylabel(fr"$F(\lambda)$ [{flux_star.unit}]")
+            plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
             plt.title(data['description'])
             file_name_plot = output_dir / data['plot_name']
             plt.tight_layout()
-            ipdb.set_trace()
+            
             plt.savefig(file_name_plot)
             plt.close()
             logger.info(f"Wrote plot {file_name_plot}")
