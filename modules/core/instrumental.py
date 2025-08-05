@@ -9,11 +9,49 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import logging
+import ipdb
 
 from ..data.units import UnitConverter
 
-logger = logging.getLogger(__name__)
 
+class InstrumentalSources:
+    def __init__(self, config: Dict, unit_converter: UnitConverter, add_astrophysical_flux: bool = True):
+        self.config = config
+        self.unit_converter = unit_converter ## ## TODO: DO I NEED THIS?
+        self.add_astrophysical_flux = add_astrophysical_flux # add the astrophysical flux?
+
+    def calculate_instrumental_adu(self):
+
+        # initialize dict to carry instrumental terms
+        instrum_dict = {}
+
+        # dark current rate 
+        # e/pix/sec
+        dark_current_rate = float(self.config["detector"]["dark_current"])
+
+        # total dark current in e-, based on integration time
+        # e/pix/sec -> e/pix
+        integration_time = float(self.config["observation"]["integration_time"])  # seconds
+        dark_current_electrons = dark_current_rate * integration_time
+
+        # total dark current in ADU
+        # e/pix -> ADU/pix
+        gain = float(self.config["detector"]["gain"])  # e-/ADU
+        dark_current_adu = dark_current_electrons / gain
+        instrum_dict['dark_current_total_adu'] = dark_current_adu
+
+        #incident_dict['dark_current_electrons_sec'] = dark_current_rate * integration_time
+        #incident_dict['dark_current_adu_sec'] = self.unit_converter.electrons_to_adu(incident_dict['dark_current_electrons_sec'], gain)
+
+        # read noise
+        # e-/pix rms
+        instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
+        # e-/pix rms -> ADU rms
+        instrum_dict['read_noise_adu'] = float(self.config["detector"]["read_noise"]) / gain
+
+        return instrum_dict
+
+'''
 @dataclass
 class InstrumentalNoise:
     """
@@ -197,3 +235,4 @@ class InstrumentalNoise:
             breakdown_adu[source] = self.unit_converter.electrons_to_adu(noise_electrons, gain)
         
         return breakdown_adu 
+'''

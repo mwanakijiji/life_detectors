@@ -83,7 +83,6 @@ class AstrophysicalSources:
         spectrum = self.spectra[source_name]
         
         # Interpolate to the requested wavelength grid
-        ## ## TO DO: DO I WANT TO INTEGRATE OVER THE FLUX?
         interpolated_spectrum = spectrum.interpolate(wavelength)
         
         # Apply distance correction
@@ -100,24 +99,20 @@ class AstrophysicalSources:
         '''
 
         incident_dict['wavel'] = wavelength
-        incident_dict['flux'] = interpolated_spectrum.flux * distance_correction
-
-
-
-        ipdb.set_trace()
+        incident_dict['astro_flux_ph_sec_m2_um'] = interpolated_spectrum.flux * distance_correction
 
         if plot:
-            plt.scatter(incident_dict['wavel'], incident_dict['flux'])
+            plt.scatter(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
             plt.ylabel(f"Flux ({spectrum.flux_unit})")
             plt.title(f"Incident flux from {source_name}")
-            file_name_plot = f"incident_{source_name}.png"
+            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)
         
         return incident_dict
     
-
+    '''
     def calculate_total_astrophysical_flux(self, wavelength: np.ndarray) -> np.ndarray:
         """
         Calculate total astrophysical flux from all sources.
@@ -167,51 +162,6 @@ class AstrophysicalSources:
         
         return detector_illumination
     
-    def calculate_astrophysical_noise_electrons(self, wavelength: np.ndarray, integration_time: float) -> np.ndarray:
-        """
-        Calculate astrophysical noise in electrons per pixel.
-        
-        Args:
-            wavelength: Wavelength array in microns
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Noise in electrons per pixel
-        """
-        # Get detector illumination
-        illumination = self.calculate_detector_illumination(wavelength)
-        
-        # Convert to electrons (assuming 1 photon = 1 electron for simplicity)
-        # In practice, quantum efficiency would be applied here
-        ## ## TO DO: MAKE THIS MORE REALISTIC
-        electrons_per_pixel = illumination * integration_time
-        
-        # Calculate noise (shot noise: sqrt(N))
-        noise_electrons = np.sqrt(electrons_per_pixel)
-        
-        return noise_electrons
-    
-    def calculate_astrophysical_noise_adu(self, wavelength: np.ndarray, integration_time: float) -> np.ndarray:
-        """
-        Calculate astrophysical noise in ADU per pixel.
-        
-        Args:
-            wavelength: Wavelength array in microns
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Noise in ADU per pixel
-        """
-        ipdb.set_trace()
-        gain = self.config["detector"]["gain"]  # e-/ADU
-        
-        # Calculate noise in electrons
-        noise_electrons = self.calculate_astrophysical_noise_electrons(wavelength, integration_time)
-        
-        # Convert to ADU
-        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
-        
-        return noise_adu
     
     def get_source_contributions(self, wavelength: np.ndarray) -> Dict[str, np.ndarray]:
         """
@@ -233,3 +183,4 @@ class AstrophysicalSources:
                 contributions[source_name] = source_flux
         
         return contributions 
+    '''

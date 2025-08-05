@@ -13,6 +13,9 @@ import pandas as pd
 import ipdb
 import matplotlib.pyplot as plt
 import configparser
+from astropy.modeling.physical_models import BlackBody
+from astropy import units as u
+from astropy.visualization import quantity_support
 
 logger = logging.getLogger(__name__)
 
@@ -73,31 +76,44 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     
     # Create wavelength grid
     wavelength = np.logspace(0, 1, 100)  # 1-10 microns
+    wavelength_um = wavelength * u.um
+
+    ipdb.set_trace()
+    # fluxes
+    # stellar spectrum
+    bb_star = BlackBody(temperature=5778*u.K)
+    flux_star = bb_star(wavelength_um)
+    # planet spectrum
+    bb_planet = BlackBody(temperature=400*u.K)
+    flux_planet = bb_planet(wavelength_um)
+
+    ipdb.set_trace()
     
     # Sample data for different sources
+    ## ## TODO: add zodiacal stuff
     sample_data = {
         "star_spectrum.txt": {
-            "description": "Blackbody spectrum for a Sun-like star",
-            "wavelength": wavelength,
-            "flux": 1e10 * wavelength ** (-3) * np.exp(-1.4 / wavelength),  # Approximate blackbody
+            "description": "Blackbody spectrum for star",
+            "wavelength_um": wavelength_um,
+            "flux": flux_star,  # Approximate blackbody
             "plot_name": "star_spectrum.png"
         },
         "exoplanet_spectrum.txt": {
-            "description": "Exoplanet spectrum (much fainter than star)",
-            "wavelength": wavelength,
-            "flux": 1e6 * wavelength ** (-2) * np.exp(-2.0 / wavelength),  # Cooler blackbody
+            "description": "Exoplanet spectrum",
+            "wavelength_um": wavelength_um,
+            "flux": flux_planet,  # Cooler blackbody
             "plot_name": "exoplanet_spectrum.png"
         },
         "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
-            "wavelength": wavelength,
-            "flux": 1e8 * wavelength ** (-1.5),  # Power law
+            "wavelength_um": wavelength_um,
+            "flux": 1e8 * wavelength_um ** (-1.5),  # Power law
             "plot_name": "exozodiacal_spectrum.png"
         },
         "zodiacal_spectrum.txt": {
             "description": "Zodiacal dust spectrum",
-            "wavelength": wavelength,
-            "flux": 1e9 * wavelength ** (-1.2),  # Power law
+            "wavelength_um": wavelength_um,
+            "flux": 1e9 * wavelength_um ** (-1.2),  # Power law
             "plot_name": "zodiacal_spectrum.png"
         }
     }
@@ -109,9 +125,10 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             logger.info(f"Skipping {filename} (already exists)")
             continue
         
+        ipdb.set_trace()
         # Create dataframe and write to CSV
         df = pd.DataFrame({
-            'wavel': data['wavelength'],
+            'wavel': data['wavelength_um'],
             'flux': data['flux']
         })
         
@@ -124,11 +141,14 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         logger.info(f"Created sample data: {filepath}")
 
         if plot:
-            plt.plot(data['wavelength'], data['flux'])
-            plt.xlabel('Wavelength (um)')
-            plt.ylabel('Flux (photon/sec/m^2/um)')
+            ipdb.set_trace()
+            plt.plot(data['wavelength_um'], data['flux'])
+            plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
+            plt.ylabel(fr"$F(\lambda)$ [{flux_star.unit}]")
             plt.title(data['description'])
             file_name_plot = output_dir / data['plot_name']
+            plt.tight_layout()
+            ipdb.set_trace()
             plt.savefig(file_name_plot)
             plt.close()
             logger.info(f"Wrote plot {file_name_plot}")

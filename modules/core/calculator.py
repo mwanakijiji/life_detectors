@@ -13,12 +13,30 @@ import configparser
 import ipdb
 
 from .astrophysical import AstrophysicalSources
-from .instrumental import InstrumentalNoise
+from .instrumental import InstrumentalSources
 from .conversions import ConversionEngine
 from ..data.units import UnitConverter
 from ..config.validator import validate_config
 
 logger = logging.getLogger(__name__)
+
+'''
+def calculate_astrophysical_noise_adu(total_astro_adu: float) -> np.ndarray:
+    """
+    Calculate astrophysical noise in electrons per pixel.
+    
+    Args:
+        total_astro_adu: the total astrophysical flux contribution to the readout in ADU
+        
+    Returns:
+        Noise in electrons per pixel
+    """
+    
+    # photon noise: sqrt(N)
+    noise_adu = np.sqrt(total_astro_adu)
+    
+    return noise_adu
+'''
 
 
 class NoiseCalculator:
@@ -30,36 +48,90 @@ class NoiseCalculator:
     comprehensive signal-to-noise analysis.
     """
     
-    def __init__(self, config: configparser.ConfigParser, incident_flux: Dict):
+    def __init__(self, config: configparser.ConfigParser, incident_astro: Dict, incident_instrum: Dict):
         """
         Initialize the noise calculator.
         
         Args:
             config: Configuration dictionary containing all parameters
-            incident_flux: Optional pre-calculated incident flux dictionary
-                          with keys 'wavel' and 'flux'
+            incident_astro: astrophysical flux incident on the Earth
+            incident_instrum: instrumental flux on the detector
             
         Raises:
             ValueError: If configuration is invalid
         """
 
-        ipdb.set_trace()
         self.config = config
-        self.unit_converter = UnitConverter()
-        self.conversion_engine = ConversionEngine(self.unit_converter)
+        self.incident_astro = incident_astro
+        self.incident_instrum = incident_instrum
+
+        #self.unit_converter = UnitConverter()
+        #self.conversion_engine = ConversionEngine(self.unit_converter)
         
         # Store pre-calculated incident flux if provided
-        self.incident_flux = incident_flux
+        #self.incident_flux = incident_flux
         
         # Initialize noise calculators
-        self.astrophysical_sources = AstrophysicalSources(config, self.unit_converter)
-        #self.instrumental_noise = InstrumentalNoise(config, self.unit_converter)
+        #self.astrophysical_sources = AstrophysicalSources(config, self.unit_converter)
+        #self.instrumental_noise = InstrumentalSources(config, self.unit_converter)
         
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
-        
-        logger.info("NoiseCalculator initialized successfully")
+
+
+    def total_astro_detector_adu(self):
+        '''
+        Astrophysical flux after passing through the telescope, and integrated over wavelength
+
+        Returns:
+            incident_dict: dictionary which now also contains the astrophysical flux in ADU in a readout
+        '''
+
+        # integrate astrophysical flux over wavelength to get total flux
+        # photons/sec/m^2/micron -> photons/sec/m^2
+        self.incident_astro['astro_flux_ph_sec_m2'] = np.trapz(self.incident_astro['astro_flux_ph_sec_m2_um'], self.incident_astro['wavel'])
+
+        # pass through the telescope aperture
+        # photons/sec/m^2 -> photons/sec
+        self.incident_astro['astro_flux_ph_sec'] = float(self.incident_astro['astro_flux_ph_sec_m2']) * float(self.config["telescope"]["collecting_area"])
+
+        # Convert to electrons ## ## TODO: make 1 photon = 1 electron more realistic
+        # photons/sec -> electrons/sec
+        qe = float(self.config["detector"]["quantum_efficiency"])
+        self.incident_astro['astro_electrons_sec'] = self.incident_astro['astro_flux_ph_sec'] * qe
+
+        # Convert to ADU (Analog-to-Digital Units)
+        # electrons/sec -> ADU/sec
+        gain = float(self.config["detector"]["gain"])  # e-/ADU
+        self.incident_astro['astro_adu_sec'] = float(self.incident_astro['astro_electrons_sec']) / gain
+
+        # For integration time calculations
+        integration_time = float(self.config["observation"]["integration_time"])  # seconds
+        # incident_dict['astro_electrons_total'] = incident_dict['astro_electrons_sec'] * integration_time
+        self.incident_astro['astro_adu_total'] = self.incident_astro['astro_adu_sec'] * integration_time
+
+        return self.incident_astro
+    
+
+    '''
+    def add_fluxes(self):
+
+        Add the astrophysical and instrumental fluxes together, in units of ADU
+
+        Args:
+            astro_contrib: dict incluting astrophysical flux in ADU
+            instr_contrib: dict including instrumental flux in ADU
+
+        Returns:
+
         ipdb.set_trace()
+
+        # add the astrophysical and instrumental fluxes together, in units of ADU
+        self.total_signal_adu = self.incident_astro['astro_adu_total'] + self.incident_instrum['dark_current_total_adu'] + self.incident_instrum['read_noise_adu']
+        
+        #incident_astro['astro_adu_total'] = 
+    '''
+        
     
     '''
     def _generate_wavelength_grid(self) -> np.ndarray:
@@ -75,29 +147,23 @@ class NoiseCalculator:
         return wavelength
     '''
     
-    def calculate_snr(self) -> Dict[str, Any]:
+    def calculate_snr(self, contrib_astro: Dict, contrib_instrum: Dict) -> Dict[str, Any]:
         """
-        Calculate comprehensive signal-to-noise analysis.
+        Calculate S/N
         
         Returns:
             Dictionary containing all calculation results
         """
         logger.info("Starting SNR calculation")
         
-        # Get integration time
-        integration_time = float(self.config["detector"]["integration_time"])
-
-        ipdb.set_trace()
         
-        # Calculate astrophysical noise
-        astrophysical_noise_adu = self.astrophysical_sources.calculate_astrophysical_noise_electrons(
-            self.wavelength, integration_time
-        )
         '''
-        astrophysical_noise_adu = self.astrophysical_sources.calculate_astrophysical_noise_adu(
-            self.wavelength, integration_time
-        )
-        '''
+        # astrophysical photon noise
+        #astro_sources = AstrophysicalSources(config=self.config, unit_converter=UnitConverter())
+        #noise_adu = astro_sources.calculate_astrophysical_noise_adu(total_astro_adu)
+        astrophysical_noise_adu = calculate_astrophysical_noise_adu(total_astro_adu = self.incident_astro)
+
+        #noise_adu = AstrophysicalSources.calculate_astrophysical_noise_adu(total_astro_adu = self.total_astro_detector_adu)
         
         # Calculate instrumental noise
         instrumental_noise_adu = self.instrumental_noise.calculate_total_instrumental_noise_adu(
@@ -145,10 +211,18 @@ class NoiseCalculator:
         }
         
         logger.info(f"SNR calculation complete. Integrated SNR: {integrated_snr:.2f}")
-        
-        return results
+        '''
+
+        # astro photon noise
+        noise_astro = np.sqrt(contrib_astro['astro_adu_total'])
+        noise_instrum = contrib_instrum['dark_current_total_adu'] + contrib_instrum['read_noise_adu']
+
+        snr = contrib_astro['astro_adu_total'] / (noise_astro + noise_instrum)
+
+        return snr
     
     
+    '''
     def calculate_optimal_parameters(self, target_snr: float = 5.0) -> Dict[str, Any]:
         """
         Calculate optimal observation parameters.
@@ -267,3 +341,4 @@ class NoiseCalculator:
             'incident_flux': incident_flux,
             'detector_illumination': detector_illumination
         } 
+    '''

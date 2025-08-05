@@ -4,12 +4,7 @@ class "AstrophysicalSources" as modules.core.astrophysical.AstrophysicalSources 
   config : ConfigParser
   spectra : dict
   unit_converter
-  calculate_astrophysical_noise_adu(wavelength: np.ndarray, integration_time: float) -> np.ndarray
-  calculate_astrophysical_noise_electrons(wavelength: np.ndarray, integration_time: float) -> np.ndarray
-  calculate_detector_illumination(wavelength: np.ndarray) -> np.ndarray
   calculate_incident_flux(source_name: str, plot: bool) -> np.ndarray
-  calculate_total_astrophysical_flux(wavelength: np.ndarray) -> np.ndarray
-  get_source_contributions(wavelength: np.ndarray) -> Dict[str, np.ndarray]
 }
 class "ConfigValidator" as modules.config.validator.ConfigValidator {
   required_detector_fields : list
@@ -41,16 +36,21 @@ class "InstrumentalNoise" as modules.core.instrumental.InstrumentalNoise {
   get_noise_breakdown_adu(integration_time: float) -> Dict[str, float]
   get_noise_breakdown_electrons(integration_time: float) -> Dict[str, float]
 }
-class "NoiseCalculator" as modules.core.calculator.NoiseCalculator {
-  astrophysical_sources
-  config : Dict[str, Any]
-  conversion_engine
-  instrumental_noise
+class "InstrumentalSources" as modules.core.instrumental.InstrumentalSources {
+  add_astrophysical_flux : bool
+  config : Dict
   unit_converter
-  wavelength : ndarray
+  calculate_instrumental_adu()
+}
+class "NoiseCalculator" as modules.core.calculator.NoiseCalculator {
+  config : ConfigParser
+  incident_astro : Dict
+  incident_instrum : Dict
   calculate_optimal_parameters(target_snr: float) -> Dict[str, Any]
-  calculate_snr() -> Dict[str, Any]
+  calculate_snr(contrib_astro: Dict, contrib_instrum: Dict) -> Dict[str, Any]
+  calculate_snr_with_incident_flux(integration_time: Optional[float]) -> Dict[str, Any]
   get_summary() -> Dict[str, Any]
+  total_astro_detector_adu()
 }
 class "SpectralData" as modules.data.spectra.SpectralData {
   flux : ndarray
@@ -69,11 +69,8 @@ class "UnitConverter" as modules.data.units.UnitConverter {
   convert_wavelength(value: float, from_unit: str, to_unit: str) -> float
   electrons_to_adu(electrons: float, gain: float) -> float
 }
-modules.core.astrophysical.AstrophysicalSources --* modules.core.calculator.NoiseCalculator : astrophysical_sources
-modules.core.conversions.ConversionEngine --* modules.core.calculator.NoiseCalculator : conversion_engine
-modules.core.instrumental.InstrumentalNoise --* modules.core.calculator.NoiseCalculator : instrumental_noise
-modules.data.units.UnitConverter --* modules.core.calculator.NoiseCalculator : unit_converter
 modules.data.units.UnitConverter --o modules.core.astrophysical.AstrophysicalSources : unit_converter
 modules.data.units.UnitConverter --o modules.core.conversions.ConversionEngine : unit_converter
 modules.data.units.UnitConverter --o modules.core.instrumental.InstrumentalNoise : unit_converter
+modules.data.units.UnitConverter --o modules.core.instrumental.InstrumentalSources : unit_converter
 @enduml

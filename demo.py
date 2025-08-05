@@ -12,7 +12,7 @@ import ipdb
 import logging
 import matplotlib.pyplot as plt
 
-from modules.core import calculator, astrophysical #, instrumental
+from modules.core import calculator, astrophysical, instrumental
 from modules.config import loader, validator
 from modules.utils.helpers import create_sample_data, load_config
 from modules.data.units import UnitConverter
@@ -35,25 +35,32 @@ def main(config_abs_file_name: str):
     logging.info("Creating sample spectral data...")
     create_sample_data(config, overwrite=True, plot=True)
 
-    # Calculate the astrophysical flux incident on the instrument (no nulling yet)
-    logging.info("Calculating astrophysical flux incident on the primary mirror...")
+    # Calculate the astrophysical flux incident on the Earth's surface (no nulling yet)
+    logging.info("Calculating astrophysical flux...")
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
-    incident_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
+    incident_astro = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
 
     # Calculate the flux incident on the detector after passing through the telescope
 
-    # Calculate the detector outputs in ADU
-
-    # Find the S/N
+    # instrumental noise contributions in ADU
+    logging.info("Calculating the instrumental noise sources...")
+    instrumental_sources = instrumental.InstrumentalSources(config, unit_converter=UnitConverter())
+    incident_instrum = instrumental_sources.calculate_instrumental_adu()
     
-    # Initialize the noise calculator
+    # pass the flux through the telescope, add all the flux sources together, and find the noise
+    logging.info("Initializing noise calculator...")
 
-    print("Initializing noise calculator...")
-    test = calculator.NoiseCalculator(config, incident_flux=incident_star)
+    noise_calc = calculator.NoiseCalculator(config, incident_astro=incident_astro, incident_instrum=incident_instrum)
+    # pass astro signal through the telescope and find contibution to readout in ADU
+    total_astro = noise_calc.total_astro_detector_adu()
+    #add_fluxes = noise_calc.add_fluxes() # add astrophysical and instrumental fluxes
+    ipdb.set_trace()
+    snr = noise_calc.calculate_snr(contrib_astro = total_astro, contrib_instrum = incident_instrum) # find S/N
+    
+    
+    ipdb.set_trace()
 
-    # Calculate signal-to-noise
-    print("Calculating signal-to-noise...")
-    results = calculator.calculate_snr()
+
 
     '''
     

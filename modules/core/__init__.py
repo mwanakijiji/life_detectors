@@ -2,12 +2,12 @@
 
 from .calculator import NoiseCalculator
 from .astrophysical import AstrophysicalSources
-from .instrumental import InstrumentalNoise
+from .instrumental import InstrumentalSources
 from .conversions import ConversionEngine
 
 __all__ = [
     "NoiseCalculator",
     "AstrophysicalSources", 
-    "InstrumentalNoise",
+    "InstrumentalSources",
     "ConversionEngine",
 ] 
