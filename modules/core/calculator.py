@@ -78,6 +78,42 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
+    def s2n_e(self, incident_astro_exoplanet: dict, incident_astro_star: dict):
+        '''
+        Find S/N using photoelectrons
+
+        Ref.: s_to_n_logic_life_detectors.pdf
+        '''
+
+        ## ## CONTINUE HERE
+
+        # science (planet) signal
+        Np_prime = incident_astro_exoplanet # e- total (note this is not a function of time; and _prime denotes not measured directly)
+        # stellar signal
+        Ns_prime = incident_astro_star # e- total
+
+        # quantum efficiency
+        eta = float(self.config["detector"]["quantum_efficiency"])
+        # null
+        nulling_factor = float(self.config["nulling"]["nulling_factor"])
+        # number of pixels
+        n_pix = float(self.config["detector"]["n_pix"])
+        # read noise
+        R = float(self.config["detector"]["read_noise"])
+        # dark current
+        D = float(self.config["detector"]["dark_current"])
+        # integration time
+        t_int = float(self.config["observation"]["integration_time"])
+
+        s2n = eta * Np_prime / np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix * (R**2 + D * t_int) )
+
+        # get the gain
+        #gain = float(self.config["detector"]["gain"])
+
+        # get the integration time
+
+        return s2n
+
 
     def total_astro_detector_adu(self):
         '''

@@ -58,12 +58,17 @@ def main(config_abs_file_name: str):
     incident_instrum = instrumental_sources.calculate_instrumental_adu()
     ipdb.set_trace()
     
-    # pass the flux through the telescope, add all the flux sources together, and find the noise
-    logging.info("Initializing noise calculator...")
+    # pass the astrophysical flux through the telescope
+    ## ## CONTINUE HERE
 
+    # find the noise
+    logging.info("Calculating noise...")
     noise_calc = calculator.NoiseCalculator(config, incident_astro=incident_astro_exoplanet, incident_instrum=incident_instrum)
     # pass astro signal through the nuller and find contribution to readout in ADU
-    total_astro = noise_calc.total_astro_detector_adu()
+    ipdb.set_trace()
+    s2n = noise_calc.s2n_e(incident_astro_exoplanet = incident_astro_exoplanet, 
+                           incident_astro_star = incident_astro_star)
+    #total_astro = noise_calc.total_astro_detector_adu()
 
     ipdb.set_trace()
     #add_fluxes = noise_calc.add_fluxes() # add astrophysical and instrumental fluxes
