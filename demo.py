@@ -35,19 +35,28 @@ def main(config_abs_file_name: str):
     logging.info("Creating sample spectral data...")
     create_sample_data(config, overwrite=True, plot=True)
 
-    # Calculate the astrophysical flux incident on the instrument or Earth's surface (no nulling yet)
+    # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)
     logging.info("Calculating astrophysical flux...")
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
-    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
+    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
+
+    # pass the astrophysical flux through the telescope aperture to the detector plane
+    logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
+    incident_astro_star['astro_flux_ph_sec'] = incident_astro_star['astro_flux_ph_sec_m2_um'] * float(config["telescope"]["collecting_area"])
+    # convert photons to electrons
+    logging.info("Converting photons to ADU...")
+    incident_astro_star['astro_flux_e_sec'] = incident_astro_star['astro_flux_ph_sec'] * float(config["detector"]["quantum_efficiency"])
+    # convert electrons to ADU
+    incident_astro_star['astro_flux_adu_sec'] = incident_astro_star['astro_flux_e_sec'] / float(config["detector"]["gain"])
+
+
     ipdb.set_trace()
-
-    # Calculate the flux incident on the detector after passing through the telescope
-
     # instrumental noise contributions in ADU
     logging.info("Calculating the instrumental noise sources...")
     instrumental_sources = instrumental.InstrumentalSources(config, unit_converter=UnitConverter())
     incident_instrum = instrumental_sources.calculate_instrumental_adu()
+    ipdb.set_trace()
     
     # pass the flux through the telescope, add all the flux sources together, and find the noise
     logging.info("Initializing noise calculator...")

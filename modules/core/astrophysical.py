@@ -59,12 +59,13 @@ class AstrophysicalSources:
             logger.warning("No [astrophysical_sources] section found in config file.")
     
 
-    def calculate_incident_flux(self, source_name: str, plot: bool = False) -> np.ndarray:
+    def calculate_incident_flux(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
         Args:
             source_name: Name of the source (star, exoplanet, etc.)
+            null: apply the nulling factor? (only applies to star target)
             
         Returns:
             Flux array in photons/sec/m^2/micron
@@ -92,7 +93,7 @@ class AstrophysicalSources:
         
         # Apply nulling factor for on-axis sources
         nulling_factor = self.config["target"]["nulling_factor"]
-        if source_name in ["star"]:  # Apply nulling to star only
+        if null and (source_name in ["star"]):  # Apply nulling to star only
             flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor)
             logger.info(f"Applying nulling factor of {nulling_factor} to {source_name}")
         else:
