@@ -84,7 +84,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     rad_planet = 0.637 * 1e9 * u.cm
     
     # Create wavelength grid
-    wavelength = np.logspace(0, 1, 100)  # 1-10 microns
+    wavelength = np.logspace(0, 1.4, 100)  # 1-20 microns
     wavelength_um = wavelength * u.um
 
     # fluxes

@@ -81,7 +81,6 @@ class AstrophysicalSources:
                                int(self.config['wavelength_range']['n_points']))
         
         spectrum = self.spectra[source_name]
-        ipdb.set_trace()
         
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point) 
@@ -92,20 +91,19 @@ class AstrophysicalSources:
         distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
-        '''
         nulling_factor = self.config["target"]["nulling_factor"]
         if source_name in ["star"]:  # Apply nulling to star only
-            flux = interpolated_spectrum.flux * distance_correction * nulling_factor
+            flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor)
+            logger.info(f"Applying nulling factor of {nulling_factor} to {source_name}")
         else:
             flux = interpolated_spectrum.flux * distance_correction
-        '''
+            logger.info(f"No nulling factor applied to {source_name}.")
 
         incident_dict['wavel'] = wavelength
-        # units ph/um/sec * (1/pc^2) * (pc/3.086e16)^2 <-- last term is for unit consistency
+        # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
         # = ph/um/m^2/sec
-        incident_dict['astro_flux_ph_sec_m2_um'] = interpolated_spectrum.flux * distance_correction * (1.0 / (3.086e16)**2)
+        incident_dict['astro_flux_ph_sec_m2_um'] = flux * distance_correction * (1.0 / (3.086e16)**2)
 
-        ipdb.set_trace()
         if plot:
             plt.scatter(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
@@ -113,7 +111,6 @@ class AstrophysicalSources:
             plt.ylabel(f"Flux (ph/um/m^2/sec)")
             plt.title(f"Incident flux from {source_name}")
             file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
-            ipdb.set_trace()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)
         
