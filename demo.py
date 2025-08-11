@@ -43,20 +43,30 @@ def main(config_abs_file_name: str):
 
     # pass the astrophysical flux through the telescope aperture to the detector plane
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
-    incident_astro_star['astro_flux_ph_sec'] = incident_astro_star['astro_flux_ph_sec_m2_um'] * float(config["telescope"]["collecting_area"])
+    instrumental_effects = instrumental.InstrumentalSources(config, 
+                                                            unit_converter=UnitConverter(), 
+                                                            star_flux=incident_astro_star,
+                                                            exoplanet_flux=incident_astro_exoplanet)
+    _pass_aperture = instrumental_effects.pass_through_aperture()
+    
     # convert photons to electrons
-    logging.info("Converting photons to ADU...")
-    incident_astro_star['astro_flux_e_sec'] = incident_astro_star['astro_flux_ph_sec'] * float(config["detector"]["quantum_efficiency"])
+    logging.info("Converting photons to counts...")
+    _phot_2_e = instrumental_effects.photons_to_e()
     # convert electrons to ADU
+    _e_2_adu = instrumental_effects.e_to_adu()
+
+    
+    
+    incident_astro_star['astro_flux_e_sec'] = incident_astro_star['astro_flux_ph_sec'] * float(config["detector"]["quantum_efficiency"])
+    
     incident_astro_star['astro_flux_adu_sec'] = incident_astro_star['astro_flux_e_sec'] / float(config["detector"]["gain"])
 
+    ## ## CONVERT TO ELECTRONS
 
-    ipdb.set_trace()
     # instrumental noise contributions in ADU
     logging.info("Calculating the instrumental noise sources...")
     instrumental_sources = instrumental.InstrumentalSources(config, unit_converter=UnitConverter())
     incident_instrum = instrumental_sources.calculate_instrumental_adu()
-    ipdb.set_trace()
     
     # pass the astrophysical flux through the telescope
     ## ## CONTINUE HERE

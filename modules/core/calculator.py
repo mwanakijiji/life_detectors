@@ -41,11 +41,7 @@ def calculate_astrophysical_noise_adu(total_astro_adu: float) -> np.ndarray:
 
 class NoiseCalculator:
     """
-    Main calculator for infrared detector noise analysis.
-    
-    This class orchestrates all noise calculations including
-    astrophysical and instrumental sources, and provides
-    comprehensive signal-to-noise analysis.
+    Puts astrophysical and instrumental sources together.
     """
     
     def __init__(self, config: configparser.ConfigParser, incident_astro: Dict, incident_instrum: Dict):
@@ -64,6 +60,7 @@ class NoiseCalculator:
         self.config = config
         self.incident_astro = incident_astro
         self.incident_instrum = incident_instrum
+        ipdb.set_trace()
 
         #self.unit_converter = UnitConverter()
         #self.conversion_engine = ConversionEngine(self.unit_converter)

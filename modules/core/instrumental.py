@@ -15,15 +15,32 @@ from ..data.units import UnitConverter
 
 
 class InstrumentalSources:
-    def __init__(self, config: Dict, unit_converter: UnitConverter, add_astrophysical_flux: bool = True):
+    # Provides the effects of the instrument
+
+    def __init__(self, config: Dict, unit_converter: UnitConverter, star_flux: dict, exoplanet_flux: dict, add_astrophysical_flux: bool = True):
+
         self.config = config
         self.unit_converter = unit_converter ## ## TODO: DO I NEED THIS?
         self.add_astrophysical_flux = add_astrophysical_flux # add the astrophysical flux?
+        self.star_flux = star_flux # contains all the stellar astrophysical flux values (independent of instrument)
+        self.exoplanet_flux = exoplanet_flux # contains all the exoplanet astrophysical flux values (independent of instrument)
+
+        # initialize dict to carry instrumental terms (independent of astrophysics)
+        self.instrum_dict = {}
+
+        # initialize dict to carry propagated terms (i.e., intensity levels in various units on the detector, after instrument effects)
+        self.prop_dict = {}
+
 
     def calculate_instrumental_adu(self):
 
-        # initialize dict to carry instrumental terms
-        instrum_dict = {}
+        gain = float(self.config["detector"]["gain"])  # e-/ADU
+
+        # read noise
+        # e-/pix rms
+        self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
+        # e-/pix rms -> ADU rms
+        self.instrum_dict['read_noise_adu'] = float(self.config["detector"]["read_noise"]) / gain
 
         # dark current rate 
         # e/pix/sec
@@ -36,20 +53,37 @@ class InstrumentalSources:
 
         # total dark current in ADU
         # e/pix -> ADU/pix
-        gain = float(self.config["detector"]["gain"])  # e-/ADU
         dark_current_adu = dark_current_electrons / gain
-        instrum_dict['dark_current_total_adu'] = dark_current_adu
+        self.instrum_dict['dark_current_total_adu'] = dark_current_adu
 
         #incident_dict['dark_current_electrons_sec'] = dark_current_rate * integration_time
         #incident_dict['dark_current_adu_sec'] = self.unit_converter.electrons_to_adu(incident_dict['dark_current_electrons_sec'], gain)
 
-        # read noise
-        # e-/pix rms
-        instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
-        # e-/pix rms -> ADU rms
-        instrum_dict['read_noise_adu'] = float(self.config["detector"]["read_noise"]) / gain
+        return 
 
-        return instrum_dict
+
+    def pass_through_aperture(self):
+        # pass through the telescope aperture
+        # photons/sec/m^2 -> photons/sec
+
+        self.prop_dict['astro_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
+
+        return 
+
+
+    def photons_to_e(self):
+
+        self.prop_dict['astro_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['astro_flux_ph_sec'])
+
+        return
+
+
+    def e_to_adu(self):
+
+        self.prop_dict['astro_flux_adu_sec'] = np.divide(self.prop_dict['astro_flux_e_sec'], float(self.config["detector"]["gain"]))
+
+        return
+
 
 '''
 @dataclass
