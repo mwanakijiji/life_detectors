@@ -19,12 +19,11 @@ from modules.data.units import UnitConverter
 
 def main(config_abs_file_name: str):
     """Run the demonstration."""
-    print("Life Detectors - Infrared Detector Noise Calculator")
-    print("=" * 60)
+    logging.info("Life Detectors - Infrared Detector Noise Calculator")
+    logging.info("=" * 60)
 
     # Initialize logging, make directories
     log_file = loader.setup_logging()
-    logging.info("Starting Life Detectors demonstration")
 
     # load config file
     logging.info("Loading config file...")
@@ -33,7 +32,7 @@ def main(config_abs_file_name: str):
 
     # Generate sample spectral data
     logging.info("Creating sample spectral data...")
-    create_sample_data(config, overwrite=True, plot=True)
+    create_sample_data(config, overwrite=True, plot=True, read_sample_file=False)
 
     # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)
     logging.info("Calculating astrophysical flux...")

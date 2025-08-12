@@ -67,24 +67,24 @@ class InstrumentalSources:
         # pass through the telescope aperture
         # photons/sec/m^2 -> photons/sec
 
-        self.prop_dict['star_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
-        self.prop_dict['exoplanet_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.exoplanet_flux['astro_flux_ph_sec_m2_um'] )
+        self.prop_dict['star_flux_ph_sec_um'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
+        self.prop_dict['exoplanet_flux_ph_sec_um'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.exoplanet_flux['astro_flux_ph_sec_m2_um'] )
 
         return 
 
 
     def photons_to_e(self):
 
-        self.prop_dict['star_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['star_flux_ph_sec'])
-        self.prop_dict['exoplanet_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['exoplanet_flux_ph_sec'])
+        self.prop_dict['star_flux_e_sec_um'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['star_flux_ph_sec_um'])
+        self.prop_dict['exoplanet_flux_e_sec_um'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['exoplanet_flux_ph_sec_um'])
 
         return
 
 
     def e_to_adu(self):
 
-        self.prop_dict['star_flux_adu_sec'] = np.divide(self.prop_dict['star_flux_e_sec'], float(self.config["detector"]["gain"]))
-        self.prop_dict['exoplanet_flux_adu_sec'] = np.divide(self.prop_dict['exoplanet_flux_e_sec'], float(self.config["detector"]["gain"]))
+        self.prop_dict['star_flux_adu_sec_um'] = np.divide(self.prop_dict['star_flux_e_sec_um'], float(self.config["detector"]["gain"]))
+        self.prop_dict['exoplanet_flux_adu_sec_um'] = np.divide(self.prop_dict['exoplanet_flux_e_sec_um'], float(self.config["detector"]["gain"]))
 
         return
 

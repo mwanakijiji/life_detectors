@@ -86,9 +86,16 @@ class NoiseCalculator:
 
         wavel_abcissa = self.noise_origin.prop_dict['wavel']
         # map wavelengths to pixels
-        disp = float(self.config["detector"]["spec_dispersion"]) # dispersion (um/pix)
-        n_pix = 1 / disp # pixels per micron(pix/um)
-        pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
+        res_spec = float(self.config["detector"]["spec_res"]) # spectral resolution (del_lambda/lambda)
+        del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
+        #wavel_abcissa_array = wavel_abcissa - del_lambda_array/2 # center of wavelength bins (um)
+        # Edges of the wavelength bins.
+        # The bin edges are at wavel_abcissa - del_lambda_array/2 and wavel_abcissa + del_lambda_array/2
+        wavel_bin_edges_lower = wavel_abcissa - del_lambda_array/2
+        wavel_bin_edges_upper = wavel_abcissa + del_lambda_array/2
+        ipdb.set_trace()
+        #n_pix = 1 / disp # pixels per micron(pix/um)
+        #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
         # integration time for 1 frame
         t_int = float(self.config["observation"]["integration_time"])
@@ -96,12 +103,13 @@ class NoiseCalculator:
 
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
-        del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec']
+        del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
         #Np_prime = t_int * self.noise_origin.prop_dict['exoplanet_flux_e_sec']
+        ipdb.set_trace()
         # stellar signal
-        del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec']
+        del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 
 
-        #Ns_prime = t_int * self.noise_origin.prop_dict['star_flux_e_sec']
+        #Ns_prime = t_int * self.noise_origin.prop_dict['star_flux_e_sec_um']
 
         # quantum efficiency
         eta = float(self.config["detector"]["quantum_efficiency"])
@@ -124,8 +132,12 @@ class NoiseCalculator:
         #Ns_prime_reshaped = np.tile(Ns_prime, (len(D_tot), 1)) # shape (10, 30)
         del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (10, 30)
         
-        n_pix_array_reshaped = np.tile( n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
+        #n_pix_array_reshaped = np.tile( n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
         # Tile D_tot to shape (len(D_tot), len(Np_prime_reshaped))
+
+        # the number of pixels for each wavelength bin is 1-to-1 for now ## ## TODO: change later
+        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) # shape (10, 30)
+        
         ipdb.set_trace()
 
         D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (10, 30)

@@ -16,6 +16,7 @@ import configparser
 from astropy.modeling.physical_models import BlackBody
 from astropy import units as u
 from astropy.visualization import quantity_support
+from scipy.interpolate import interp1d
 #from astropy import constants as const
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def load_config(config_file):
     return config
 
 
-def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False) -> None:
+def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
     """
     Create sample spectral data files for testing.
     
@@ -70,6 +71,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         config: ConfigParser object
         overwrite: Whether to overwrite existing files
         plot: Whether to plot the data
+        read_sample_file: Whether to read the sample file that LIFEsim uses
 
     Returns:
         None (writes to file)
@@ -109,12 +111,48 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     # planet BB spectrum
     bb_planet_lambda = BlackBody(temperature=200*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # planet surface flux
-    flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
-    # planet luminosity
-    luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
-    luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
-    luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
-    luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
+    if read_sample_file:
+        ipdb.set_trace()
+        df = pd.read_csv('/Users/eckhartspalding/Documents/job_science/postdoc_eth/life/example_spectrum.txt', delim_whitespace=True, names=('wavel','flux'))
+        # units of df['flux'] are u.photon / (u.micron * u.s * u.m**2 * u.sr)
+        # so total units of test_photons below are sr * (above) = u.photon / (u.micron * u.s * u.m**2)
+        test_photons = np.pi*u.sr * df['flux'].values * u.photon / (u.micron * u.s * u.m**2 * u.sr)
+        
+        # resample the spectrum onto the wavelength grid we gave it above
+        #test_photons = test_photons.to(1 / u.micron / u.s)
+        # Create interpolation function
+        interp_func = interp1d(
+            df['wavel'].values, 
+            test_photons, 
+            kind='linear', 
+            bounds_error=False, 
+            fill_value=0.0
+        )
+        # Interpolate to new wavelength grid
+        new_flux = interp_func(wavelength_um)
+        test_photons = new_flux * u.photon / (u.micron * u.s * u.m**2)
+
+
+        # convert photons to energy by multiplying by hc/lambda
+        test_energy = test_photons * (const_h * const_c / wavelength_um) * (1/u.photon) # last bit is to remove the photon units
+        # convert energy to W/micron by dividing by 4piR^2
+        luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
+        luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
+        luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
+        luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
+
+        #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
+        #wavelength_um = df['wavel'].values * u.um
+        #luminosity_photons_planet = df['luminosity_photons'].values * 1 / u.micron / u.s
+    else:
+        # bb_planet_lambda() units are W / (micron sr m2)
+        # so total units of flux_planet are sr * (above) = W / (micron m2)
+        flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
+        # planet luminosity
+        luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
+        luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
+        luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
+        luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
     
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff

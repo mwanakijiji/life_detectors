@@ -13,6 +13,7 @@ from pathlib import Path
 import warnings
 import logging
 import ipdb
+from scipy.interpolate import interp1d
 
 
 
@@ -71,7 +72,6 @@ class SpectralData:
         Returns:
             New SpectralData object with interpolated flux
         """
-        from scipy.interpolate import interp1d
         
         # Create interpolation function
         interp_func = interp1d(
