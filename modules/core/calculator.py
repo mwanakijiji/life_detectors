@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 import configparser
 import ipdb
+import matplotlib.pyplot as plt
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentalSources
@@ -44,23 +45,22 @@ class NoiseCalculator:
     Puts astrophysical and instrumental sources together.
     """
     
-    def __init__(self, config: configparser.ConfigParser, incident_astro: Dict, incident_instrum: Dict):
+    def __init__(self, config: Dict, noise_origin: InstrumentalSources):
         """
         Initialize the noise calculator.
         
         Args:
             config: Configuration dictionary containing all parameters
-            incident_astro: astrophysical flux incident on the Earth
-            incident_instrum: instrumental flux on the detector
+            noise_origin: the object including the various noise contributions
             
         Raises:
             ValueError: If configuration is invalid
         """
 
         self.config = config
-        self.incident_astro = incident_astro
-        self.incident_instrum = incident_instrum
-        ipdb.set_trace()
+
+        # the object that is the 'origin' of the various noise contributions for the calculations to follow
+        self.noise_origin = noise_origin
 
         #self.unit_converter = UnitConverter()
         #self.conversion_engine = ConversionEngine(self.unit_converter)
@@ -75,39 +75,96 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
-    def s2n_e(self, incident_astro_exoplanet: dict, incident_astro_star: dict):
+    def s2n_e(self):
         '''
         Find S/N using photoelectrons
 
         Ref.: s_to_n_logic_life_detectors.pdf
         '''
 
-        ## ## CONTINUE HERE
+        ## everything in units of photoelectrons
 
-        # science (planet) signal
-        Np_prime = incident_astro_exoplanet # e- total (note this is not a function of time; and _prime denotes not measured directly)
+        wavel_abcissa = self.noise_origin.prop_dict['wavel']
+
+        # integration time for 1 frame
+        t_int = float(self.config["observation"]["integration_time"])
+        n_int = float(self.config["observation"]["n_int"])
+
+        # total science (planet) signal (note this is not a function of time)
+        # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
+        del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec']
+        #Np_prime = t_int * self.noise_origin.prop_dict['exoplanet_flux_e_sec']
         # stellar signal
-        Ns_prime = incident_astro_star # e- total
+        del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec']
+
+        #Ns_prime = t_int * self.noise_origin.prop_dict['star_flux_e_sec']
 
         # quantum efficiency
         eta = float(self.config["detector"]["quantum_efficiency"])
         # null
         nulling_factor = float(self.config["nulling"]["nulling_factor"])
-        # number of pixels
+        # number of pixels for each wavel element
         n_pix = float(self.config["detector"]["n_pix"])
+        #n_pix_array = n_pix * np.ones(len(wavel_abcissa))
         # read noise
-        R = float(self.config["detector"]["read_noise"])
-        # dark current
-        D = float(self.config["detector"]["dark_current"])
-        # integration time
-        t_int = float(self.config["observation"]["integration_time"])
+        R = self.noise_origin.instrum_dict['read_noise_e_rms']
+        # dark current in one pixel
+        ipdb.set_trace()
+        D_rate = self.noise_origin.instrum_dict['dark_current_e_pix-1_sec-1']
+        D_tot = self.noise_origin.instrum_dict['dark_current_total_e']
 
-        s2n = eta * Np_prime / np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix * (R**2 + D * t_int) )
+        # Reshape arrays for broadcasting
+        #Np_prime_reshaped = np.tile(Np_prime, (len(D_tot), 1)) # shape (10, 30)
+        del_Np_prime_del_t_reshaped = np.tile(del_Np_prime_del_t, (len(D_tot), 1)) # shape (10, 30)
 
-        # get the gain
-        #gain = float(self.config["detector"]["gain"])
+        #Ns_prime_reshaped = np.tile(Ns_prime, (len(D_tot), 1)) # shape (10, 30)
+        del_Ns_prime_del_t_reshaped = np.tile(del_Ns_prime_del_t, (len(D_tot), 1)) # shape (10, 30)
+        
+        n_pix_array_reshaped = np.tile(n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
+        # Tile D_tot to shape (len(D_tot), len(Np_prime_reshaped))
+        ipdb.set_trace()
 
-        # get the integration time
+        D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (10, 30)
+        #D_rate_reshaped[-1,:] = 10000 # for debugging (helps orient plot)
+        #D_tot_reshaped = np.tile(D_tot, (len(del_Ns_prime_del_t_reshaped), 1) ).T # shape (10, 30)
+        #D_tot_reshaped[-1,:] = t_int * 10000 # for debugging (helps orient plot)
+
+        ipdb.set_trace()
+
+        # Now the calculation will broadcast to (30, 10)
+        s2n = np.sqrt(n_int) * np.divide(eta * t_int * del_Np_prime_del_t_reshaped, 
+                        np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
+                            n_pix_array_reshaped * (R**2 + t_int * D_rate_reshaped)))
+
+        plt.close()
+
+        plt.imshow(s2n,aspect='auto', origin='lower')
+        plt.colorbar()
+
+        # Set y-axis ticks to match D_rate_reshaped[:,0]
+        plt.yticks(range(len(D_rate_reshaped[:,0])), D_rate_reshaped[:,0])
+
+        plt.ylabel('Dark current (e- sec-1 pix-1)')
+        plt.xlabel('Wavelength (um)')
+        plt.title('S/N, int time = ' + str(int(t_int)) + ' sec, n_int = ' + str(int(n_int)))
+        plt.show()
+
+        
+        
+        for plot_num in range(0,len(s2n[0,:])):
+            plt.plot(wavel_abcissa,s2n[:,plot_num],label=str(int(plot_num)))
+        #plt.yscale('log')
+        plt.ylabel('S/N')
+        plt.xlabel('Wavelength (um)')
+        plt.legend()
+        plt.show()
+        '''
+
+        s2n = np.divide(eta * Np_prime, 
+                        np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix_array * (R**2 + D_tot) )
+                        )
+        '''
+        ipdb.set_trace()
 
         return s2n
 

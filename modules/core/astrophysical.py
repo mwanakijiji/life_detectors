@@ -92,7 +92,7 @@ class AstrophysicalSources:
         distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
-        nulling_factor = self.config["target"]["nulling_factor"]
+        nulling_factor = self.config["nulling"]["nulling_factor"]
         if null and (source_name in ["star"]):  # Apply nulling to star only
             flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor)
             logger.info(f"Applying nulling factor of {nulling_factor} to {source_name}")

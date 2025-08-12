@@ -30,9 +30,11 @@ class InstrumentalSources:
 
         # initialize dict to carry propagated terms (i.e., intensity levels in various units on the detector, after instrument effects)
         self.prop_dict = {}
+        # assume wavelengths are the same for the star and planet
+        self.prop_dict['wavel'] = self.star_flux['wavel']
 
 
-    def calculate_instrumental_adu(self):
+    def calculate_instrinsic_instrumental_noise(self):
 
         gain = float(self.config["detector"]["gain"])  # e-/ADU
 
@@ -44,20 +46,19 @@ class InstrumentalSources:
 
         # dark current rate 
         # e/pix/sec
-        dark_current_rate = float(self.config["detector"]["dark_current"])
+        dark_current_str = self.config["detector"]["dark_current"]
+        dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') # in case it's an array
 
         # total dark current in e-, based on integration time
         # e/pix/sec -> e/pix
         integration_time = float(self.config["observation"]["integration_time"])  # seconds
-        dark_current_electrons = dark_current_rate * integration_time
+        self.instrum_dict['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
+        self.instrum_dict['dark_current_total_e'] = dark_current_rate_e_pix_sec * integration_time
 
         # total dark current in ADU
         # e/pix -> ADU/pix
-        dark_current_adu = dark_current_electrons / gain
+        dark_current_adu = dark_current_rate_e_pix_sec / gain
         self.instrum_dict['dark_current_total_adu'] = dark_current_adu
-
-        #incident_dict['dark_current_electrons_sec'] = dark_current_rate * integration_time
-        #incident_dict['dark_current_adu_sec'] = self.unit_converter.electrons_to_adu(incident_dict['dark_current_electrons_sec'], gain)
 
         return 
 
@@ -66,21 +67,24 @@ class InstrumentalSources:
         # pass through the telescope aperture
         # photons/sec/m^2 -> photons/sec
 
-        self.prop_dict['astro_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
+        self.prop_dict['star_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
+        self.prop_dict['exoplanet_flux_ph_sec'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.exoplanet_flux['astro_flux_ph_sec_m2_um'] )
 
         return 
 
 
     def photons_to_e(self):
 
-        self.prop_dict['astro_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['astro_flux_ph_sec'])
+        self.prop_dict['star_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['star_flux_ph_sec'])
+        self.prop_dict['exoplanet_flux_e_sec'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['exoplanet_flux_ph_sec'])
 
         return
 
 
     def e_to_adu(self):
 
-        self.prop_dict['astro_flux_adu_sec'] = np.divide(self.prop_dict['astro_flux_e_sec'], float(self.config["detector"]["gain"]))
+        self.prop_dict['star_flux_adu_sec'] = np.divide(self.prop_dict['star_flux_e_sec'], float(self.config["detector"]["gain"]))
+        self.prop_dict['exoplanet_flux_adu_sec'] = np.divide(self.prop_dict['exoplanet_flux_e_sec'], float(self.config["detector"]["gain"]))
 
         return
 

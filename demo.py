@@ -41,7 +41,7 @@ def main(config_abs_file_name: str):
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
 
-    # pass the astrophysical flux through the telescope aperture to the detector plane
+    # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
     instrumental_effects = instrumental.InstrumentalSources(config, 
                                                             unit_converter=UnitConverter(), 
@@ -55,29 +55,19 @@ def main(config_abs_file_name: str):
     # convert electrons to ADU
     _e_2_adu = instrumental_effects.e_to_adu()
 
-    
-    
-    incident_astro_star['astro_flux_e_sec'] = incident_astro_star['astro_flux_ph_sec'] * float(config["detector"]["quantum_efficiency"])
-    
-    incident_astro_star['astro_flux_adu_sec'] = incident_astro_star['astro_flux_e_sec'] / float(config["detector"]["gain"])
-
-    ## ## CONVERT TO ELECTRONS
-
-    # instrumental noise contributions in ADU
-    logging.info("Calculating the instrumental noise sources...")
-    instrumental_sources = instrumental.InstrumentalSources(config, unit_converter=UnitConverter())
-    incident_instrum = instrumental_sources.calculate_instrumental_adu()
-    
-    # pass the astrophysical flux through the telescope
-    ## ## CONTINUE HERE
+    # intrinsic instrumental noise contributions in ADU
+    logging.info("Calculating the instrumental-only noise sources...")
+    _instrinsic_instrum = instrumental_effects.calculate_instrinsic_instrumental_noise()
 
     # find the noise
     logging.info("Calculating noise...")
-    noise_calc = calculator.NoiseCalculator(config, incident_astro=incident_astro_exoplanet, incident_instrum=incident_instrum)
+    ipdb.set_trace()
+    noise_calc = calculator.NoiseCalculator(config, 
+                                            noise_origin = instrumental_effects)
+
     # pass astro signal through the nuller and find contribution to readout in ADU
     ipdb.set_trace()
-    s2n = noise_calc.s2n_e(incident_astro_exoplanet = incident_astro_exoplanet, 
-                           incident_astro_star = incident_astro_star)
+    s2n = noise_calc.s2n_e()
     #total_astro = noise_calc.total_astro_detector_adu()
 
     ipdb.set_trace()
