@@ -85,6 +85,10 @@ class NoiseCalculator:
         ## everything in units of photoelectrons
 
         wavel_abcissa = self.noise_origin.prop_dict['wavel']
+        # map wavelengths to pixels
+        disp = float(self.config["detector"]["spec_dispersion"]) # dispersion (um/pix)
+        n_pix = 1 / disp # pixels per micron(pix/um)
+        pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
         # integration time for 1 frame
         t_int = float(self.config["observation"]["integration_time"])
@@ -103,8 +107,8 @@ class NoiseCalculator:
         eta = float(self.config["detector"]["quantum_efficiency"])
         # null
         nulling_factor = float(self.config["nulling"]["nulling_factor"])
-        # number of pixels for each wavel element
-        n_pix = float(self.config["detector"]["n_pix"])
+
+        ipdb.set_trace()
         #n_pix_array = n_pix * np.ones(len(wavel_abcissa))
         # read noise
         R = self.noise_origin.instrum_dict['read_noise_e_rms']
@@ -115,12 +119,12 @@ class NoiseCalculator:
 
         # Reshape arrays for broadcasting
         #Np_prime_reshaped = np.tile(Np_prime, (len(D_tot), 1)) # shape (10, 30)
-        del_Np_prime_del_t_reshaped = np.tile(del_Np_prime_del_t, (len(D_tot), 1)) # shape (10, 30)
+        del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (10, 30)
 
         #Ns_prime_reshaped = np.tile(Ns_prime, (len(D_tot), 1)) # shape (10, 30)
-        del_Ns_prime_del_t_reshaped = np.tile(del_Ns_prime_del_t, (len(D_tot), 1)) # shape (10, 30)
+        del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (10, 30)
         
-        n_pix_array_reshaped = np.tile(n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
+        n_pix_array_reshaped = np.tile( n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
         # Tile D_tot to shape (len(D_tot), len(Np_prime_reshaped))
         ipdb.set_trace()
 
@@ -136,6 +140,7 @@ class NoiseCalculator:
                         np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
                             n_pix_array_reshaped * (R**2 + t_int * D_rate_reshaped)))
 
+        ipdb.set_trace()
         plt.close()
 
         plt.imshow(s2n,aspect='auto', origin='lower')
@@ -144,9 +149,51 @@ class NoiseCalculator:
         # Set y-axis ticks to match D_rate_reshaped[:,0]
         plt.yticks(range(len(D_rate_reshaped[:,0])), D_rate_reshaped[:,0])
 
+        # Set bottom x-axis: wavelength
+        # Set x-ticks at intervals of every three values along the x axis, and rotate the labels 30 degrees
+        interval = 3
+        # Set x-ticks at intervals of every two values along the x axis
+        x_tick_indices = np.arange(0, len(wavel_abcissa), interval)
+
+        ax_bottom = plt.gca()
+        ax_bottom.set_xticks(x_tick_indices)
+        ax_bottom.set_xticklabels(np.round(wavel_abcissa[x_tick_indices], 2), rotation=30)
+
+        ax_bottom.set_xlabel('Wavelength (um)')
+
+        # Add contour lines for S/N = 1 (dashed) and S/N = 5 (solid)
+        X, Y = np.meshgrid(np.arange(s2n.shape[1]), np.arange(s2n.shape[0]))
+        contour = ax_bottom.contour(
+            X, Y, s2n, 
+            levels=[1, 5], 
+            colors=['white', 'white'],  
+            linewidths=2, 
+            linestyles=['dashed', 'solid']
+        )
+        ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
+
         plt.ylabel('Dark current (e- sec-1 pix-1)')
-        plt.xlabel('Wavelength (um)')
         plt.title('S/N, int time = ' + str(int(t_int)) + ' sec, n_int = ' + str(int(n_int)))
+
+        ipdb.set_trace()
+        #ax_top = ax_bottom.twiny()
+        # top x-axis: pixels
+        #x2_tick_indices = np.arange(0, len(pix_abcissa), interval)
+
+        #x2_tick_indices = ax_bottom.get_xticks()
+        #ax_top.set_xticks(x2_tick_indices)
+
+        #top_x_tick_indices = np.arange(0, len(pix_abcissa), 3)
+        #ax_top.set_xticks(x2_tick_indices)
+        # Set the top x-axis tick labels to show both the pixel value and the corresponding pix_abcissa value in red
+        #pix_labels = [f"{int(idx)}\n" + r"$\bf{{{}}}$".format(np.round(pix_abcissa[int(idx)], 1)) for idx in x2_tick_indices]
+        #ax_top.set_xticklabels(pix_labels, rotation=30, color='red')
+        #ax_top.set_xlabel('Pixel', color='red')
+
+        
+        
+        plt.tight_layout()
+        
         plt.show()
 
         
