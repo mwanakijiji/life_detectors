@@ -40,6 +40,7 @@ def main(config_abs_file_name: str):
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
+    #incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
 
     # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")

@@ -62,32 +62,10 @@ def load_config(config_file):
     config.read(config_file)
     return config
 
-
-def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
-    """
-    Create sample spectral data files for testing.
-    
-    Args:
-        config: ConfigParser object
-        overwrite: Whether to overwrite existing files
-        plot: Whether to plot the data
-        read_sample_file: Whether to read the sample file that LIFEsim uses
-
-    Returns:
-        None (writes to file)
-    """
-
-    output_dir = Path(config['dirs']['data_dir']).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray) -> np.ndarray:
 
     # stellar radius
     rad_star = 69.6340 * 1e9 * u.cm
-    # planet radius
-    rad_planet = 0.637 * 1e9 * u.cm
-    
-    # Create wavelength grid
-    wavelength = np.logspace(0, 1.4, 100)  # 1-20 microns
-    wavelength_um = wavelength * u.um
 
     # fluxes
     # stellar BB spectrum, BB_nu
@@ -107,6 +85,12 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     luminosity_photons_star = luminosity_energy_star / (const_h * const_c / wavelength_um)
     luminosity_photons_star = luminosity_photons_star.to(1 / u.micron / u.s) # consistent units
 
+    return luminosity_photons_star, flux_star
+
+def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, read_sample_file: bool = False) -> np.ndarray:
+
+    # planet radius
+    rad_planet = 0.637 * 1e9 * u.cm
 
     # planet BB spectrum
     temp_bb_planet = float(config['target']['pl_temp'])
@@ -160,7 +144,36 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
         luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
         luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
+
+    return luminosity_photons_planet, flux_planet
+
+
+def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
+    """
+    Create sample spectral data files for testing.
     
+    Args:
+        config: ConfigParser object
+        overwrite: Whether to overwrite existing files
+        plot: Whether to plot the data
+        read_sample_file: Whether to read the sample file that LIFEsim uses
+
+    Returns:
+        None (writes to file)
+    """
+
+    output_dir = Path(config['dirs']['data_dir']).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create wavelength grid
+    wavelength = np.logspace(0, 1.4, 100)  # 1-20 microns
+    wavelength_um = wavelength * u.um
+
+
+    luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um)
+    luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False)
+
+
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
     sample_data = {
