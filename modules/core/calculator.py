@@ -227,14 +227,13 @@ class NoiseCalculator:
 
         return s2n
 
-
+    '''
     def total_astro_detector_adu(self):
-        '''
-        Astrophysical flux after passing through the telescope, and integrated over wavelength
+        
+        # Astrophysical flux after passing through the telescope, and integrated over wavelength
 
-        Returns:
-            incident_dict: dictionary which now also contains the astrophysical flux in ADU in a readout
-        '''
+        # Returns:
+        #     incident_dict: dictionary which now also contains the astrophysical flux in ADU in a readout
 
         # integrate astrophysical flux over wavelength to get total flux
         # photons/sec/m^2/micron -> photons/sec/m^2
@@ -260,6 +259,7 @@ class NoiseCalculator:
         self.incident_astro['astro_adu_total'] = self.incident_astro['astro_adu_sec'] * integration_time
 
         return self.incident_astro
+    '''
     
 
     '''

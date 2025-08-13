@@ -19,11 +19,11 @@ from modules.data.units import UnitConverter
 
 def main(config_abs_file_name: str):
     """Run the demonstration."""
+
+    # set up logging
+    log_file = loader.setup_logging()
     logging.info("Life Detectors - Infrared Detector Noise Calculator")
     logging.info("=" * 60)
-
-    # Initialize logging, make directories
-    log_file = loader.setup_logging()
 
     # load config file
     logging.info("Loading config file...")
@@ -32,6 +32,7 @@ def main(config_abs_file_name: str):
 
     # Generate sample spectral data
     logging.info("Creating sample spectral data...")
+    ipdb.set_trace()
     create_sample_data(config, overwrite=True, plot=True, read_sample_file=False)
 
     # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)

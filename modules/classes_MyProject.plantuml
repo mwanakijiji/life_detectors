@@ -4,7 +4,7 @@ class "AstrophysicalSources" as modules.core.astrophysical.AstrophysicalSources 
   config : ConfigParser
   spectra : dict
   unit_converter
-  calculate_incident_flux(source_name: str, plot: bool) -> np.ndarray
+  calculate_incident_flux(source_name: str, null: bool, plot: bool) -> np.ndarray
 }
 class "ConfigValidator" as modules.config.validator.ConfigValidator {
   required_detector_fields : list
@@ -24,33 +24,24 @@ class "ConversionEngine" as modules.core.conversions.ConversionEngine {
   convert_electrons_to_adu(electrons_per_pixel: np.ndarray, gain: float) -> np.ndarray
   convert_flux_to_electrons(flux_photons_per_sec_m2_um: np.ndarray, collecting_area: float, throughput: float, pixel_area_sr: float, integration_time: float) -> np.ndarray
 }
-class "InstrumentalNoise" as modules.core.instrumental.InstrumentalNoise {
-  config : Dict
-  unit_converter
-  calculate_dark_current_adu(integration_time: float) -> float
-  calculate_dark_current_electrons(integration_time: float) -> float
-  calculate_read_noise_adu() -> float
-  calculate_read_noise_electrons() -> float
-  calculate_total_instrumental_noise_adu(integration_time: float) -> float
-  calculate_total_instrumental_noise_electrons(integration_time: float) -> float
-  get_noise_breakdown_adu(integration_time: float) -> Dict[str, float]
-  get_noise_breakdown_electrons(integration_time: float) -> Dict[str, float]
-}
 class "InstrumentalSources" as modules.core.instrumental.InstrumentalSources {
   add_astrophysical_flux : bool
   config : Dict
+  exoplanet_flux : dict
+  instrum_dict : dict
+  prop_dict : dict
+  star_flux : dict
   unit_converter
-  calculate_instrumental_adu()
+  calculate_instrinsic_instrumental_noise()
+  e_to_adu()
+  pass_through_aperture()
+  photons_to_e()
 }
 class "NoiseCalculator" as modules.core.calculator.NoiseCalculator {
-  config : ConfigParser
-  incident_astro : Dict
-  incident_instrum : Dict
-  calculate_optimal_parameters(target_snr: float) -> Dict[str, Any]
+  config : Dict
+  noise_origin
   calculate_snr(contrib_astro: Dict, contrib_instrum: Dict) -> Dict[str, Any]
-  calculate_snr_with_incident_flux(integration_time: Optional[float]) -> Dict[str, Any]
-  get_summary() -> Dict[str, Any]
-  total_astro_detector_adu()
+  s2n_e()
 }
 class "SpectralData" as modules.data.spectra.SpectralData {
   flux : ndarray
@@ -69,8 +60,8 @@ class "UnitConverter" as modules.data.units.UnitConverter {
   convert_wavelength(value: float, from_unit: str, to_unit: str) -> float
   electrons_to_adu(electrons: float, gain: float) -> float
 }
+modules.core.instrumental.InstrumentalSources --o modules.core.calculator.NoiseCalculator : noise_origin
 modules.data.units.UnitConverter --o modules.core.astrophysical.AstrophysicalSources : unit_converter
 modules.data.units.UnitConverter --o modules.core.conversions.ConversionEngine : unit_converter
-modules.data.units.UnitConverter --o modules.core.instrumental.InstrumentalNoise : unit_converter
 modules.data.units.UnitConverter --o modules.core.instrumental.InstrumentalSources : unit_converter
 @enduml

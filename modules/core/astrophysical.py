@@ -117,11 +117,12 @@ class AstrophysicalSources:
         
         return incident_dict
     
-
+    '''
     def convert_adu(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:
         # Converts photons to e and ADU
 
         pass
+    '''
 
     '''
     def calculate_total_astrophysical_flux(self, wavelength: np.ndarray) -> np.ndarray:

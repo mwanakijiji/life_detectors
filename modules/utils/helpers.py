@@ -77,6 +77,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         None (writes to file)
     """
 
+    ipdb.set_trace()
     output_dir = Path(config['dirs']['data_dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,7 +110,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
 
     # planet BB spectrum
-    bb_planet_lambda = BlackBody(temperature=200*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    temp_bb_planet = float(config['target']['pl_temp'])
+    bb_planet_lambda = BlackBody(temperature=temp_bb_planet*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # planet surface flux
     if read_sample_file:
         ipdb.set_trace()
@@ -130,16 +132,24 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         )
         # Interpolate to new wavelength grid
         new_flux = interp_func(wavelength_um)
-        test_photons = new_flux * u.photon / (u.micron * u.s * u.m**2)
+        emission_photons = new_flux * u.photon / (u.micron * u.s * u.m**2)
 
+        # current units are u.ph / (u.micron * u.s * u.m**2)
+        # want units of u.ph / (u.micron * u.s)
+
+        luminosity_photons_planet = 4 * np.pi * (rad_planet**2) * emission_photons
+        luminosity_photons_planet = luminosity_photons_planet.to(u.ph / (u.micron * u.s)) * (1/u.ph)  # last bit is to remove the photon units
+
+        ipdb.set_trace()
 
         # convert photons to energy by multiplying by hc/lambda
-        test_energy = test_photons * (const_h * const_c / wavelength_um) * (1/u.photon) # last bit is to remove the photon units
+        #test_energy = test_photons * (const_h * const_c / wavelength_um) * (1/u.photon) # last bit is to remove the photon units
         # convert energy to W/micron by dividing by 4piR^2
-        luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
-        luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
-        luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
-        luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
+        #luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
+        #ipdb.set_trace()
+        #luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
+        #luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
+        #luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
 
         #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
         #wavelength_um = df['wavel'].values * u.um
@@ -150,12 +160,14 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
         # planet luminosity
         luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
+        ipdb.set_trace()
         luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
         luminosity_photons_planet = luminosity_energy_planet / (const_h * const_c / wavelength_um)
         luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
     
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
+    ipdb.set_trace()
     sample_data = {
         "star_spectrum.txt": {
             "description": "Blackbody spectrum for star",
@@ -209,16 +221,30 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         logger.info(f"Created sample data: {filepath}")
 
         if plot:
-            plt.plot(data['wavelength_um'], data['flux'])
+            plt.plot(data['wavelength_um'], data['luminosity_photons'])
             plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
             plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
             plt.title(data['description'])
             file_name_plot = output_dir / data['plot_name']
             plt.tight_layout()
-            
             plt.savefig(file_name_plot)
             plt.close()
             logger.info(f"Wrote plot {file_name_plot}")
+            ipdb.set_trace()
+
+            # for star-planet overlapped plots
+            plt.plot(data['wavelength_um'], data['luminosity_photons'], label=data['description'])
+            plt.yscale('log')
+            plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
+            plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
+
+    if plot:
+        # overlapped plot
+        file_name_plot = output_dir / 'overlapped_spectra_plot.png'
+        plt.tight_layout()
+        
+        plt.savefig(file_name_plot)
+        plt.close()
 
 
 '''
