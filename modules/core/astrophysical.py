@@ -95,7 +95,7 @@ class AstrophysicalSources:
         nulling_factor = self.config["nulling"]["nulling_factor"]
         if null and (source_name in ["star"]):  # Apply nulling to star only
             flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor)
-            logger.info(f"Applying nulling factor of {nulling_factor} to {source_name}")
+            logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
             flux = interpolated_spectrum.flux * distance_correction
             logger.info(f"No nulling factor applied to {source_name}.")

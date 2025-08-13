@@ -80,27 +80,22 @@ class ConfigValidator:
         # Validate telescope section
         if "telescope" in config:
             self._validate_telescope(config["telescope"])
-        ipdb.set_trace()
         
         # Validate target section
         if "target" in config:
             self._validate_target(config["target"])
-        ipdb.set_trace()
         
         # Validate detector section
         if "detector" in config:
             self._validate_detector(config["detector"])
-        ipdb.set_trace()
         
         # Validate wavelength range
         if "wavelength_range" in config:
             self._validate_wavelength_range(config["wavelength_range"])
-        ipdb.set_trace()
         
         # Validate astrophysical sources
         if "astrophysical_sources" in config:
             self._validate_astrophysical_sources(config["astrophysical_sources"])
-        ipdb.set_trace()
         
         return
     

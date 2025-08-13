@@ -32,12 +32,12 @@ def main(config_abs_file_name: str):
 
     # Generate sample spectral data
     logging.info("Creating sample spectral data...")
-    ipdb.set_trace()
+    
     create_sample_data(config, overwrite=True, plot=True, read_sample_file=False)
 
     # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)
     logging.info("Calculating astrophysical flux...")
-    astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
+    astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
 
@@ -61,25 +61,14 @@ def main(config_abs_file_name: str):
 
     # find the noise
     logging.info("Calculating noise...")
-    ipdb.set_trace()
     noise_calc = calculator.NoiseCalculator(config, 
                                             noise_origin = instrumental_effects)
 
     # pass astro signal through the nuller and find contribution to readout in ADU
-    ipdb.set_trace()
     s2n = noise_calc.s2n_e()
-    #total_astro = noise_calc.total_astro_detector_adu()
-
-    ipdb.set_trace()
-    #add_fluxes = noise_calc.add_fluxes() # add astrophysical and instrumental fluxes
-    ipdb.set_trace()
-    snr = noise_calc.calculate_snr(contrib_astro = total_astro, contrib_instrum = incident_instrum) # find S/N
+    ## ## compare the above later with calculate_snr() below
+    #snr = noise_calc.calculate_snr(contrib_astro = total_astro, contrib_instrum = incident_instrum) # find S/N
     
-    
-    ipdb.set_trace()
-
-
-
     '''
     
     # Print summary

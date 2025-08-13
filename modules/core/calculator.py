@@ -93,7 +93,6 @@ class NoiseCalculator:
         # The bin edges are at wavel_abcissa - del_lambda_array/2 and wavel_abcissa + del_lambda_array/2
         wavel_bin_edges_lower = wavel_abcissa - del_lambda_array/2
         wavel_bin_edges_upper = wavel_abcissa + del_lambda_array/2
-        ipdb.set_trace()
         #n_pix = 1 / disp # pixels per micron(pix/um)
         #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
@@ -104,57 +103,36 @@ class NoiseCalculator:
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
         del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
-        #Np_prime = t_int * self.noise_origin.prop_dict['exoplanet_flux_e_sec']
-        ipdb.set_trace()
         # stellar signal
         del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 
-
-        #Ns_prime = t_int * self.noise_origin.prop_dict['star_flux_e_sec_um']
 
         # quantum efficiency
         eta = float(self.config["detector"]["quantum_efficiency"])
         # null
         nulling_factor = float(self.config["nulling"]["nulling_factor"])
 
-        ipdb.set_trace()
-        #n_pix_array = n_pix * np.ones(len(wavel_abcissa))
         # read noise
         R = self.noise_origin.instrum_dict['read_noise_e_rms']
         # dark current in one pixel
-        ipdb.set_trace()
         D_rate = self.noise_origin.instrum_dict['dark_current_e_pix-1_sec-1']
         D_tot = self.noise_origin.instrum_dict['dark_current_total_e']
 
         # Reshape arrays for broadcasting
-        #Np_prime_reshaped = np.tile(Np_prime, (len(D_tot), 1)) # shape (10, 30)
-        del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (10, 30)
-
-        #Ns_prime_reshaped = np.tile(Ns_prime, (len(D_tot), 1)) # shape (10, 30)
-        del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (10, 30)
+        del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+        del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
         
-        #n_pix_array_reshaped = np.tile( n_pix, (len(D_tot), len(wavel_abcissa)) ) # shape (10, 30)
-        # Tile D_tot to shape (len(D_tot), len(Np_prime_reshaped))
-
         # the number of pixels for each wavelength bin is 1-to-1 for now ## ## TODO: change later
-        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) # shape (10, 30)
+        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
         
-        ipdb.set_trace()
+        D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (N_dark_current, N_wavel)
 
-        D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (10, 30)
-        #D_rate_reshaped[-1,:] = 10000 # for debugging (helps orient plot)
-        #D_tot_reshaped = np.tile(D_tot, (len(del_Ns_prime_del_t_reshaped), 1) ).T # shape (10, 30)
-        #D_tot_reshaped[-1,:] = t_int * 10000 # for debugging (helps orient plot)
-
-        ipdb.set_trace()
-
-        # Now the calculation will broadcast to (30, 10)
+        # Now the calculation will broadcast to (N_dark_current, N_wavel)
         s2n = np.sqrt(n_int) * np.divide(eta * t_int * del_Np_prime_del_t_reshaped, 
                         np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
                             n_pix_array_reshaped * (R**2 + t_int * D_rate_reshaped)))
 
-        ipdb.set_trace()
+        # 2D plot of S/N vs wavelength and dark current
         plt.close()
-
         plt.imshow(s2n,aspect='auto', origin='lower')
         plt.colorbar()
 
@@ -170,7 +148,6 @@ class NoiseCalculator:
         ax_bottom = plt.gca()
         ax_bottom.set_xticks(x_tick_indices)
         ax_bottom.set_xticklabels(np.round(wavel_abcissa[x_tick_indices], 2), rotation=30)
-
         ax_bottom.set_xlabel('Wavelength (um)')
 
         # Add contour lines for S/N = 1 (dashed) and S/N = 5 (solid)
@@ -183,47 +160,30 @@ class NoiseCalculator:
             linestyles=['dashed', 'solid']
         )
         ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
-
         plt.ylabel('Dark current (e- sec-1 pix-1)')
         plt.title('S/N, int time = ' + str(int(t_int)) + ' sec, n_int = ' + str(int(n_int)))
-
-        ipdb.set_trace()
-        #ax_top = ax_bottom.twiny()
-        # top x-axis: pixels
-        #x2_tick_indices = np.arange(0, len(pix_abcissa), interval)
-
-        #x2_tick_indices = ax_bottom.get_xticks()
-        #ax_top.set_xticks(x2_tick_indices)
-
-        #top_x_tick_indices = np.arange(0, len(pix_abcissa), 3)
-        #ax_top.set_xticks(x2_tick_indices)
-        # Set the top x-axis tick labels to show both the pixel value and the corresponding pix_abcissa value in red
-        #pix_labels = [f"{int(idx)}\n" + r"$\bf{{{}}}$".format(np.round(pix_abcissa[int(idx)], 1)) for idx in x2_tick_indices]
-        #ax_top.set_xticklabels(pix_labels, rotation=30, color='red')
-        #ax_top.set_xlabel('Pixel', color='red')
-
-        
-        
         plt.tight_layout()
-        
-        plt.show()
+        file_name_plot = "/Users/eckhartspalding/Downloads/" + f"2d_s2n_vs_wavelength_and_dark_current.png"
+        plt.savefig(file_name_plot)
+        logger.info(f"Wrote plot {file_name_plot}")
 
-        
-        
-        for plot_num in range(0,len(s2n[0,:])):
-            plt.plot(wavel_abcissa,s2n[:,plot_num],label=str(int(plot_num)))
+        plt.close()
+        for plot_num in range(0,len(s2n[:,0])):
+            plt.plot(wavel_abcissa, s2n[plot_num,:], label=str(int(plot_num)))
         #plt.yscale('log')
-        plt.ylabel('S/N')
+        plt.ylabel('S/N per wavelength bin')
         plt.xlabel('Wavelength (um)')
+        plt.title('S/N for different dark currents')
         plt.legend()
-        plt.show()
+        file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
+        plt.savefig(file_name_plot)
+        logger.info(f"Wrote plot {file_name_plot}")
         '''
 
         s2n = np.divide(eta * Np_prime, 
                         np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix_array * (R**2 + D_tot) )
                         )
         '''
-        ipdb.set_trace()
 
         return s2n
 
