@@ -62,6 +62,7 @@ def load_config(config_file):
     config.read(config_file)
     return config
 
+
 def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray) -> np.ndarray:
 
     # stellar radius
@@ -86,6 +87,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     luminosity_photons_star = luminosity_photons_star.to(1 / u.micron / u.s) # consistent units
 
     return luminosity_photons_star, flux_star
+
 
 def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, read_sample_file: bool = False) -> np.ndarray:
 
@@ -148,6 +150,14 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
     return luminosity_photons_planet, flux_planet
 
 
+def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray) -> np.ndarray:
+    # exozodiacal dust spectrum
+    #flux_exozodi = 1e8 * wavelength_um ** (-1.5)
+    #luminosity_photons_exozodi = flux_exozodi * (const_h * const_c / wavelength_um)
+    #return luminosity_photons_exozodi, flux_exozodi
+    return
+
+
 def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
     """
     Create sample spectral data files for testing.
@@ -172,7 +182,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
     luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um)
     luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False)
-
+    luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um)
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
