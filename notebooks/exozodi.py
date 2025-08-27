@@ -52,25 +52,19 @@ def I_disk_lambda_r(r, r0, alpha, Ls, z, Sigma_m_0, wavel_array):
 # surface brightness as function of wavelength I(lambda): I_disk_lambda_r integrated over dA = r dr dtheta
 def I_disk_lambda(r_array, r0, alpha, Ls, z, Sigma_m_0, wavel_array):
     
-    # Integrate over r * I_disk_lambda_r() dr from r[0] to r[-1]
-    I_lambda = []
-    for wavel_this in np.array(wavel_array):
-        '''
-        integrand = np.array(
-                        [r * Sigma_m(r=r, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0) * BlackBody(temperature=T_temp(Ls=Ls, r=r),  
-                        scale=1.0*u.W/(u.m**2*u.micron*u.sr))(lam) for r in r_array]
-                        )
-        '''
-        ipdb.set_trace()
-        integrand = np.array( [r * I_disk_lambda_r(r, r0, alpha, Ls, z, Sigma_m_0, wavel_array) for r in r_array] )
-        # Integrate over r in r_array using the trapezoidal rule (logarithmic spacing)
-        ipdb.set_trace()
-
-    for t in range(len(wavel_array)):
-        I_wavel_this = 2 * np.pi * np.trapezoid(integrand[:,0], x=r_array)
-        I_lambda.append(I_wavel_this)
+    # Integrate over r * I_disk_lambda_r()
+    integrand = np.array( [r * I_disk_lambda_r(r, r0, alpha, Ls, z, Sigma_m_0, wavel_array) for r in r_array] )
+    
+    # integrate over r in r_array using the trapezoidal rule (logarithmic spacing), to leave dimensions (1, lambda)
+    I_lambda = 2 * np.pi * np.trapezoid(integrand, x=r_array, axis=0)
 
     return np.array(I_lambda)
+
+
+# scale emission for distance from Earth (effectively doing I_disk_lambda, except that integral is over d_Omega = r dr dtheta / D**2)
+def I_disk_lambda_Earth(I_disk_lambda_array, D):
+    return I_disk_lambda_array * (1 / 206265.)**2
+
 
 ########################################################
 
@@ -86,14 +80,18 @@ T_array = T_temp(Ls=Ls, r=r_array)
 wavel_array = np.arange(2., 20, 0.1) * u.um
 
 
-test = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavel_array)
+radiance_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavel_array)
+radiance_disk_lambda_Earth = I_disk_lambda_Earth(radiance_disk_lambda, D=10)
+
+# tack on units
+radiance_disk_lambda_Earth = radiance_disk_lambda_Earth * u.W / (u.m**2 * u.um)
+
+ipdb.set_trace()
 
 
-# scale emission for distance from Earth (effectively doing I_disk_lambda, except that integral is over d_Omega = r dr dtheta / D**2)
-def I_disk_lambda_Earth(I_disk_lambda_array, D):
-    return I_disk_lambda_array * (1 / 206265.)**2
 
 # plot temperature profile
+plt.clf()
 plt.plot(r_array, T_temp(Ls=Ls, r=r_array))
 plt.title(f'T(r)')
 plt.xlabel('r (AU)')
@@ -104,7 +102,8 @@ plt.show()
 
 
 # Sigma_m profile
-plt.plot(r, Sigma_m(r, r0, alpha, Ls, z, Sigma_m_0))
+plt.clf()
+plt.plot(r_array, Sigma_m(r_array, r0, alpha, Ls, z, Sigma_m_0))
 plt.title(r'$\Sigma_{m}$')
 plt.xlabel('r (AU)')
 plt.ylabel(r'$\Sigma_{m}$')
@@ -112,4 +111,12 @@ plt.axvline(x=0, color='red', linestyle='--')
 plt.axvline(x=1, color='k', linestyle='--')
 plt.show()
 
+
+# Sigma_m profile
+plt.clf()
+plt.plot(wavel_array, radiance_disk_lambda_Earth)
+plt.title('Exozodiacal flux on Earth')
+plt.xlabel('Wavelength ($\mu$m)')
+plt.ylabel('Flux on Earth (W m-2 um-1)')
+plt.show()
 
