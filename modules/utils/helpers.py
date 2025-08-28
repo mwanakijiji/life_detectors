@@ -176,6 +176,105 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
     return luminosity_photons_planet, flux_planet
 
 
+def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, lambda_rel_lon_los: float, beta_lat_los: float, plot: bool = False) -> np.ndarray:
+
+    # Inputs:
+    # wavel: wavelength in microns (leave this unitless for parts of this function to work)
+    # lambda_rel_lon_los (deg): relative longitude of the line-of-sight
+    # beta_lat_los (deg): latitude of the line-of-sight
+    # plot: whether to plot the result and FYI plot of the whole background
+
+    # set some parameters
+    tau_opt = 4e-8
+    T_eff = 265.*u.K
+    T_sol = 5778.*u.K
+    A_albedo = 0.22
+    rad_sol = 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
+
+    # Inputs:
+    # wavel: wavelength in microns (unitless for parts of this function to work)
+    # tau_opt: optical depth
+    # lambda_rel_lon_array: array of relative longitudes
+    # beta_lat_array: array of latitudes
+
+    ipdb.set_trace()
+    bb_1 = BlackBody(temperature=T_eff,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    bb_2 = BlackBody(temperature=T_sol,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+
+    # calculate the zodiacal background
+    term_i = bb_1(wavelength_um * u.um) + A_albedo * bb_2(wavelength_um * u.um) * ( rad_sol / 1.5 ) ** 2
+
+    # for single value of the background along the line-of-sight
+    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / 11.)**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
+
+    # for FYI 2D plot of the whole background
+    N_beta = 100
+    N_rel_lon = 200
+    beta_lat_grid, lambda_rel_lon_grid = np.meshgrid(
+        np.linspace(-90, 90, N_beta),
+        np.linspace(90, 270, N_rel_lon),
+        indexing='ij'
+    )
+    # for 2D FYI plot
+    wavelengths_to_plot_2d = [5, 10, 20]  # microns
+    I_lambda_2d_energy = {} # dict to contain the 2D arrays showing emission at each wavelength
+    I_lambda_2d_photons = {} # dict to contain the 2D arrays showing emission at each wavelength
+    for wavel_this in wavelengths_to_plot_2d:
+        term_ii_2d = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.36 * (wavel_this / 11.)**(-0.8) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
+        #I_lambda_2d[str(wavel_this)] = tau_opt * np.multiply(term_i, term_ii_2d)
+        I_lambda_2d_energy[str(wavel_this)] = tau_opt * np.multiply(term_i[:, np.newaxis], term_ii_2d)
+        I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this)
+
+    ipdb.set_trace()
+
+    # make a full spectrum of the emission along the line-of-sight
+    I_lambda_los = tau_opt * term_i * term_ii_los
+    I_nu_los_array = (I_lambda_los * (wavelength_um*u.um)**2 / const.c).to(u.MJy / u.sr)
+        
+    radiance_nu_zodiacal_los_energy = I_nu_los_array
+    # convert to photons
+    radiance_nu_zodiacal_los_photons = radiance_nu_zodiacal_los_energy * u.photon / (const.h * const.c / wavelength_um)
+
+    ipdb.set_trace()
+
+    if plot:
+        plt.clf()
+        #plt.plot(wavelength_um, I_lambda_los)
+        #plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
+        #plt.ylabel(fr"$I(\lambda)$ [{I_lambda_los.unit}]")
+        #plt.title("Zodiacal background")
+
+        # Plot three subplots, each for a different wavelength
+        
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        for i, wl in enumerate(wavelengths_to_plot_2d):
+            # Find the index in wavelength_um closest to wl
+            idx = np.abs(wavelength_um - wl).argmin()
+            im = axes[i].imshow(I_lambda_2d_energy[str(wl)].value, origin='lower')
+            axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]:.1f} μm')
+            axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda$_rel')
+            axes[i].set_ylabel(r'Latitude $\beta$')
+            cbar = plt.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)
+            cbar.set_label(str(I_lambda_2d_energy[str(wl)].unit))
+        plt.tight_layout()
+        plt.show()
+
+        # spectrum of zodiacal light along the line-of-sight
+        plt.plot(wavelength_um, radiance_nu_zodiacal_los_photons)
+        plt.title('Zodiacal background')
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel(str(radiance_nu_zodiacal_los_photons.unit))
+        plt.tight_layout()
+        plt.show()
+
+    # I_nu should be
+    # ~5 um: ~0.1s of MJy/sr
+    # ~10 um: ~10 MJy/sr
+    # ~20 um: ~10s to 100 MJy/sr
+
+    return radiance_nu_zodiacal_los_photons, radiance_nu_zodiacal_los_energy
+
+
 def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
     # exozodiacal dust spectrum
     #flux_exozodi = 1e8 * wavelength_um ** (-1.5)
@@ -323,9 +422,11 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
 
     # units 1/(um sec),  W / (um m2)
-    luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um, plot=plot)
-    luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot)
-    luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot)
+    # note these are independent of distance from Earth
+    #luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um, plot=plot)
+    #luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot)
+    #luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot)
+    luminosity_photons_zodiacal, flux_zodiacal = generate_zodiacal_spectrum(config, wavelength_um/u.um, lambda_rel_lon_los=20, beta_lat_los=40, plot=plot)
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
