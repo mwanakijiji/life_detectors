@@ -91,10 +91,27 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
 
     if plot:
         plt.clf()
-        plt.plot(wavelength_um, luminosity_photons_star)
-        plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
-        plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_star.unit}]")
-        plt.title("Star spectrum")
+        fig, ax1 = plt.subplots()
+        
+        # Primary y-axis for luminosity_photons_star
+        color1 = 'tab:blue'
+        ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {luminosity_photons_star.unit})", color=color1)
+        line1 = ax1.plot(wavelength_um, luminosity_photons_star, color=color1)
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        
+        # Secondary y-axis for flux_star
+        ax2 = ax1.twinx()
+        color2 = 'tab:red'
+        ax2.set_ylabel(fr"$F(\lambda)$ ({flux_star.unit})", color=color2)
+        line2 = ax2.plot(wavelength_um, flux_star, color=color2)
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.tick_params(axis='y', labelcolor=color2)
+        
+        plt.title("Star spectrum (no distance correction)")
         plt.tight_layout()
         file_name_plot = "star_spectrum.png"
         plt.savefig(file_name_plot)
@@ -143,7 +160,7 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         #test_energy = test_photons * (const.h * const.c / wavelength_um) * (1/u.photon) # last bit is to remove the photon units
         # convert energy to W/micron by dividing by 4piR^2
         #luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
-        #ipdb.set_trace()
+
         #luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
         #luminosity_photons_planet = luminosity_energy_planet / (const.h * const.c / wavelength_um)
         #luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
@@ -161,16 +178,38 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         luminosity_photons_planet = luminosity_energy_planet / (const.h * const.c / wavelength_um)
         luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
 
+
     if plot:
         plt.clf()
-        plt.plot(wavelength_um, luminosity_photons_planet)
-        plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
-        plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
-        plt.title("Planet spectrum")
+        fig, ax1 = plt.subplots()
+        
+        # Primary y-axis for luminosity_photons_planet
+        color1 = 'tab:blue'
+        ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {luminosity_photons_planet.unit})", color=color1)
+        line1 = ax1.plot(wavelength_um, luminosity_photons_planet, color=color1)
+        #ax1.set_xscale('log')
+        #ax1.set_xlim(4., 18.)
+        #ax1.set_ylim(1e-4, 1e0)
+        ax1.set_yscale('log')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        
+        # Secondary y-axis for flux_planet
+        ax2 = ax1.twinx()
+        color2 = 'tab:red'
+        ax2.set_ylabel(fr"$F(\lambda)$ ({flux_planet.unit})", color=color2)
+        line2 = ax2.plot(wavelength_um, flux_planet, color=color2)
+        #ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.tick_params(axis='y', labelcolor=color2)
+        
+        plt.title("Planet spectrum (no distance correction)")
         plt.tight_layout()
         file_name_plot = "planet_spectrum.png"
+
         plt.savefig(file_name_plot)
         print(f"Wrote planet emission plot {file_name_plot}")
+
 
     return luminosity_photons_planet, flux_planet
 
@@ -242,27 +281,56 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
 
     if plot:
         plt.clf()
-        # Plot three 2D subplots, each for a different wavelength
+        # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each for a different wavelength
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
             idx = np.abs(wavelength_um - wl).argmin()
-            im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower')
+            im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower', 
+                               extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)], aspect='auto')
             axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]:.1f} μm')
-            axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda$_rel')
-            axes[i].set_ylabel(r'Latitude $\beta$')
+            axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda_{\rm rel}$ (deg)')
+            axes[i].set_ylabel(r'Latitude $\beta$ (deg)')
+            
+            # Set reasonable tick intervals
+            axes[i].set_xticks([90, 135, 180, 225, 270])
+            axes[i].set_yticks([-90, -45, 0, 45, 90])
+            
             cbar = plt.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)
             cbar.set_label(str(I_nu_2d_energy[str(wl)].unit))
         plt.tight_layout()
-        plt.show()
+        file_name = 'zodiacal_emission_2d.png'
+        plt.savefig(file_name)
+        print(f"Wrote zodiacal emission 2D plot {file_name}")
 
         # spectrum of zodiacal light along the line-of-sight
-        plt.plot(wavelength_um, I_lambda_los_array_photons)
-        plt.title('Zodiacal background')
-        plt.xlabel('Wavelength (um)')
-        plt.ylabel(str(I_lambda_los_array_photons.unit))
+        plt.clf()
+        fig, ax1 = plt.subplots()
+        
+        # Primary y-axis for luminosity_photons_star
+        color1 = 'tab:blue'
+        ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {I_lambda_los_array_photons.unit})", color=color1)
+        line1 = ax1.plot(wavelength_um, I_lambda_los_array_photons, color=color1)
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        
+        # Secondary y-axis for flux_star
+        ax2 = ax1.twinx()
+        color2 = 'tab:red'
+        ax2.set_ylabel(fr"$F(\lambda)$ ({I_lambda_los_array_energy.unit})", color=color2)
+        line2 = ax2.plot(wavelength_um, I_lambda_los_array_energy, color=color2)
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.tick_params(axis='y', labelcolor=color2)
+        
+        plt.title(f"Zodiacal spectrum (no distance correction)\n"
+                  fr"$\lambda_{{\rm rel}}$={lambda_rel_lon_los}, $\beta$={beta_lat_los}")
         plt.tight_layout()
-        plt.show()
+        file_name_plot = "zodiacal_spectrum_los.png"
+        plt.savefig(file_name_plot)
+        print(f"Wrote zodiacal emission spectrum plot {file_name_plot}")
 
     # I_nu should be
     # ~5 um: ~0.1s of MJy/sr
@@ -382,16 +450,36 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     luminosity_photons_exozodi_disk = radiance_disk_lambda * u.photon / (const.h * const.c / wavel_array)
     luminosity_photons_exozodi_disk = luminosity_photons_exozodi_disk.to(u.photon / (u.micron * u.s))
 
+    
+
     if plot:
         plt.clf()
-        plt.plot(wavel_array, luminosity_photons_exozodi_disk)
-        plt.xlabel(fr"$\lambda$ [{wavel_array.unit}]")
-        plt.ylabel(fr"$I(\lambda)$ [{luminosity_photons_exozodi_disk.unit}]")
-        plt.title("Exozodiacal disk spectrum")
+        fig, ax1 = plt.subplots()
+        
+        # Primary y-axis for luminosity_photons_star
+        color1 = 'tab:blue'
+        ax1.set_xlabel(fr"$\lambda$ ({wavel_array.unit})")
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_exozodi_disk.unit})", color=color1)
+        line1 = ax1.plot(wavel_array, luminosity_photons_exozodi_disk, color=color1)
+        #ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        ax1.tick_params(axis='y', labelcolor=color1)
+        
+        # Secondary y-axis for flux_star
+        ax2 = ax1.twinx()
+        color2 = 'tab:red'
+        ax2.set_ylabel(fr"$F(\lambda)$ ({radiance_disk_lambda.unit})", color=color2)
+        line2 = ax2.plot(wavel_array, radiance_disk_lambda, color=color2)
+        #ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.tick_params(axis='y', labelcolor=color2)
+        
+        plt.title("Exozodiacal disk spectrum (no distance correction)")
         plt.tight_layout()
         file_name_plot = "exozodiacal_spectrum.png"
         plt.savefig(file_name_plot)
-        print(f"Wrote exozodiacal emission plot {file_name_plot}")
+        print(f"Wrote stellar emission plot {file_name_plot}")
+
 
     return luminosity_photons_exozodi_disk, radiance_disk_lambda
 
@@ -423,9 +511,9 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
     luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot) # unresolved
     luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
-    ipdb.set_trace()
     # the zodiacal background is resolved, so there is an extra 1/sr in the units: 1/(um sr sec),  W / (um sr m2)
     luminosity_photons_zodiacal, flux_zodiacal = generate_zodiacal_spectrum(config, wavelength_um/u.um, lambda_rel_lon_los=20, beta_lat_los=40, plot=plot) # resolved
+    ipdb.set_trace()
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
