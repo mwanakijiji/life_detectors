@@ -12,6 +12,7 @@ import logging
 import ipdb
 import configparser
 import matplotlib.pyplot as plt
+from astropy import units as u
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..data.units import UnitConverter
@@ -68,7 +69,7 @@ class AstrophysicalSources:
             null: apply the nulling factor? (only applies to star target)
             
         Returns:
-            Flux array in photons/sec/m^2/micron
+            Flux array, with units # in photons/sec/m^2/micron
         """
 
         incident_dict = {}
@@ -77,40 +78,45 @@ class AstrophysicalSources:
             logger.warning(f"Spectrum not available for {source_name}")
             return np.array([])
         
-        wavelength = np.linspace(float(self.config['wavelength_range']['min']), 
+        wavelength = np.linspace(float(self.config['wavelength_range']['min']),
                                float(self.config['wavelength_range']['max']),
-                               int(self.config['wavelength_range']['n_points']))
+                               int(self.config['wavelength_range']['n_points'])) * u.um
         
         spectrum = self.spectra[source_name]
+
+        ipdb.set_trace()
         
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point) 
         interpolated_spectrum = spectrum.interpolate(wavelength)
         
         # Apply distance correction
-        distance = float(self.config["target"]["distance"])  # parsecs
+        distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
         distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
         nulling_factor = self.config["nulling"]["nulling_factor"]
         if null and (source_name in ["star"]):  # Apply nulling to star only
-            flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor)
+            flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor) * interpolated_spectrum.flux_unit
             logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
-            flux = interpolated_spectrum.flux * distance_correction
+            flux = interpolated_spectrum.flux * distance_correction * interpolated_spectrum.flux_unit
             logger.info(f"No nulling factor applied to {source_name}.")
 
         incident_dict['wavel'] = wavelength
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
         # = ph/um/m^2/sec
-        incident_dict['astro_flux_ph_sec_m2_um'] = flux * distance_correction * (1.0 / (3.086e16)**2)
+
+        ipdb.set_trace()
+        incident_dict['astro_flux_ph_sec_m2_um'] = flux.to(u.um**(-1) * u.m**(-2) * u.second**(-1))
 
         if plot:
-            plt.scatter(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
+            plt.clf()
+            plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
             plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
             plt.ylabel(f"Flux (ph/um/m^2/sec)")
-            plt.title(f"Incident flux from {source_name}")
+            plt.title(f"Incident flux from {source_name} (at Earth)")
             file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)

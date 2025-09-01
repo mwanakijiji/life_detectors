@@ -33,6 +33,7 @@ def main(config_abs_file_name: str):
     # Generate sample spectral data
     logging.info("Creating sample spectral data...")
     
+    # write out source spectra to file (distance-independent)
     create_sample_data(config, overwrite=True, plot=True, read_sample_file=False)
 
     # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)
@@ -40,7 +41,8 @@ def main(config_abs_file_name: str):
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
-    #incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
+    incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
+    incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)
 
     # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")

@@ -277,7 +277,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # convert to photons
     I_lambda_los_array_photons = I_lambda_los_array_energy * u.photon / ((const.h * const.c) / (wavelength_um * u.um))
     #I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.micron * u.s))
-    ipdb.set_trace()
 
     if plot:
         plt.clf()
@@ -421,10 +420,9 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
 
 
     # scale emission for distance from Earth (effectively doing I_disk_lambda, except that integral is over d_Omega = r dr dtheta / D**2)
-
-    def I_disk_lambda_Earth(I_disk_lambda_array, D):
-
-        return I_disk_lambda_array * (1 / (D * u.pc))**2 * (u.pc / (206265. * u.AU))**2 * u.sr
+    #def I_disk_lambda_Earth(I_disk_lambda_array, D):
+    #
+    #    return I_disk_lambda_array * (1 / (D * u.pc))**2 * (u.pc / (206265. * u.AU))**2 * u.sr
 
 
     ## ## TODO: read in the below params from config file
@@ -440,17 +438,14 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     Ls = 1
 
     T_array = T_temp(Ls=Ls, r=r_array)
-    wavel_array = np.arange(2., 20, 0.1) * u.um
 
     # units W / um
-    radiance_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavel_array)
+    radiance_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
 
     # convert to photons
     # units 1 / (um sec)
-    luminosity_photons_exozodi_disk = radiance_disk_lambda * u.photon / (const.h * const.c / wavel_array)
+    luminosity_photons_exozodi_disk = radiance_disk_lambda * u.photon / (const.h * const.c / wavelength_um)
     luminosity_photons_exozodi_disk = luminosity_photons_exozodi_disk.to(u.photon / (u.micron * u.s))
-
-    
 
     if plot:
         plt.clf()
@@ -458,9 +453,9 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         
         # Primary y-axis for luminosity_photons_star
         color1 = 'tab:blue'
-        ax1.set_xlabel(fr"$\lambda$ ({wavel_array.unit})")
+        ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
         ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_exozodi_disk.unit})", color=color1)
-        line1 = ax1.plot(wavel_array, luminosity_photons_exozodi_disk, color=color1)
+        line1 = ax1.plot(wavelength_um, luminosity_photons_exozodi_disk, color=color1)
         #ax1.set_xscale('log')
         ax1.set_yscale('log')
         ax1.tick_params(axis='y', labelcolor=color1)
@@ -469,7 +464,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         ax2 = ax1.twinx()
         color2 = 'tab:red'
         ax2.set_ylabel(fr"$F(\lambda)$ ({radiance_disk_lambda.unit})", color=color2)
-        line2 = ax2.plot(wavel_array, radiance_disk_lambda, color=color2)
+        line2 = ax2.plot(wavelength_um, radiance_disk_lambda, color=color2)
         #ax2.set_xscale('log')
         ax2.set_yscale('log')
         ax2.tick_params(axis='y', labelcolor=color2)
@@ -513,7 +508,6 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
     # the zodiacal background is resolved, so there is an extra 1/sr in the units: 1/(um sr sec),  W / (um sr m2)
     luminosity_photons_zodiacal, flux_zodiacal = generate_zodiacal_spectrum(config, wavelength_um/u.um, lambda_rel_lon_los=20, beta_lat_los=40, plot=plot) # resolved
-    ipdb.set_trace()
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
@@ -522,32 +516,40 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "description": "Blackbody spectrum for star",
             "wavelength_um": wavelength_um,
             "flux": flux_star,
+            "flux_units": str(flux_star.unit),
             "luminosity_photons": luminosity_photons_star,
+            "luminosity_photons_units": str(luminosity_photons_star.unit),
             "plot_name": "star_spectrum.png"
         },
         "exoplanet_spectrum.txt": {
             "description": "Exoplanet spectrum",
             "wavelength_um": wavelength_um,
             "flux": flux_planet,
+            "flux_units": str(flux_planet.unit),
             "luminosity_photons": luminosity_photons_planet,
+            "luminosity_photons_units": str(luminosity_photons_planet.unit),
             "plot_name": "exoplanet_spectrum.png"
-        }
-    }
-    '''
+        },
             "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
             "wavelength_um": wavelength_um,
-            "flux": 1e8 * wavelength_um ** (-1.5),  # Power law
+            "flux": flux_exozodi,
+            "flux_units": str(flux_exozodi.unit),
+            "luminosity_photons": luminosity_photons_exozodi,
+            "luminosity_photons_units": str(luminosity_photons_exozodi.unit),
             "plot_name": "exozodiacal_spectrum.png"
         },
         "zodiacal_spectrum.txt": {
             "description": "Zodiacal dust spectrum",
             "wavelength_um": wavelength_um,
-            "flux": 1e9 * wavelength_um ** (-1.2),  # Power law
+            "flux": flux_zodiacal,
+            "flux_units": str(flux_zodiacal.unit),
+            "luminosity_photons": luminosity_photons_zodiacal,
+            "luminosity_photons_units": str(luminosity_photons_zodiacal.unit),
             "plot_name": "zodiacal_spectrum.png"
         }
-    '''
-    
+    }
+
     for filename, data in sample_data.items():
         filepath = output_dir / filename
         
@@ -563,11 +565,12 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         
         # add header with units
         with open(filepath, 'w') as f:
-            f.write('# wavelength_unit=um\n')
-            f.write('# luminosity_photons_unit=photon/um/sec\n')
+            f.write('# wavelength_unit=' + str(data['wavelength_um'].unit) + '\n')
+            f.write('# luminosity_photons_unit=' + str(data['luminosity_photons_units']) + '\n')
         df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
+
 
         '''
         if plot:
@@ -582,63 +585,3 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             plt.close()
             logger.info(f"Wrote plot {file_name_plot}")
         '''
-
-
-'''
-def calculate_photon_energy(wavelength_um: float) -> float:
-    """
-    Calculate photon energy in Joules.
-    
-    Args:
-        wavelength_um: Wavelength in microns
-        
-    Returns:
-        Photon energy in Joules
-    """
-    h = 6.626e-34  # Planck's constant (J⋅s)
-    c = 3e8  # Speed of light (m/s)
-    wavelength_m = wavelength_um * 1e-6  # Convert to meters
-    
-    return h * c / wavelength_m
-
-def calculate_blackbody_flux(temperature: float, wavelength_um: float) -> float:
-    """
-    Calculate blackbody flux at a given temperature and wavelength.
-    
-    Args:
-        temperature: Temperature in Kelvin
-        wavelength_um: Wavelength in microns
-        
-    Returns:
-        Flux in W/m²/micron
-    """
-    h = 6.626e-34  # Planck's constant (J⋅s)
-    c = 3e8  # Speed of light (m/s)
-    k = 1.381e-23  # Boltzmann constant (J/K)
-    wavelength_m = wavelength_um * 1e-6  # Convert to meters
-    
-    # Planck's law
-    exp_term = np.exp(h * c / (wavelength_m * k * temperature))
-    flux = (2 * h * c**2 / wavelength_m**5) / (exp_term - 1)
-    
-    # Convert from per meter to per micron
-    flux_per_um = flux * 1e-6
-    
-    return flux_per_um
-
-def convert_flux_to_photons(energy_flux_watt: float, wavelength_um: float) -> float:
-    """
-    Convert energy flux to photon flux.
-    
-    Args:
-        energy_flux_watt: Energy flux in W/m²/micron
-        wavelength_um: Wavelength in microns
-        
-    Returns:
-        Photon flux in photons/sec/m²/micron
-    """
-    photon_energy = calculate_photon_energy(wavelength_um)
-    photon_flux = energy_flux_watt / photon_energy
-    
-    return photon_flux 
-'''
