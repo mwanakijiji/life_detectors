@@ -88,24 +88,31 @@ class AstrophysicalSources:
         # (note this is not integrating over wavelength for each interpolated data point) 
         interpolated_spectrum = spectrum.interpolate(wavelength)
         
-        # Apply distance correction
-        distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
-        distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
+        # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
+        if source_name != "zodiacal":
+            distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
+            distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
         
         # Apply nulling factor for on-axis sources
         nulling_factor = self.config["nulling"]["nulling_factor"]
-        if null and (source_name in ["star"]):  # Apply nulling to star only
-            flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * interpolated_spectrum.flux_unit
+
+        # Convert flux_unit string to astropy unit object
+        flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
+        
+        # treatment of units and nulling depending on the source
+        if source_name == "zodiacal":
+            # no distance correction and no nulling
+            flux_incident = interpolated_spectrum.flux * flux_unit_obj
+        elif null and (source_name == "star"):  
+            # apply nulling to star only
+            flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
             logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
-            flux_incident = interpolated_spectrum.flux * distance_correction * interpolated_spectrum.flux_unit
+            # no nulling
+            flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
             logger.info(f"No nulling factor applied to {source_name}.")
 
-        if source_name != "zodiacal":
-            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
-        else:
-            # CONTINUE HERE 
-            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+        flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
 
         incident_dict['wavel'] = wavelength
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency

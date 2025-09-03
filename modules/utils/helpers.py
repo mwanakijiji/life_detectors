@@ -287,7 +287,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     ## ## TODO: this is still kind of hackneyed; find better way of evaluating total number of photons
     fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) ** 2 
     fov_effective = fov_effective.to(u.sr)
-    ipdb.set_trace()
 
     I_lambda_los_array_photons = I_lambda_los_array_photons * fov_effective 
     I_lambda_los_array_energy = I_lambda_los_array_energy * fov_effective
@@ -521,9 +520,10 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     luminosity_photons_star, luminosity_energy_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
     luminosity_photons_planet, luminosity_energy_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot) # unresolved
     luminosity_photons_exozodi, luminosity_energy_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
-    # the zodiacal background is resolved, so there is an extra 1/sr in the units: 1/(um sr sec),  W / (um sr)
+    # notes on zodiacal units:
+    # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
+    # 2. the output units here include 1/m**2, because the quantity is a surface brightness seen from Earth (i.e., there is no downstream distance correction that brings in 1/m**2)
     luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, lambda_rel_lon_los=20, beta_lat_los=40, nulling_baseline=12, plot=plot) # resolved
-    ipdb.set_trace()
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
@@ -586,7 +586,6 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
-
 
         '''
         if plot:

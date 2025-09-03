@@ -39,11 +39,13 @@ def main(config_abs_file_name: str):
     # Calculate the astrophysical flux incident on the instrument (post-null, if null=True)
     logging.info("Calculating astrophysical flux...")
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
-    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True)
-    ipdb.set_trace()
+
+    # all ouput units should be in photons s-1 um-1 m-2
+    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", null=True, plot=True) 
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
     incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)
+    ipdb.set_trace()
 
     # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
