@@ -77,7 +77,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     bb_star_lambda = BlackBody(temperature=5778*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # stellar surface flux, Fs_nu: multiply by pi steradians
     # W / (micron m2 sr) --> W / (micron m2)
-    flux_star = np.pi*u.sr * bb_star_lambda(wavelength_um)
+    flux_star = np.pi * u.sr * bb_star_lambda(wavelength_um)
     # stellar luminosity in terms of energy, L_nu: rate at which the star radiates energy in all directions
     # W / (micron m2) --> W / micron
     luminosity_energy_star = 4 * np.pi * (rad_star**2) * flux_star 
@@ -85,9 +85,8 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     # stellar luminosity in terms of photons, L_gamma_nu (divide by energy units E=hc/lambda)
     # W / micron --> photons / (um sec)
 
-    luminosity_photons_star = luminosity_energy_star / (const.h * const.c / wavelength_um)
-    luminosity_photons_star = luminosity_photons_star.to(1 / (u.micron * u.s)) # consistent units
-
+    luminosity_photons_star = luminosity_energy_star * u.ph / (const.h * const.c / wavelength_um)
+    luminosity_photons_star = luminosity_photons_star.to(u.ph / (u.micron * u.s)) # consistent units
 
     if plot:
         plt.clf()
@@ -117,7 +116,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
         plt.savefig(file_name_plot)
         print(f"Wrote stellar emission plot {file_name_plot}")
 
-    return luminosity_photons_star, flux_star
+    return luminosity_photons_star, luminosity_energy_star
 
 
 def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, read_sample_file: bool = False, plot: bool = False) -> np.ndarray:
@@ -175,9 +174,8 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         # planet luminosity
         luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
         luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
-        luminosity_photons_planet = luminosity_energy_planet / (const.h * const.c / wavelength_um)
-        luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
-
+        luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
+        luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
 
     if plot:
         plt.clf()
@@ -211,18 +209,19 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         print(f"Wrote planet emission plot {file_name_plot}")
 
 
-    return luminosity_photons_planet, flux_planet
+    return luminosity_photons_planet, luminosity_energy_planet
 
 
-def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, lambda_rel_lon_los: float, beta_lat_los: float, plot: bool = False) -> np.ndarray:
+def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, lambda_rel_lon_los: float, beta_lat_los: float, nulling_baseline: float, plot: bool = False) -> np.ndarray:
 
     # Generates a zodiacal background
     # See Sec. 2.2.3 in Dannert+ 2022
 
     # Inputs:
-    # wavel: wavelength in microns (leave this unitless for parts of this function to work)
+    # wavelength_um: wavelength in microns
     # lambda_rel_lon_los (deg): relative longitude of the line-of-sight
     # beta_lat_los (deg): latitude of the line-of-sight
+    # nulling_baseline (m): baseline nulling distance 
     # plot: whether to plot the result and FYI plot of the whole background
 
     # set some parameters
@@ -242,9 +241,9 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     bb_2 = BlackBody(temperature=T_sol,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
 
     # the BB term (see Eqn. 14 in Dannert+ 2022) of the zodiacal background
-    term_i_los = bb_1(wavelength_um * u.um) + A_albedo * bb_2(wavelength_um * u.um) * ( rad_sol / 1.5 ) ** 2
+    term_i_los = bb_1(wavelength_um) + A_albedo * bb_2(wavelength_um) * ( rad_sol / 1.5 ) ** 2
     # the second term, for single value of the background along the line-of-sight
-    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / 11.)**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
+    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / (11.*u.um))**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
 
     # for FYI 2D plot of the whole background
     N_beta = 100 # number of latitude points
@@ -255,28 +254,45 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         indexing='ij'
     )
     # for 2D FYI plot
-    wavelengths_to_plot_2d = [5, 10, 20]  # microns
+    wavelengths_to_plot_2d = [5, 10, 20]  # microns (unitless; this is just for plotting)
     I_lambda_2d_energy = {} # dict to contain the 2D arrays showing emission at each wavelength
     I_nu_2d_energy = {} # dict to contain the 2D arrays showing emission at each wavelength
     I_lambda_2d_photons = {} # dict to contain the 2D arrays showing emission at each wavelength
-    for wavel_this in wavelengths_to_plot_2d:
 
-        term_i_2d = bb_1(wavel_this * u.um) + A_albedo * bb_2(wavel_this * u.um) * ( rad_sol / 1.5 ) ** 2
+    for wavel_this in wavelengths_to_plot_2d:
+        # See Eq. 14 in Dannert+ 2022, in form tau * term_i * term_ii
+
+        # units W / (um * sr * m2)
+        term_i_2d = bb_1(wavel_this) + A_albedo * bb_2(wavel_this) * ( rad_sol / 1.5 ) ** 2
+        # unitless
         term_ii_2d = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.36 * (wavel_this / 11.)**(-0.8) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
-        I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this*u.um)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr
+        I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this*u.um)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
         #I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
-
+    
     # make a full spectrum of the emission along the line-of-sight
+    # note these line-of-sight units are still in terms of surface brightness: they include units of 'per steradian'
     I_lambda_los_array_energy = tau_opt * term_i_los * term_ii_los
-    I_nu_los_array_energy = (I_lambda_los_array_energy * (wavelength_um*u.um)**2 / const.c).to(u.W / (u.m**2 * u.Hz * u.sr)) # intermediate units, if desired
-    I_nu_los_array_energy = I_nu_los_array_energy.to(u.MJy / u.sr)
-        
+
+    I_nu_los_array_energy = (I_lambda_los_array_energy * wavelength_um**2 / const.c).to(u.W / (u.m**2 * u.Hz * u.sr)) # intermediate units, if desired
+    I_nu_los_array_energy_MJy = I_nu_los_array_energy.to(u.MJy / u.sr) # these units make for easier comparison to published numbers
+
     #radiance_nu_zodiacal_los_energy = I_lambda_los_array_energy
     # convert to photons
-    I_lambda_los_array_photons = I_lambda_los_array_energy * u.photon / ((const.h * const.c) / (wavelength_um * u.um))
-    #I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.micron * u.s))
+    I_lambda_los_array_photons = I_lambda_los_array_energy * u.ph / ((const.h * const.c) / wavelength_um)
+    I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.um * u.second * u.sr * u.m**2)) # units ph / ( um * sec * sr * m**2 )
+
+    # now collect all the photons within (lambda_avg/B)**2 (a rough FOV) to find the total energy & photons along the line-of-sight
+    ## ## TODO: this is still kind of hackneyed; find better way of evaluating total number of photons
+    fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) ** 2 
+    fov_effective = fov_effective.to(u.sr)
+    ipdb.set_trace()
+
+    I_lambda_los_array_photons = I_lambda_los_array_photons * fov_effective 
+    I_lambda_los_array_energy = I_lambda_los_array_energy * fov_effective
+    I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.second * u.um * u.m**2 ))
+    I_lambda_los_array_energy = I_lambda_los_array_energy.to(u.W / (u.um * u.m**2 ))
 
     if plot:
         plt.clf()
@@ -284,10 +300,10 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
-            idx = np.abs(wavelength_um - wl).argmin()
+            idx = np.abs(wavelength_um/u.um - wl).argmin()
             im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower', 
                                extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)], aspect='auto')
-            axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]:.1f} μm')
+            axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]/u.um:.1f} μm')
             axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda_{\rm rel}$ (deg)')
             axes[i].set_ylabel(r'Latitude $\beta$ (deg)')
             
@@ -309,7 +325,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         # Primary y-axis for luminosity_photons_star
         color1 = 'tab:blue'
         ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
-        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {I_lambda_los_array_photons.unit})", color=color1)
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ ({I_lambda_los_array_photons.unit})", color=color1)
         line1 = ax1.plot(wavelength_um, I_lambda_los_array_photons, color=color1)
         ax1.set_xscale('log')
         ax1.set_yscale('log')
@@ -401,7 +417,6 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # r: AU
         # I_disk_lambda_r(): (W / (micron sr m2))
         # r * I_disk_lambda_r(): AU * (W / (micron sr m2))
-        #ipdb.set_trace()
         #r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test =  I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test2 = r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
@@ -440,12 +455,12 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     T_array = T_temp(Ls=Ls, r=r_array)
 
     # units W / um
-    radiance_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
+    luminosity_energy_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
 
     # convert to photons
     # units 1 / (um sec)
-    luminosity_photons_exozodi_disk = radiance_disk_lambda * u.photon / (const.h * const.c / wavelength_um)
-    luminosity_photons_exozodi_disk = luminosity_photons_exozodi_disk.to(u.photon / (u.micron * u.s))
+    luminosity_photons_exozodi_disk = luminosity_energy_disk_lambda * u.ph / (const.h * const.c / wavelength_um)
+    luminosity_photons_exozodi_disk = luminosity_photons_exozodi_disk.to(u.ph / (u.micron * u.s))
 
     if plot:
         plt.clf()
@@ -463,8 +478,8 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # Secondary y-axis for flux_star
         ax2 = ax1.twinx()
         color2 = 'tab:red'
-        ax2.set_ylabel(fr"$F(\lambda)$ ({radiance_disk_lambda.unit})", color=color2)
-        line2 = ax2.plot(wavelength_um, radiance_disk_lambda, color=color2)
+        ax2.set_ylabel(fr"$F(\lambda)$ ({luminosity_energy_disk_lambda.unit})", color=color2)
+        line2 = ax2.plot(wavelength_um, luminosity_energy_disk_lambda, color=color2)
         #ax2.set_xscale('log')
         ax2.set_yscale('log')
         ax2.tick_params(axis='y', labelcolor=color2)
@@ -473,10 +488,10 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         plt.tight_layout()
         file_name_plot = "exozodiacal_spectrum.png"
         plt.savefig(file_name_plot)
-        print(f"Wrote stellar emission plot {file_name_plot}")
+        print(f"Wrote exozodiacal emission plot {file_name_plot}")
 
 
-    return luminosity_photons_exozodi_disk, radiance_disk_lambda
+    return luminosity_photons_exozodi_disk, luminosity_energy_disk_lambda
 
 
 def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
@@ -501,13 +516,14 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     wavelength_um = wavelength * u.um
 
 
-    # for unresolved sources, units 1/(um sec),  W / (um m2)
+    # for unresolved sources, units ph /(um sec),  W / um
     # note these are independent of distance from Earth
-    luminosity_photons_star, flux_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
-    luminosity_photons_planet, flux_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot) # unresolved
-    luminosity_photons_exozodi, flux_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
-    # the zodiacal background is resolved, so there is an extra 1/sr in the units: 1/(um sr sec),  W / (um sr m2)
-    luminosity_photons_zodiacal, flux_zodiacal = generate_zodiacal_spectrum(config, wavelength_um/u.um, lambda_rel_lon_los=20, beta_lat_los=40, plot=plot) # resolved
+    luminosity_photons_star, luminosity_energy_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
+    luminosity_photons_planet, luminosity_energy_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot) # unresolved
+    luminosity_photons_exozodi, luminosity_energy_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
+    # the zodiacal background is resolved, so there is an extra 1/sr in the units: 1/(um sr sec),  W / (um sr)
+    luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, lambda_rel_lon_los=20, beta_lat_los=40, nulling_baseline=12, plot=plot) # resolved
+    ipdb.set_trace()
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
@@ -515,8 +531,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         "star_spectrum.txt": {
             "description": "Blackbody spectrum for star",
             "wavelength_um": wavelength_um,
-            "flux": flux_star,
-            "flux_units": str(flux_star.unit),
+            "luminosity_energy": luminosity_energy_star,
+            "luminosity_energy_units": str(luminosity_energy_star.unit),
             "luminosity_photons": luminosity_photons_star,
             "luminosity_photons_units": str(luminosity_photons_star.unit),
             "plot_name": "star_spectrum.png"
@@ -524,8 +540,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         "exoplanet_spectrum.txt": {
             "description": "Exoplanet spectrum",
             "wavelength_um": wavelength_um,
-            "flux": flux_planet,
-            "flux_units": str(flux_planet.unit),
+            "luminosity_energy": luminosity_energy_planet,
+            "luminosity_energy_units": str(luminosity_energy_planet.unit),
             "luminosity_photons": luminosity_photons_planet,
             "luminosity_photons_units": str(luminosity_photons_planet.unit),
             "plot_name": "exoplanet_spectrum.png"
@@ -533,8 +549,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
             "wavelength_um": wavelength_um,
-            "flux": flux_exozodi,
-            "flux_units": str(flux_exozodi.unit),
+            "luminosity_energy": luminosity_energy_exozodi,
+            "luminosity_energy_units": str(luminosity_energy_exozodi.unit),
             "luminosity_photons": luminosity_photons_exozodi,
             "luminosity_photons_units": str(luminosity_photons_exozodi.unit),
             "plot_name": "exozodiacal_spectrum.png"
@@ -542,8 +558,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         "zodiacal_spectrum.txt": {
             "description": "Zodiacal dust spectrum",
             "wavelength_um": wavelength_um,
-            "flux": flux_zodiacal,
-            "flux_units": str(flux_zodiacal.unit),
+            "luminosity_energy": luminosity_energy_zodiacal,
+            "luminosity_energy_units": str(luminosity_energy_zodiacal.unit),
             "luminosity_photons": luminosity_photons_zodiacal,
             "luminosity_photons_units": str(luminosity_photons_zodiacal.unit),
             "plot_name": "zodiacal_spectrum.png"

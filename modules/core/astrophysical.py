@@ -83,8 +83,6 @@ class AstrophysicalSources:
                                int(self.config['wavelength_range']['n_points'])) * u.um
         
         spectrum = self.spectra[source_name]
-
-        ipdb.set_trace()
         
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point) 
@@ -97,25 +95,30 @@ class AstrophysicalSources:
         # Apply nulling factor for on-axis sources
         nulling_factor = self.config["nulling"]["nulling_factor"]
         if null and (source_name in ["star"]):  # Apply nulling to star only
-            flux = interpolated_spectrum.flux * distance_correction * float(nulling_factor) * interpolated_spectrum.flux_unit
+            flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * interpolated_spectrum.flux_unit
             logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
-            flux = interpolated_spectrum.flux * distance_correction * interpolated_spectrum.flux_unit
+            flux_incident = interpolated_spectrum.flux * distance_correction * interpolated_spectrum.flux_unit
             logger.info(f"No nulling factor applied to {source_name}.")
+
+        if source_name != "zodiacal":
+            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+        else:
+            # CONTINUE HERE 
+            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
 
         incident_dict['wavel'] = wavelength
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
         # = ph/um/m^2/sec
 
-        ipdb.set_trace()
-        incident_dict['astro_flux_ph_sec_m2_um'] = flux.to(u.um**(-1) * u.m**(-2) * u.second**(-1))
+        incident_dict['astro_flux_ph_sec_m2_um'] = flux_incident
 
         if plot:
             plt.clf()
             plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
             plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
-            plt.ylabel(f"Flux (ph/um/m^2/sec)")
+            plt.ylabel(f"Flux (" + str(flux_incident.unit) + ")")
             plt.title(f"Incident flux from {source_name} (at Earth)")
             file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
             plt.savefig(file_name_plot)
