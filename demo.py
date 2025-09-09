@@ -45,14 +45,20 @@ def main(config_abs_file_name: str):
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
     incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)
-    ipdb.set_trace()
+    
+    # put all sources into dictionary
+    sources_astroph = {
+        "star": incident_astro_star,
+        "exoplanet": incident_astro_exoplanet,
+        "exozodiacal": incident_astro_exozodi,
+        "zodiacal": incident_astro_zodiacal
+    }
 
     # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
     instrumental_effects = instrumental.InstrumentalSources(config, 
-                                                            unit_converter=UnitConverter(), 
-                                                            star_flux=incident_astro_star,
-                                                            exoplanet_flux=incident_astro_exoplanet)
+                                                            unit_converter = UnitConverter(), 
+                                                            sources_astroph = sources_astroph)
     _pass_aperture = instrumental_effects.pass_through_aperture()
     
     # convert photons to electrons

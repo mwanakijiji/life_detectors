@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import logging
 import ipdb
+import astropy.units as u
 
 from ..data.units import UnitConverter
 
@@ -17,74 +18,98 @@ from ..data.units import UnitConverter
 class InstrumentalSources:
     # Provides the effects of the instrument
 
-    def __init__(self, config: Dict, unit_converter: UnitConverter, star_flux: dict, exoplanet_flux: dict, add_astrophysical_flux: bool = True):
+    def __init__(self, config: Dict, unit_converter: UnitConverter, sources_astroph: dict):
+        '''
+        Args:
+            config: Configuration dictionary
+            unit_converter: Unit conversion object
+            sources: Dictionary of sources of flux; {'wavel': <Quantity um>, 'astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
+        '''
 
         self.config = config
         self.unit_converter = unit_converter ## ## TODO: DO I NEED THIS?
-        self.add_astrophysical_flux = add_astrophysical_flux # add the astrophysical flux?
-        self.star_flux = star_flux # contains all the stellar astrophysical flux values (independent of instrument)
-        self.exoplanet_flux = exoplanet_flux # contains all the exoplanet astrophysical flux values (independent of instrument)
+        self.sources_astroph = sources_astroph # all sources of astrophysical flux, as are incident on the instrument
 
         # initialize dict to carry instrumental terms (independent of astrophysics)
-        self.instrum_dict = {}
+        self.sources_instrum = {}
 
-        # initialize dict to carry propagated terms (i.e., intensity levels in various units on the detector, after instrument effects)
+        # initialize dict to carry propagated terms (i.e., intensity levels on the detector, after instrument effects)
         self.prop_dict = {}
         # assume wavelengths are the same for the star and planet
-        self.prop_dict['wavel'] = self.star_flux['wavel']
+        #self.prop_dict['wavel'] = self.star_flux['wavel']
 
 
     def calculate_instrinsic_instrumental_noise(self):
 
-        gain = float(self.config["detector"]["gain"])  # e-/ADU
+        gain = float(self.config["detector"]["gain"]) * u.electron / u.adu  # e-/ADU
 
         # read noise
         # e-/pix rms
-        self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
+        #self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
         # e-/pix rms -> ADU rms
-        self.instrum_dict['read_noise_adu'] = float(self.config["detector"]["read_noise"]) / gain
+        logging.info(f'Finding instrumental noise sources...')
+        read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
+        logging.info(f'Read noise is {read_noise_e_rms} rms')
+        self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
+        read_noise_adu_rms = self.sources_instrum['read_noise_adu']
+        logging.info(f'Read noise is {read_noise_adu_rms} rms')
 
         # dark current rate 
         # e/pix/sec
         dark_current_str = self.config["detector"]["dark_current"]
-        dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') # in case it's an array
+        ## ## TODO: DO I WANT TO MAKE THIS MORE FLEXIBLE TO ALLOW OTHER TERMS TO BE IN THE FORM OF ARRAYS TOO?
+        dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array
+        logging.info(f'Dark current is {dark_current_rate_e_pix_sec} e-/pix/sec')
 
         # total dark current in e-, based on integration time
         # e/pix/sec -> e/pix
-        integration_time = float(self.config["observation"]["integration_time"])  # seconds
-        self.instrum_dict['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
-        self.instrum_dict['dark_current_total_e'] = dark_current_rate_e_pix_sec * integration_time
+        integration_time = float(self.config["observation"]["integration_time"]) * u.second  # seconds
+        self.sources_instrum['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
+        self.sources_instrum['dark_current_e_pix-1'] = dark_current_rate_e_pix_sec * integration_time
 
         # total dark current in ADU
         # e/pix -> ADU/pix
-        dark_current_adu = dark_current_rate_e_pix_sec / gain
-        self.instrum_dict['dark_current_total_adu'] = dark_current_adu
+        self.sources_instrum['dark_current_adu_pix-1'] = self.sources_instrum['dark_current_e_pix-1'] / gain
 
         return 
 
 
     def pass_through_aperture(self):
-        # pass through the telescope aperture
+        # pass each astrophysical source through the telescope aperture
         # photons/sec/m^2 -> photons/sec
 
-        self.prop_dict['star_flux_ph_sec_um'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.star_flux['astro_flux_ph_sec_m2_um'] )
-        self.prop_dict['exoplanet_flux_ph_sec_um'] = np.multiply( float(self.config["telescope"]["collecting_area"]), self.exoplanet_flux['astro_flux_ph_sec_m2_um'] )
+        for source_name, source_val in self.sources_astroph.items():
+            # if name is right and units are right
+            if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
+                dict_this = {source_name: {'wavel': source_val['wavel'], 'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] )}}
+                self.prop_dict.update(dict_this)
 
-        return 
+        logging.info(f'Passed astrophysical flux through telescope aperture...')
+
+        return
 
 
     def photons_to_e(self):
+        # convert photons to e-s, using e-to-photon relation and QE
 
-        self.prop_dict['star_flux_e_sec_um'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['star_flux_ph_sec_um'])
-        self.prop_dict['exoplanet_flux_e_sec_um'] = np.multiply(float(self.config["detector"]["quantum_efficiency"]), self.prop_dict['exoplanet_flux_ph_sec_um'])
+        ## ## TODO: INCORPORATE REAL RESPONSE CURVES
+
+        for source_name, source_val in self.prop_dict.items():
+            if ('flux_post_aperture_ph_sec_um' in source_val) and (source_val['flux_post_aperture_ph_sec_um'].unit == u.ph / (u.um * u.s)):
+                source_val['flux_e_sec_um'] = float(self.config["detector"]["photons_to_e"]) * (u.electron/u.ph) * np.multiply(float(self.config["detector"]["quantum_efficiency"]), source_val['flux_post_aperture_ph_sec_um'])
+
+        logging.info(f'Converted photons to e-s...')
 
         return
 
 
     def e_to_adu(self):
 
-        self.prop_dict['star_flux_adu_sec_um'] = np.divide(self.prop_dict['star_flux_e_sec_um'], float(self.config["detector"]["gain"]))
-        self.prop_dict['exoplanet_flux_adu_sec_um'] = np.divide(self.prop_dict['exoplanet_flux_e_sec_um'], float(self.config["detector"]["gain"]))
+        for source_name, source_val in self.prop_dict.items():
+            if ('flux_e_sec_um' in source_val) and (source_val['flux_e_sec_um'].unit == u.electron / (u.um * u.s)):
+                source_val['flux_adu_sec_um'] = np.divide(source_val['flux_e_sec_um'], float(self.config["detector"]["gain"])) * (u.adu/u.electron)
+
+        logging.info(f'Converted e-s to ADUs...')
 
         return
 
