@@ -376,7 +376,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # Ls: luminosity of star (units L_sol)
         # r: radius in disk (units AU)
 
-        T = 278.3*u.K * (Ls**0.25) * (r**-0.5)
+        T = 278.3*u.K * ((Ls)**0.25) * ((r/u.au)**-0.5)
 
         return T
 
@@ -427,7 +427,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # (W / (micron sr m2)) comes from integrand
         # AU^2 units come from rdr in units of AU
         # final units here should be W / (micron m2)
-        I_lambda = 2 * np.pi * np.trapz(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU**2 
+        I_lambda = 2 * np.pi * np.trapz(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU # u.au comes from dr
         I_lambda = I_lambda.to(u.W / u.um)
 
         return I_lambda
@@ -444,12 +444,14 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     ## ## TODO: pass fluxes through telescope aperture with the same function
 
     # set up some basic params
-    r_array = np.arange(0.1, 10, 0.1)
-    r0 = 1
-    alpha = 0.5
-    z = 3
-    Sigma_m_0 = 1
+    r_array = np.arange(0.034, 10, 0.1) * u.au
+    
+    # see Kennedy 2015 Table 1
+    alpha = 0.34
+    z = 1
+    Sigma_m_0 = 7.12e-8
     Ls = 1
+    r0 = np.sqrt(Ls) * u.au # see Kennedy 2015 ApJSS, sec. 2.2.3
 
     T_array = T_temp(Ls=Ls, r=r_array)
 
@@ -465,7 +467,6 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         plt.clf()
         fig, ax1 = plt.subplots()
         
-        # Primary y-axis for luminosity_photons_star
         color1 = 'tab:blue'
         ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
         ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_exozodi_disk.unit})", color=color1)
@@ -474,7 +475,6 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         ax1.set_yscale('log')
         ax1.tick_params(axis='y', labelcolor=color1)
         
-        # Secondary y-axis for flux_star
         ax2 = ax1.twinx()
         color2 = 'tab:red'
         ax2.set_ylabel(fr"$F(\lambda)$ ({luminosity_energy_disk_lambda.unit})", color=color2)
@@ -484,7 +484,6 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         ax2.tick_params(axis='y', labelcolor=color2)
         
         plt.title("Exozodiacal disk spectrum (no distance correction)")
-        plt.tight_layout()
         file_name_plot = "exozodiacal_spectrum.png"
         plt.savefig(file_name_plot)
         print(f"Wrote exozodiacal emission plot {file_name_plot}")

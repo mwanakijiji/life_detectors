@@ -124,6 +124,8 @@ class AstrophysicalSources:
             plt.clf()
             plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
+            plt.xlim([4, 18]) # for comparison with Dannert
+            plt.ylim([1e-3, 1e9]) # for comparison with Dannert
             plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
             plt.ylabel(f"Flux (" + str(flux_incident.unit) + ")")
             plt.title(f"Incident flux from {source_name} (at Earth)")
