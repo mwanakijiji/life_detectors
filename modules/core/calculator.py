@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 import configparser
 import ipdb
+import astropy.units as u
 import matplotlib.pyplot as plt
 
 from .astrophysical import AstrophysicalSources
@@ -61,6 +62,7 @@ class NoiseCalculator:
 
         # the object that is the 'origin' of the various noise contributions for the calculations to follow
         self.noise_origin = noise_origin
+        #self.prop_dict = noise_origin.prop_dict
 
         #self.unit_converter = UnitConverter()
         #self.conversion_engine = ConversionEngine(self.unit_converter)
@@ -84,7 +86,9 @@ class NoiseCalculator:
 
         ## everything in units of photoelectrons
 
-        wavel_abcissa = self.noise_origin.prop_dict['wavel']
+        ## ## TO DO: MAKE ALL WAVELS TO BE ON AN EXPLICIT COMMON BASIS
+        #wavel_abcissa = self.noise_origin.prop_dict['wavel']
+        wavel_abcissa = self.noise_origin.sources_astroph['star']['wavel']
         # map wavelengths to pixels
         res_spec = float(self.config["detector"]["spec_res"]) # spectral resolution (del_lambda/lambda)
         del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
@@ -96,12 +100,28 @@ class NoiseCalculator:
         #n_pix = 1 / disp # pixels per micron(pix/um)
         #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
+        
+
         # integration time for 1 frame
-        t_int = float(self.config["observation"]["integration_time"])
+        t_int = float(self.config["observation"]["integration_time"]) * u.second
         n_int = float(self.config["observation"]["n_int"])
 
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
+        ipdb.set_trace()
+
+        # FYI plot: rate of photoelectrons to be expected from sources
+        plt.clf()
+        plt.plot(self.noise_origin.prop_dict['exoplanet']['wavel'],self.noise_origin.prop_dict['exoplanet']['flux_post_aperture_ph_sec_um'], label='exoplanet')
+        plt.plot(self.noise_origin.prop_dict['star']['wavel'],self.noise_origin.prop_dict['star']['flux_post_aperture_ph_sec_um'], label='star')
+        plt.plot(self.noise_origin.prop_dict['zodiacal']['wavel'],self.noise_origin.prop_dict['zodiacal']['flux_post_aperture_ph_sec_um'], label='zodiacal')
+        #plt.plot(self.noise_origin.prop_dict['exozodiacal']['wavel'],self.noise_origin.prop_dict['exozodiacal']['flux_post_aperture_ph_sec_um'], label='exozodiacal')
+        plt.legend()
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('Rate of photoelectrons (e-/sec/um)')
+        plt.title('Rate of photoelectrons to be expected from sources')
+        plt.savefig('/Users/eckhartspalding/Downloads/rate_of_photoelectrons_from_sources.png')
+
         del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
         # stellar signal
         del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 

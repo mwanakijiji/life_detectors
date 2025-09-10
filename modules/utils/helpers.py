@@ -254,7 +254,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         indexing='ij'
     )
     # for 2D FYI plot
-    wavelengths_to_plot_2d = [5, 10, 20]  # microns (unitless; this is just for plotting)
+    wavelengths_to_plot_2d = [5, 10, 20] * u.um  # microns (unitless; this is just for plotting)
     I_lambda_2d_energy = {} # dict to contain the 2D arrays showing emission at each wavelength
     I_nu_2d_energy = {} # dict to contain the 2D arrays showing emission at each wavelength
     I_lambda_2d_photons = {} # dict to contain the 2D arrays showing emission at each wavelength
@@ -264,11 +264,11 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
 
         # units W / (um * sr * m2)
         term_i_2d = bb_1(wavel_this) + A_albedo * bb_2(wavel_this) * ( rad_sol / 1.5 ) ** 2
-        # unitless
-        term_ii_2d = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.36 * (wavel_this / 11.)**(-0.8) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
+        # unitless; note the wavel_this/u.um is necessary to avoid math errors
+        term_ii_2d = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.36 * ((wavel_this/u.um) / 11.)**(-0.8) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
-        I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this*u.um)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
+        I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
         #I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
     
     # make a full spectrum of the emission along the line-of-sight
@@ -299,7 +299,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
-            idx = np.abs(wavelength_um/u.um - wl).argmin()
+            idx = np.abs(wavelength_um/u.um - wl/u.um).argmin()
             im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower', 
                                extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)], aspect='auto')
             axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]/u.um:.1f} μm')
