@@ -296,7 +296,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     if plot:
         plt.clf()
         # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each for a different wavelength
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        fig, axes = plt.subplots(3, 1, figsize=(4, 15))
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
             idx = np.abs(wavelength_um/u.um - wl/u.um).argmin()
