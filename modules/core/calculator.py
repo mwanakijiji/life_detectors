@@ -13,6 +13,7 @@ import configparser
 import ipdb
 import astropy.units as u
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentDepTerms
@@ -91,19 +92,40 @@ class NoiseCalculator:
         #wavel_abcissa = self.noise_origin.prop_dict['wavel']
         logging.info("Calculating S/N ...")
 
-        ## ## TO DO: MAKE ALL WAVELS TO BE ON AN EXPLICIT COMMON BASIS
+        ## ## TO DO: MAKE ALL WAVELS TO BE ON AN EXPLICIT COMMON BASIS ACCORDING TO THE BINNING
         ## ## TO DO: INCORPORATE NYQUIST SAMPLING
         wavel_abcissa = self.sources_all.sources_astroph['star']['wavel']
 
         # map wavelengths to pixels
         res_spec = float(self.config["detector"]["spec_res"]) # spectral resolution (del_lambda/lambda)
-        del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
+        # find bin edges
+
+        #del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
         #wavel_abcissa_array = wavel_abcissa - del_lambda_array/2 # center of wavelength bins (um)
 
-        # Edges of the wavelength bins.
-        # The bin edges are at wavel_abcissa - del_lambda_array/2 and wavel_abcissa + del_lambda_array/2
-        wavel_bin_edges_lower = wavel_abcissa - del_lambda_array/2
-        wavel_bin_edges_upper = wavel_abcissa + del_lambda_array/2
+        # choose 4 um as the center of one bin, and stairstep from there
+        wavel_bin_edges_lower = np.array([])
+        wavel_bin_edges_upper = np.array([])
+        wavel_bin_centers = np.array([])
+        del_lambda_array = np.array([])
+
+        bin_edge_lower_this = 4.0
+        bin_edge_upper_this = 0.0
+        ## ## TO DO: SHIFT STARSTEP TO HAVE CENTERS OF BINS AT THE LOWER EDGE (BECAUSE THE BIN WIDTH IS SET BY THE RESOLUTION AT THE LOWER EDGE)
+        while bin_edge_upper_this < 20: # at wavelengths <20 um
+             del_lambda_this = bin_edge_lower_this / res_spec
+             bin_edge_upper_this = bin_edge_lower_this + del_lambda_this
+             wavel_bin_edges_lower = np.append(wavel_bin_edges_lower, bin_edge_lower_this)
+             wavel_bin_edges_upper = np.append(wavel_bin_edges_upper, bin_edge_upper_this)
+             wavel_bin_centers = np.append(wavel_bin_centers, (bin_edge_lower_this + bin_edge_upper_this) / 2)
+             del_lambda_array = np.append(del_lambda_array, del_lambda_this)
+             bin_edge_lower_this = bin_edge_upper_this
+        del_lambda_array = del_lambda_array * u.um # attach units
+        ipdb.set_trace()
+
+        bin_widths = [(hi - lo) for lo, hi in zip(wavel_bin_edges_lower, wavel_bin_edges_upper)] # removed units for plotting
+        ipdb.set_trace()
+
         #n_pix = 1 / disp # pixels per micron(pix/um)
         #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
@@ -113,10 +135,21 @@ class NoiseCalculator:
 
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
+        ipdb.set_trace()
 
-        del_Np_prime_del_t = self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
+        # reinterpolate the fluxes onto the binned wavelength grid
+        ## ## TODO: IS THERE A BETTER WAY TO DO THIS, OTHER THAN INTERPOLATING?
+        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['exoplanet']['wavel'].value, 
+                                            self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        star_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['star']['wavel'].value, 
+                                            self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        #star_flux_e_sec_um = self.sources_all.prop_dict['star']['flux_e_sec_um'].interpolate(wavel_bin_centers)
+
+        del_Np_prime_del_t = exoplanet_flux_e_sec_um * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
         # stellar signal
-        del_Ns_prime_del_t = self.sources_all.prop_dict['star']['flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 
+        del_Ns_prime_del_t = star_flux_e_sec_um * del_lambda_array # approximates an integral over lambda 
 
         # quantum efficiency
         eta = float(self.config["detector"]["quantum_efficiency"])
@@ -134,20 +167,22 @@ class NoiseCalculator:
         del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
         
         # the number of pixels for each wavelength bin is 1-to-1 for now ## ## TODO: change later
-        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
+        n_pix_array_reshaped = np.tile( np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
         
-        D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (N_dark_current, N_wavel)
+        D_rate_reshaped = np.tile(D_rate, (len(wavel_bin_centers), 1) ).T # shape (N_dark_current, N_wavel)
 
+        ipdb.set_trace()
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
         s2n = np.sqrt(n_int) * np.divide(eta * t_int * del_Np_prime_del_t_reshaped, 
                         np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
                             n_pix_array_reshaped * (( R**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped))) # the R**2/(u.electron / u.pix) is necessary to make the units consistent 
 
         #ipdb.set_trace()
-        s2n = s2n.value # get rid of the sqrt(e-) units
+        s2n = s2n.value # get rid of the sqrt(e-) units for plotting
         # 2D plot of S/N vs wavelength and dark current
         plt.close()
-        plt.imshow(s2n,aspect='auto', origin='lower')
+        #plt.imshow(s2n,aspect='auto', origin='lower')
+        plt.imshow(s2n, origin='lower')
         plt.colorbar()
 
         # Set y-axis ticks to match D_rate_reshaped[:,0]
@@ -181,14 +216,66 @@ class NoiseCalculator:
         plt.savefig(file_name_plot)
         logger.info(f"Wrote plot {file_name_plot}")
 
+        ipdb.set_trace()
         plt.close()
+        # Parse dark current values (can be comma-separated list)
+        dark_current_str = self.config['detector']['dark_current']
+        if ',' in dark_current_str:
+            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')]
+            dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values])
+        else:
+            dark_current_display = f"{float(dark_current_str):.2f}"
+        
+        title_lines = [
+            "S/N",
+            "\n",
+            f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
+            f"throughput = {float(self.config['telescope']['throughput']):.2f}",
+            f"dark current = {dark_current_display} e-/pix/sec",
+            f"read noise = {float(self.config['detector']['read_noise']):.2f} e- rms",
+            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
+        ]
+        '''
         for plot_num in range(0,len(s2n[:,0])):
-            plt.plot(wavel_abcissa, s2n[plot_num,:], label=str(int(plot_num)))
+            # draw a histogram-like plot of S/N using step plot that respects bin widths
+            ipdb.set_trace()
+            # Create x-coordinates that include both bin edges for proper step plotting
+            x_step = np.repeat(wavel_bin_edges_lower, 2)
+            x_step[1::2] = wavel_bin_edges_upper  # Replace every other element with upper edges
+            y_step = np.repeat(s2n[plot_num,:], 2)  # Repeat y-values for step effect
+            plt.plot(x_step, y_step, label=f'Dark current {plot_num}', linewidth=2)
+            
+            #plt.bar(wavel_bin_edges_lower.value, s2n[plot_num,:], width=bin_widths, align='edge', edgecolor='black', linewidth=0)
+            #plt.plot(wavel_abcissa, s2n[plot_num,:], label=str(int(plot_num)))
+        '''
+        # Create seaborn histogram with custom bin edges
+        ipdb.set_trace()
+        plt.figure(figsize=(10, 6))
+        #sns.histplot(data=s2n[0,:], bins=wavel_bin_edges_lower, alpha=0.7, edgecolor='black', linewidth=1)
+        for plot_num in range(0,len(s2n[:,0])):
+            plt.scatter(wavel_bin_centers, s2n[plot_num,:], alpha=0.5)
+            ipdb.set_trace()
+        # Add vertical lines at bin edges for reference
+        #for line in wavel_bin_edges_lower:
+        #     plt.axvline(x=line, color='gray', linestyle='--', alpha=0.5)
+
+        plt.scatter(wavel_bin_centers, s2n[0,:], color='black', alpha=0.5)
+        plt.scatter(wavel_bin_centers, s2n[1,:], color='black', alpha=0.5)
+        plt.axhline(y=1, color='gray', linestyle='--')
+        plt.axhline(y=5, color='gray', linestyle='-')
+        # Annotate S/N = 1 and S/N = 5 on the plot
+        plt.annotate('S/N = 1', xy=(6, 1), xytext=(-10, 5), textcoords='offset points',
+                     ha='right', va='bottom', color='gray', fontsize=10, fontweight='bold')
+        plt.annotate('S/N = 5', xy=(6, 5), xytext=(-10, 5), textcoords='offset points',
+                     ha='right', va='bottom', color='gray', fontsize=10, fontweight='bold')
         #plt.yscale('log')
+        plt.xlim([4, 18])
         plt.ylabel('S/N per wavelength bin')
         plt.xlabel('Wavelength (um)')
-        plt.title('S/N for different dark currents')
+        plt.title("\n".join(title_lines))
         plt.legend()
+        plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
         plt.savefig(file_name_plot)
         logger.info(f"Wrote plot {file_name_plot}")
@@ -198,6 +285,9 @@ class NoiseCalculator:
                         np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix_array * (R**2 + D_tot) )
                         )
         '''
+
+
+
 
         return s2n
 
