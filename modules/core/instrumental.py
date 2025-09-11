@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 import ipdb
 import astropy.units as u
+import matplotlib.pyplot as plt
 
 from ..data.units import UnitConverter
 
@@ -74,7 +75,7 @@ class InstrumentalSources:
         return 
 
 
-    def pass_through_aperture(self):
+    def pass_through_aperture(self, plot: bool = False):
         # pass each astrophysical source through the telescope aperture
         # photons/sec/m^2 -> photons/sec
 
@@ -83,6 +84,32 @@ class InstrumentalSources:
             if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
                 dict_this = {source_name: {'wavel': source_val['wavel'], 'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] )}}
                 self.prop_dict.update(dict_this)
+
+        # overplot all the sources
+        title_lines = [
+            "Photoelectrons, post-aperture",
+            "\n",
+            f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
+            f"throughput = {float(self.config['telescope']['throughput']):.2f}",
+            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
+        ]
+        if plot:
+            plt.clf()
+            for source_name, source_val in self.prop_dict.items():
+                plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
+            plt.yscale('log')
+            plt.xlim([4, 18]) # for comparison with Dannert
+            plt.ylim([1e-8, 1e12]) # for comparison with Dannert
+            plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
+            plt.ylabel(f"Flux (" + str(source_val['flux_post_aperture_ph_sec_um'].unit) + ")")
+            plt.legend()
+            plt.title("\n".join(title_lines))
+            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources.png"
+            plt.tight_layout()
+            plt.savefig(file_name_plot)
+            logging.info("Saved plot of incident flux to " + file_name_plot)
+        ipdb.set_trace()
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 

@@ -212,7 +212,7 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
     return luminosity_photons_planet, luminosity_energy_planet
 
 
-def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, lambda_rel_lon_los: float, beta_lat_los: float, nulling_baseline: float, plot: bool = False) -> np.ndarray:
+def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, nulling_baseline: float, plot: bool = False) -> np.ndarray:
 
     # Generates a zodiacal background
     # See Sec. 2.2.3 in Dannert+ 2022
@@ -230,6 +230,9 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     T_sol = 5778.*u.K
     A_albedo = 0.22
     rad_sol = 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
+
+    lambda_rel_lon_los = float(config["observation"]["lambda_rel_lon_los"]) 
+    beta_lat_los = float(config["observation"]["beta_lat_los"])
 
     # Inputs:
     # wavel: wavelength in microns (unitless for parts of this function to work)
@@ -522,7 +525,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     # notes on zodiacal units:
     # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
     # 2. the output units here include 1/m**2, because the quantity is a surface brightness seen from Earth (i.e., there is no downstream distance correction that brings in 1/m**2)
-    luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, lambda_rel_lon_los=20, beta_lat_los=40, nulling_baseline=12, plot=plot) # resolved
+    luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, nulling_baseline=12, plot=plot) # resolved
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff

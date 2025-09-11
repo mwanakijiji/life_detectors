@@ -60,7 +60,7 @@ class AstrophysicalSources:
             logger.warning("No [astrophysical_sources] section found in config file.")
     
 
-    def calculate_incident_flux(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:
+    def calculate_incident_flux(self, source_name: str, plot: bool = False) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
@@ -73,6 +73,10 @@ class AstrophysicalSources:
         """
 
         incident_dict = {}
+
+        # should star be nulled?
+        null = bool(self.config["nulling"]["null"])
+        logger.info(f"Nulling of star: {null}")
 
         if source_name not in self.spectra:
             logger.warning(f"Spectrum not available for {source_name}")
