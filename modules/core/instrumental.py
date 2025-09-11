@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 from ..data.units import UnitConverter
 
 
-class InstrumentalSources:
-    # Provides the effects of the instrument
+class InstrumentDepTerms:
+    # Provides the effects of the instrument (including astro flux passed through the telescope aperture)
 
     def __init__(self, config: Dict, unit_converter: UnitConverter, sources_astroph: dict):
         '''
@@ -31,16 +31,17 @@ class InstrumentalSources:
         self.unit_converter = unit_converter ## ## TODO: DO I NEED THIS?
         self.sources_astroph = sources_astroph # all sources of astrophysical flux, as are incident on the instrument
 
-        # initialize dict to carry instrumental terms (independent of astrophysics)
+        # initialize dict to carry intrinsic instrumental terms (independent of astrophysics)
         self.sources_instrum = {}
 
-        # initialize dict to carry propagated terms (i.e., intensity levels on the detector, after instrument effects)
+        # initialize dict to carry propagated astrophysicalterms (i.e., intensity levels on the detector, after instrument effects)
         self.prop_dict = {}
         # assume wavelengths are the same for the star and planet
         #self.prop_dict['wavel'] = self.star_flux['wavel']
 
 
     def calculate_instrinsic_instrumental_noise(self):
+        # calculate intrinsic instrumental noise, and update self.sources_instrum
 
         gain = float(self.config["detector"]["gain"]) * u.electron / u.adu  # e-/ADU
 
@@ -50,10 +51,11 @@ class InstrumentalSources:
         # e-/pix rms -> ADU rms
         logging.info(f'Finding instrumental noise sources...')
         read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
+        self.sources_instrum['read_noise_e_pix-1'] = read_noise_e_rms
         logging.info(f'Read noise is {read_noise_e_rms} rms')
-        self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
-        read_noise_adu_rms = self.sources_instrum['read_noise_adu']
-        logging.info(f'Read noise is {read_noise_adu_rms} rms')
+        #self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
+        #read_noise_adu_rms = self.sources_instrum['read_noise_adu']
+        #logging.info(f'Read noise is {read_noise_adu_rms} rms')
 
         # dark current rate 
         # e/pix/sec
@@ -70,13 +72,13 @@ class InstrumentalSources:
 
         # total dark current in ADU
         # e/pix -> ADU/pix
-        self.sources_instrum['dark_current_adu_pix-1'] = self.sources_instrum['dark_current_e_pix-1'] / gain
+        #self.sources_instrum['dark_current_adu_pix-1'] = self.sources_instrum['dark_current_e_pix-1'] / gain
 
         return 
 
 
     def pass_through_aperture(self, plot: bool = False):
-        # pass each astrophysical source through the telescope aperture
+        # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec
 
         for source_name, source_val in self.sources_astroph.items():
@@ -109,7 +111,6 @@ class InstrumentalSources:
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)
-        ipdb.set_trace()
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 
@@ -117,15 +118,13 @@ class InstrumentalSources:
 
 
     def photons_to_e(self):
-        # convert photons to e-s, using e-to-photon relation and QE
+        # convert photons to e-s, using e-to-photon relation and QE, and update prop_dict with the converted terms
 
         ## ## TODO: INCORPORATE REAL RESPONSE CURVES
 
         for source_name, source_val in self.prop_dict.items():
             if ('flux_post_aperture_ph_sec_um' in source_val) and (source_val['flux_post_aperture_ph_sec_um'].unit == u.ph / (u.um * u.s)):
                 source_val['flux_e_sec_um'] = float(self.config["detector"]["photons_to_e"]) * (u.electron/u.ph) * np.multiply(float(self.config["detector"]["quantum_efficiency"]), source_val['flux_post_aperture_ph_sec_um'])
-
-        logging.info(f'Converted photons to e-s...')
 
         return
 

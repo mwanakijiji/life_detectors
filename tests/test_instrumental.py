@@ -6,11 +6,11 @@ import pytest
 import numpy as np
 from unittest.mock import Mock
 
-from modules.core.instrumental import InstrumentalSources
+from modules.core.instrumental import InstrumentDepTerms
 from modules.data.units import UnitConverter
 
-class TestInstrumentalSources:
-    """Test cases for InstrumentalSources class."""
+class TestInstrumentDepTerms:
+    """Test cases for InstrumentDepTerms class."""
     
     @pytest.fixture
     def mock_config(self):
@@ -37,14 +37,14 @@ class TestInstrumentalSources:
         return UnitConverter()
     
     def test_init(self, mock_config, unit_converter):
-        """Test initialization of InstrumentalSources."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        """Test initialization of InstrumentDepTerms."""
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         assert noise_calc.config == mock_config
         assert noise_calc.unit_converter == unit_converter
     
     def test_calculate_dark_current_electrons(self, mock_config, unit_converter):
         """Test calculation of dark current noise in electrons."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         noise = noise_calc.calculate_dark_current_electrons(integration_time)
@@ -57,7 +57,7 @@ class TestInstrumentalSources:
     
     def test_calculate_dark_current_adu(self, mock_config, unit_converter):
         """Test calculation of dark current noise in ADU."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         noise = noise_calc.calculate_dark_current_adu(integration_time)
@@ -70,7 +70,7 @@ class TestInstrumentalSources:
     
     def test_calculate_read_noise_electrons(self, mock_config, unit_converter):
         """Test calculation of read noise in electrons."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         noise = noise_calc.calculate_read_noise_electrons()
         
@@ -79,7 +79,7 @@ class TestInstrumentalSources:
     
     def test_calculate_read_noise_adu(self, mock_config, unit_converter):
         """Test calculation of read noise in ADU."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         noise = noise_calc.calculate_read_noise_adu()
         
@@ -88,7 +88,7 @@ class TestInstrumentalSources:
     
     def test_calculate_total_instrumental_noise_electrons(self, mock_config, unit_converter):
         """Test calculation of total instrumental noise in electrons."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         noise = noise_calc.calculate_total_instrumental_noise_electrons(integration_time)
@@ -104,7 +104,7 @@ class TestInstrumentalSources:
     
     def test_calculate_total_instrumental_noise_adu(self, mock_config, unit_converter):
         """Test calculation of total instrumental noise in ADU."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         noise = noise_calc.calculate_total_instrumental_noise_adu(integration_time)
@@ -121,7 +121,7 @@ class TestInstrumentalSources:
     
     def test_get_noise_breakdown_electrons(self, mock_config, unit_converter):
         """Test getting noise breakdown in electrons."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         breakdown = noise_calc.get_noise_breakdown_electrons(integration_time)
@@ -134,7 +134,7 @@ class TestInstrumentalSources:
     
     def test_get_noise_breakdown_adu(self, mock_config, unit_converter):
         """Test getting noise breakdown in ADU."""
-        noise_calc = InstrumentalSources(mock_config, unit_converter)
+        noise_calc = InstrumentDepTerms(mock_config, unit_converter)
         
         integration_time = 3600.0
         breakdown = noise_calc.get_noise_breakdown_adu(integration_time)
@@ -163,7 +163,7 @@ class TestInstrumentalSources:
             },
         }
         
-        noise_calc = InstrumentalSources(config, UnitConverter())
+        noise_calc = InstrumentDepTerms(config, UnitConverter())
         
         integration_time = 3600.0
         total_noise = noise_calc.calculate_total_instrumental_noise_electrons(integration_time)
@@ -188,7 +188,7 @@ class TestInstrumentalSources:
             },
         }
         
-        noise_calc = InstrumentalSources(config, UnitConverter())
+        noise_calc = InstrumentDepTerms(config, UnitConverter())
         
         integration_time = 3600.0
         total_noise = noise_calc.calculate_total_instrumental_noise_electrons(integration_time)

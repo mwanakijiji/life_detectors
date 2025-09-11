@@ -40,7 +40,7 @@ def main(config_abs_file_name: str):
     logging.info("Calculating astrophysical flux...")
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
 
-    # all ouput units should be in photons s-1 um-1 m-2
+    # all output units should be in photons s-1 um-1 m-2
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True) 
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
@@ -54,27 +54,28 @@ def main(config_abs_file_name: str):
         "zodiacal": incident_astro_zodiacal
     }
 
-    # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
+    # instantiate object to contain terms dependent on the instrument: astro flux on detector, instrinsic instrumental noise, etc.
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
-    instrumental_effects = instrumental.InstrumentalSources(config, 
-                                                            unit_converter = UnitConverter(), 
+    instrument_dep_terms = instrumental.InstrumentDepTerms(config, 
+                                                            unit_converter = UnitConverter(),
                                                             sources_astroph = sources_astroph)
-    _pass_aperture = instrumental_effects.pass_through_aperture(plot=True)
+    # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
+    # updates an object to contain the total number of photo-electrons incident on the detector, per wavelength element
+    _pass_aperture = instrument_dep_terms.pass_through_aperture(plot=True)
     
     # convert photons to electrons
-    logging.info("Converting photons to counts...")
-    _phot_2_e = instrumental_effects.photons_to_e()
+    logging.info("Converting photons to photo-electrons...")
+    _phot_2_e = instrument_dep_terms.photons_to_e()
     # convert electrons to ADU
-    _e_2_adu = instrumental_effects.e_to_adu()
+    # _e_2_adu = instrument_dep_terms.e_to_adu()
 
     # intrinsic instrumental noise contributions in ADU
     logging.info("Calculating the instrumental-only noise sources...")
-    _instrinsic_instrum = instrumental_effects.calculate_instrinsic_instrumental_noise()
+    _instrinsic_instrum = instrument_dep_terms.calculate_instrinsic_instrumental_noise()
 
     # find the noise
-    logging.info("Calculating noise...")
-    noise_calc = calculator.NoiseCalculator(config, 
-                                            noise_origin = instrumental_effects)
+    noise_calc = calculator.NoiseCalculator(config,
+                                            sources_all = instrument_dep_terms)
 
     # pass astro signal through the nuller and find contribution to readout in ADU
     s2n = noise_calc.s2n_e()

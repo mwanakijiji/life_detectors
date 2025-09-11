@@ -15,7 +15,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 
 from .astrophysical import AstrophysicalSources
-from .instrumental import InstrumentalSources
+from .instrumental import InstrumentDepTerms
 from .conversions import ConversionEngine
 from ..data.units import UnitConverter
 from ..config.validator import validate_config
@@ -46,13 +46,13 @@ class NoiseCalculator:
     Puts astrophysical and instrumental sources together.
     """
     
-    def __init__(self, config: Dict, noise_origin: InstrumentalSources):
+    def __init__(self, config: Dict, sources_all):
         """
         Initialize the noise calculator.
         
         Args:
             config: Configuration dictionary containing all parameters
-            noise_origin: the object including the various noise contributions
+            sources_all: the object including the various fluxes and noise contributions, from astro and instrumental sources
             
         Raises:
             ValueError: If configuration is invalid
@@ -61,7 +61,9 @@ class NoiseCalculator:
         self.config = config
 
         # the object that is the 'origin' of the various noise contributions for the calculations to follow
-        self.noise_origin = noise_origin
+        self.sources_all = sources_all
+
+        #logging.info("Calculating noise...")
         #self.prop_dict = noise_origin.prop_dict
 
         #self.unit_converter = UnitConverter()
@@ -72,7 +74,7 @@ class NoiseCalculator:
         
         # Initialize noise calculators
         #self.astrophysical_sources = AstrophysicalSources(config, self.unit_converter)
-        #self.instrumental_noise = InstrumentalSources(config, self.unit_converter)
+        #self.instrumental_noise = InstrumentDepTerms(config, self.unit_converter)
         
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
@@ -85,14 +87,19 @@ class NoiseCalculator:
         '''
 
         ## everything in units of photoelectrons
+        
+        #wavel_abcissa = self.noise_origin.prop_dict['wavel']
+        logging.info("Calculating S/N ...")
 
         ## ## TO DO: MAKE ALL WAVELS TO BE ON AN EXPLICIT COMMON BASIS
-        #wavel_abcissa = self.noise_origin.prop_dict['wavel']
-        wavel_abcissa = self.noise_origin.sources_astroph['star']['wavel']
+        ## ## TO DO: INCORPORATE NYQUIST SAMPLING
+        wavel_abcissa = self.sources_all.sources_astroph['star']['wavel']
+
         # map wavelengths to pixels
         res_spec = float(self.config["detector"]["spec_res"]) # spectral resolution (del_lambda/lambda)
         del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
         #wavel_abcissa_array = wavel_abcissa - del_lambda_array/2 # center of wavelength bins (um)
+
         # Edges of the wavelength bins.
         # The bin edges are at wavel_abcissa - del_lambda_array/2 and wavel_abcissa + del_lambda_array/2
         wavel_bin_edges_lower = wavel_abcissa - del_lambda_array/2
@@ -100,31 +107,16 @@ class NoiseCalculator:
         #n_pix = 1 / disp # pixels per micron(pix/um)
         #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
-        
-
         # integration time for 1 frame
         t_int = float(self.config["observation"]["integration_time"]) * u.second
         n_int = float(self.config["observation"]["n_int"])
 
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
-        ipdb.set_trace()
 
-        # FYI plot: rate of photoelectrons to be expected from sources
-        plt.clf()
-        plt.plot(self.noise_origin.prop_dict['exoplanet']['wavel'],self.noise_origin.prop_dict['exoplanet']['flux_post_aperture_ph_sec_um'], label='exoplanet')
-        plt.plot(self.noise_origin.prop_dict['star']['wavel'],self.noise_origin.prop_dict['star']['flux_post_aperture_ph_sec_um'], label='star')
-        plt.plot(self.noise_origin.prop_dict['zodiacal']['wavel'],self.noise_origin.prop_dict['zodiacal']['flux_post_aperture_ph_sec_um'], label='zodiacal')
-        #plt.plot(self.noise_origin.prop_dict['exozodiacal']['wavel'],self.noise_origin.prop_dict['exozodiacal']['flux_post_aperture_ph_sec_um'], label='exozodiacal')
-        plt.legend()
-        plt.xlabel('Wavelength (um)')
-        plt.ylabel('Rate of photoelectrons (e-/sec/um)')
-        plt.title('Rate of photoelectrons to be expected from sources')
-        plt.savefig('/Users/eckhartspalding/Downloads/rate_of_photoelectrons_from_sources.png')
-
-        del_Np_prime_del_t = self.noise_origin.prop_dict['exoplanet_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
+        del_Np_prime_del_t = self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
         # stellar signal
-        del_Ns_prime_del_t = self.noise_origin.prop_dict['star_flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 
+        del_Ns_prime_del_t = self.sources_all.prop_dict['star']['flux_e_sec_um'] * del_lambda_array # approximates an integral over lambda 
 
         # quantum efficiency
         eta = float(self.config["detector"]["quantum_efficiency"])
@@ -132,25 +124,27 @@ class NoiseCalculator:
         nulling_factor = float(self.config["nulling"]["nulling_factor"])
 
         # read noise
-        R = self.noise_origin.instrum_dict['read_noise_e_rms']
+        R = self.sources_all.sources_instrum['read_noise_e_pix-1'] # in e- per pixel rms
         # dark current in one pixel
-        D_rate = self.noise_origin.instrum_dict['dark_current_e_pix-1_sec-1']
-        D_tot = self.noise_origin.instrum_dict['dark_current_total_e']
+        D_rate = self.sources_all.sources_instrum['dark_current_e_pix-1_sec-1']
+        D_tot = self.sources_all.sources_instrum['dark_current_e_pix-1']
 
         # Reshape arrays for broadcasting
         del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
         del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
         
         # the number of pixels for each wavelength bin is 1-to-1 for now ## ## TODO: change later
-        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+        n_pix_array_reshaped = np.tile( np.ones(len(wavel_abcissa)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
         
         D_rate_reshaped = np.tile(D_rate, (len(wavel_abcissa), 1) ).T # shape (N_dark_current, N_wavel)
 
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
         s2n = np.sqrt(n_int) * np.divide(eta * t_int * del_Np_prime_del_t_reshaped, 
                         np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
-                            n_pix_array_reshaped * (R**2 + t_int * D_rate_reshaped)))
+                            n_pix_array_reshaped * (( R**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped))) # the R**2/(u.electron / u.pix) is necessary to make the units consistent 
 
+        #ipdb.set_trace()
+        s2n = s2n.value # get rid of the sqrt(e-) units
         # 2D plot of S/N vs wavelength and dark current
         plt.close()
         plt.imshow(s2n,aspect='auto', origin='lower')
@@ -181,7 +175,7 @@ class NoiseCalculator:
         )
         ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
         plt.ylabel('Dark current (e- sec-1 pix-1)')
-        plt.title('S/N, int time = ' + str(int(t_int)) + ' sec, n_int = ' + str(int(n_int)))
+        plt.title('S/N, int time = ' + str(int(t_int.value)) + ' sec, n_int = ' + str(int(n_int)))
         plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"2d_s2n_vs_wavelength_and_dark_current.png"
         plt.savefig(file_name_plot)
