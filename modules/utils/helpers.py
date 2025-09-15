@@ -219,8 +219,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
 
     # Inputs:
     # wavelength_um: wavelength in microns
-    # lambda_rel_lon_los (deg): relative longitude of the line-of-sight
-    # beta_lat_los (deg): latitude of the line-of-sight
     # nulling_baseline (m): baseline nulling distance 
     # plot: whether to plot the result and FYI plot of the whole background
 

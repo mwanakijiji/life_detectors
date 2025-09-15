@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from .astrophysical import AstrophysicalSources
-from .instrumental import InstrumentDepTerms
+from .instrumental import InstrumentDepTerms, Detector
 from .conversions import ConversionEngine
 from ..data.units import UnitConverter
 from ..config.validator import validate_config
@@ -123,6 +123,12 @@ class NoiseCalculator:
         del_lambda_array = del_lambda_array * u.um # attach units
         ipdb.set_trace()
 
+        # instantiate detector object
+        detector = Detector(config=self.config, num_wavel_bins=len(del_lambda_array))
+        # get the illumination footprint
+        footprint_bool = detector.footprint_bool(plot=True)
+        ipdb.set_trace()
+
         bin_widths = [(hi - lo) for lo, hi in zip(wavel_bin_edges_lower, wavel_bin_edges_upper)] # removed units for plotting
         ipdb.set_trace()
 
@@ -136,6 +142,8 @@ class NoiseCalculator:
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
         ipdb.set_trace()
+
+
 
         # reinterpolate the fluxes onto the binned wavelength grid
         ## ## TODO: IS THERE A BETTER WAY TO DO THIS, OTHER THAN INTERPOLATING?

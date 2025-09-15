@@ -41,7 +41,7 @@ def main(config_abs_file_name: str):
     astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter()) ## ## UnitConverter is unused at the moment 
 
     # all output units should be in photons s-1 um-1 m-2
-    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True) 
+    incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
     incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)

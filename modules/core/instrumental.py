@@ -12,6 +12,7 @@ import logging
 import ipdb
 import astropy.units as u
 import matplotlib.pyplot as plt
+import astropy.io.fits as fits
 
 from ..data.units import UnitConverter
 
@@ -139,6 +140,100 @@ class InstrumentDepTerms:
 
         return
 
+
+class Detector:
+    # Detector object that contains the illumination footprint and possibly fancier noise sources
+
+    def __init__(self, config: Dict, num_wavel_bins: int):
+        '''
+        Args:
+            config: Configuration dictionary
+            num_wavel_bins: Number of wavelength bins
+        '''
+
+        self.side_length_pix = int(config["detector"]["size"])
+        self.pitch_pix = float(config["detector"]["pitch_pix"])
+        self.pix_per_wavel_bin = float(config["detector"]["pix_per_wavel_bin"])
+        self.num_wavel_bins = num_wavel_bins
+        self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
+
+        #self.gain = config["detector"]["gain"]
+        #self.quantum_efficiency = config["detector"]["quantum_efficiency"]
+        #self.photons_to_e = config["detector"]["photons_to_e"]
+        #self.read_noise = config["detector"]["read_noise"]
+        #self.dark_current = config["detector"]["dark_current"]
+
+        # initialize dict to carry intrinsic instrumental terms (independent of astrophysics)
+        #self.sources_instrum = {}
+
+        # initialize dict to carry propagated astrophysicalterms (i.e., intensity levels on the detector, after instrument effects)
+        #self.prop_dict = {}
+        # assume wavelengths are the same for the star and planet
+        #self.prop_dict['wavel'] = self.star_flux['wavel']
+
+
+    def footprint_bool(self, plot: bool = True):
+        # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
+        # plot: whether to make an FYI plot of the footprint
+
+        # lower-left corner of the footprint
+        # (keep this coordinate whole numbers for now)
+        starting_pixel = np.array([100,300])
+
+        footprint_cube = np.full((self.num_wavel_bins, self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
+
+        # for each wavelength bin, make the footprint for that bin alone
+        for wavel_bin_num in range(0, self.num_wavel_bins):
+            # assumes horizontal spectra
+
+            # initialize the footprint
+            footprint_this = np.full((self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
+
+            # get the starting lower-left pixel for this wavelength bin
+            # (note this can be a float)
+            starting_pixel_this = starting_pixel + np.array([0,wavel_bin_num * self.pix_per_wavel_bin])
+
+            # get the footprint for this wavelength bin
+            pixel_ceil_start_x = int(np.ceil(starting_pixel_this[1]))
+            pixel_frac_start_x = pixel_ceil_start_x-starting_pixel_this[1]
+            pixel_floor_end_x = int(np.floor(starting_pixel_this[1] + self.pix_per_wavel_bin))
+            pixel_frac_end_x = (starting_pixel_this[1] + self.pix_per_wavel_bin) - pixel_floor_end_x
+            # where whole pixels are under the footprint, set them to 1
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x):int(pixel_floor_end_x)] = 1.0
+
+            # where partial pixels are under the footprint, set their values to the fraction of the pixel that is under the footprint
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x)-1] = pixel_frac_start_x
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_floor_end_x)] = pixel_frac_end_x
+
+            # add to the cube
+            footprint_cube[wavel_bin_num,:,:] = footprint_this
+
+        ipdb.set_trace()
+
+        # FYI FITS file
+        # fits.writeto(f"/Users/eckhartspalding/Downloads/footprint_cube.fits", footprint_cube, overwrite=True)
+
+
+
+
+        footprint_bool = np.full((self.side_length_pix, self.side_length_pix), False, dtype=bool)
+        footprint_bool[100:120,300:400] = True
+
+        logging.info(f"Detector footprint is {footprint_bool.sum()} pixels")
+
+        if plot:
+            plt.clf()
+            plt.title(f"Detector spectral footprint (True)")
+            plt.imshow(footprint_bool, origin='lower', cmap='gray')
+            plt.xlabel(f"Pixel")
+            plt.ylabel(f"Pixel")
+            plt.gca().set_aspect('equal', adjustable='box')
+            file_name_plot = "/Users/eckhartspalding/Downloads/footprint_bool.png"
+            plt.savefig(file_name_plot)
+            logging.info(f"Saved plot of detector footprint to {file_name_plot}")
+
+
+        return footprint_bool
 
 '''
 @dataclass
@@ -323,5 +418,5 @@ class InstrumentalNoise:
         for source, noise_electrons in breakdown_electrons.items():
             breakdown_adu[source] = self.unit_converter.electrons_to_adu(noise_electrons, gain)
         
-        return breakdown_adu 
+        return breakdown_adu
 '''
