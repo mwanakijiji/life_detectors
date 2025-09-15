@@ -172,7 +172,7 @@ class Detector:
         #self.prop_dict['wavel'] = self.star_flux['wavel']
 
 
-    def footprint_bool(self, plot: bool = True):
+    def footprint_spectral(self, plot: bool = True):
         # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
         # plot: whether to make an FYI plot of the footprint
 
@@ -208,32 +208,26 @@ class Detector:
             # add to the cube
             footprint_cube[wavel_bin_num,:,:] = footprint_this
 
-        ipdb.set_trace()
-
         # FYI FITS file
         # fits.writeto(f"/Users/eckhartspalding/Downloads/footprint_cube.fits", footprint_cube, overwrite=True)
 
+        footprint_sum = np.sum(footprint_cube, axis=0)
 
-
-
-        footprint_bool = np.full((self.side_length_pix, self.side_length_pix), False, dtype=bool)
-        footprint_bool[100:120,300:400] = True
-
-        logging.info(f"Detector footprint is {footprint_bool.sum()} pixels")
+        logging.info(f"Detector footprint is {footprint_sum.sum()} pixels")
 
         if plot:
             plt.clf()
             plt.title(f"Detector spectral footprint (True)")
-            plt.imshow(footprint_bool, origin='lower', cmap='gray')
+            plt.imshow(footprint_sum, origin='lower', cmap='gray')
             plt.xlabel(f"Pixel")
             plt.ylabel(f"Pixel")
             plt.gca().set_aspect('equal', adjustable='box')
             file_name_plot = "/Users/eckhartspalding/Downloads/footprint_bool.png"
             plt.savefig(file_name_plot)
-            logging.info(f"Saved plot of detector footprint to {file_name_plot}")
+            logging.info(f"Saved plot of detector footprint containing all wavelength bins to {file_name_plot}")
 
 
-        return footprint_bool
+        return footprint_cube
 
 '''
 @dataclass
