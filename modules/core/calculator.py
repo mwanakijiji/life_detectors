@@ -111,6 +111,8 @@ class NoiseCalculator:
         D = np.asarray(D_rate) * u.electron / (u.pix * u.second)
         eta_qm = np.asarray(eta_qm)
 
+        ipdb.set_trace()
+
         term_1 = np.sqrt(n_int)
 
         term_2 = eta_qm * t_int * del_Np_prime_del_t
@@ -118,6 +120,8 @@ class NoiseCalculator:
         term_3 = eta_qm * t_int * (del_Np_prime_del_t + null * del_Nstar_prime_del_t)
 
         term_4 = n_pix * (( R**2/(u.electron * u.pix) ) + t_int * D)
+
+
 
         return ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5
 
@@ -222,11 +226,15 @@ class NoiseCalculator:
         #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
         n_pix = np.sum(footprint_spec_cube[0,:,:]) * u.pix
         
+        # note: either D_rate or R can be an array of length >1, but not both
         D_rate_reshaped = np.tile(D_rate, (len(wavel_bin_centers), 1) ).T # shape (N_dark_current, N_wavel)
+        R_reshaped = np.tile(R, (len(wavel_bin_centers), 1) ).T # shape (N_R, N_wavel)
 
         ipdb.set_trace()
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
-        s2n = self.s2n_val(n_int=n_int, t_int=t_int, n_pix=n_pix, del_Np_prime_del_t=del_Np_prime_del_t_reshaped, del_Nstar_prime_del_t=del_Ns_prime_del_t_reshaped, null=nulling_factor, R=R, D_rate=D_rate_reshaped, eta_qm=eta)
+        s2n = self.s2n_val(n_int=n_int, t_int=t_int, n_pix=n_pix, del_Np_prime_del_t=del_Np_prime_del_t_reshaped, del_Nstar_prime_del_t=del_Ns_prime_del_t_reshaped, null=nulling_factor, R=R_reshaped, D_rate=D_rate_reshaped, eta_qm=eta)
+
+
 
         '''
         # old formulation
@@ -239,14 +247,35 @@ class NoiseCalculator:
         s2n = s2n.value # get rid of the sqrt(e-) units for plotting
         # 2D plot of S/N vs wavelength and dark current
         plt.close()
+
+        param_name = "Dark current" if np.size(D_rate) > 1 else "Read noise"
+        param_units_string = str(D_rate.unit) if np.size(D_rate) > 1 else str(R.unit)
+        param_values = np.array(D_rate if np.size(D_rate) > 1 else R)  # length N
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(s2n, aspect='auto', origin='lower')
+
+        # Choose up to ~10 ticks to keep labels readable
+        N = len(param_values)
+        tick_idx = np.linspace(0, N - 1, num=min(N, 10), dtype=int)
+        ax.set_yticks(tick_idx)
+        ax.set_yticklabels([f"{v:g}" for v in param_values[tick_idx]])
+
+        ax.set_ylabel(param_name)
+        ax.set_xlabel("Wavelength bin")
+        fig.colorbar(im, ax=ax, label="S/N")
+        plt.show()
+        ipdb.set_trace()
+
         #plt.imshow(s2n,aspect='auto', origin='lower')
-        plt.imshow(s2n, origin='lower')
-        plt.colorbar()
+        #plt.imshow(s2n, origin='lower')
+        #plt.colorbar()
 
         # Set y-axis ticks to match D_rate_reshaped[:,0]
-        plt.yticks(range(len(D_rate_reshaped[:,0])), D_rate_reshaped[:,0])
+        #plt.yticks(range(len(D_rate_reshaped[:,0])), D_rate_reshaped[:,0])
 
         # Set bottom x-axis: wavelength
+        plt.clf()
         # Set x-ticks at intervals of every three values along the x axis, and rotate the labels 30 degrees
         interval = 3
         # Set x-ticks at intervals of every two values along the x axis

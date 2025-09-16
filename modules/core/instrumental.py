@@ -51,7 +51,10 @@ class InstrumentDepTerms:
         #self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
         # e-/pix rms -> ADU rms
         logging.info(f'Finding instrumental noise sources...')
-        read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
+        #read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
+
+        read_noise_str = self.config["detector"]["read_noise"]
+        read_noise_e_rms = np.fromstring(read_noise_str, sep=',') * u.electron / u.pix # in case it's an array
         self.sources_instrum['read_noise_e_pix-1'] = read_noise_e_rms
         logging.info(f'Read noise is {read_noise_e_rms} rms')
         #self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
