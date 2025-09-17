@@ -5,6 +5,7 @@ This module provides the primary interface for calculating total noise
 and signal-to-noise ratios for infrared detector observations.
 """
 
+from ipaddress import ip_network
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
@@ -80,14 +81,17 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
-    def s2n_val(self, n_int, t_int, n_pix, del_Np_prime_del_t, del_Nstar_prime_del_t, null, R, D_rate, eta_qm):
-        """
+    def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix):
+        """ _star_planet_only
         Vectorized S/N function. Any single input variable can be an array while others remain scalars.
+        Note this equation is for the case where there is only a planet and star signal, and no exozodiacal dust etc.
         
         INPUTS:
+        wavel_bin_centers: wavelength bin centers (um)
+        del_lambda_array: wavelength bin widths (um)
         n_int: number of integrations
         t_int: time for 1 integration (sec)
-        n_pix: number of pixels (pix)
+        n_pix: total number of pixels under the wavelength element footprint (pix)
         del_Np_prime_del_t: planet signal rate (photo-electrons / sec) 
         del_Nstar_prime_del_t: star signal rate (photo-electrons / sec)
         null: nulling factor
@@ -98,28 +102,101 @@ class NoiseCalculator:
         OUTPUTS:
         s2n: S/N (unitless); can be 2D
         """
+
+        # self.sources_all.prop_dict['star']
+
+        # reinterpolate the fluxes onto the binned wavelength grid
+        ## ## TODO: IS THERE A BETTER WAY TO DO THIS, OTHER THAN INTERPOLATING?
+        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['exoplanet']['wavel'].value, 
+                                            self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        star_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['star']['wavel'].value, 
+                                            self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        exozodiacal_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['exozodiacal']['wavel'].value, 
+                                            self.sources_all.prop_dict['exozodiacal']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        zodiacal_flux_e_sec_um = np.interp(wavel_bin_centers, 
+                                            self.sources_all.prop_dict['zodiacal']['wavel'].value, 
+                                            self.sources_all.prop_dict['zodiacal']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+
+
+        # find count rates by approximating an integral over lambda (final units are e/sec/um * um = e/sec)
+        del_Np_prime_del_t = exoplanet_flux_e_sec_um * del_lambda_array 
+        del_Ns_prime_del_t = star_flux_e_sec_um * del_lambda_array
+        del_Nez_prime_del_t = exozodiacal_flux_e_sec_um * del_lambda_array
+        del_Nz_prime_del_t = zodiacal_flux_e_sec_um * del_lambda_array 
         
         # Convert all inputs to numpy arrays to enable broadcasting
         # This ensures consistent shapes for vectorized operations
-        n_int = np.asarray(n_int)
-        t_int = np.asarray(t_int) * u.second
+        n_int = np.asarray(int(self.config['observation']['n_int']))
+        t_int = np.asarray(float(self.config['observation']['integration_time'])) * u.second
         n_pix = np.asarray(n_pix) * u.pix
         del_Np_prime_del_t = np.asarray(del_Np_prime_del_t) * u.electron / u.second
-        del_Nstar_prime_del_t = np.asarray(del_Nstar_prime_del_t) * u.electron / u.second
-        null = np.asarray(null)
-        R = np.asarray(R) * u.electron
-        D = np.asarray(D_rate) * u.electron / (u.pix * u.second)
-        eta_qm = np.asarray(eta_qm)
+        del_Ns_prime_del_t = np.asarray(del_Ns_prime_del_t) * u.electron / u.second
+        null = np.asarray(float(self.config['nulling']['nulling_factor']))
+        
+        # Handle the case where read_noise may be a comma-separated list (array) or a single value
+        '''
+        read_noise_str = self.config['detector']['read_noise']
+        try:
+            R_vals = np.fromstring(read_noise_str, sep=',')
+            if R_vals.size == 1:
+                R = R_vals[0] * u.electron
+            else:
+                R = R_vals * u.electron
+        except Exception:
+            R = float(read_noise_str) * u.electron
+        '''
+        R = self.sources_all.sources_instrum['read_noise_e_pix-1']
+        D_rate = self.sources_all.sources_instrum['dark_current_e_pix-1_sec-1']
+        D_tot = self.sources_all.sources_instrum['dark_current_e_pix-1']
+        # Handle the case where dark_current may be a comma-separated list (array) or a single value
+        '''
+        dark_current_str = self.config['detector']['dark_current']
+        try:
+            # Try to parse as array (comma-separated)
+            D_vals = np.fromstring(dark_current_str, sep=',')
+            if D_vals.size == 1:
+                D = D_vals[0] * u.electron / (u.pix * u.second)
+            else:
+                D = D_vals * u.electron / (u.pix * u.second)
+        except Exception:
+            # Fallback: try to parse as float
+            D = float(dark_current_str) * u.electron / (u.pix * u.second)
+        '''
+        
+        eta_qm = np.asarray(float(self.config['detector']['quantum_efficiency']))
+        eta_t = np.asarray(float(self.config['telescope']['eta_t']))
 
-        ipdb.set_trace()
+        # Reshape arrays for broadcasting
+        del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+        del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+        del_Nez_prime_del_t_reshaped = np.tile( del_Nez_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+        del_Nz_prime_del_t_reshaped = np.tile( del_Nz_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
 
+        # note: either D_rate or R can be an array of length >1, but not both
+        if len(D_rate) > 1:
+            D_rate_reshaped = np.tile(D_rate, (len(wavel_bin_centers), 1) ).T # shape (N_dark_current, N_wavel)
+            R_reshaped = R * np.ones((len(D_rate), len(wavel_bin_centers))) # shape (N_dark_current, N_wavel)
+        elif len(R) > 1:
+            D_rate_reshaped = D_rate * np.ones((len(R), len(wavel_bin_centers))) # shape (N_dark_current, N_wavel)
+            R_reshaped = np.tile(R, (len(wavel_bin_centers), 1) ).T # shape (N_R, N_wavel)
+        else:
+            D_rate_reshaped = D_rate
+            R_reshaped = R
+
+        # term in front
         term_1 = np.sqrt(n_int)
 
-        term_2 = eta_qm * t_int * del_Np_prime_del_t
+        # numerator
+        term_2 = eta_t * eta_qm * t_int * del_Np_prime_del_t
 
-        term_3 = eta_qm * t_int * (del_Np_prime_del_t + null * del_Nstar_prime_del_t)
+        # first term under square root in the denominator
+        term_3 = eta_t * eta_qm * t_int * (del_Np_prime_del_t_reshaped + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t_reshaped)
 
-        term_4 = n_pix * (( R**2/(u.electron * u.pix) ) + t_int * D)
+        # second term under square root in the denominator
+        term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped)
 
 
 
@@ -185,54 +262,37 @@ class NoiseCalculator:
         #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
         # integration time for 1 frame
-        t_int = float(self.config["observation"]["integration_time"]) * u.second
+        #t_int = float(self.config["observation"]["integration_time"]) * u.second
         n_int = float(self.config["observation"]["n_int"])
 
         # total science (planet) signal (note this is not a function of time)
         # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
 
+        ## ## REMOVED HERE
 
-        # reinterpolate the fluxes onto the binned wavelength grid
-        ## ## TODO: IS THERE A BETTER WAY TO DO THIS, OTHER THAN INTERPOLATING?
-        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers, 
-                                            self.sources_all.prop_dict['exoplanet']['wavel'].value, 
-                                            self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
-        star_flux_e_sec_um = np.interp(wavel_bin_centers, 
-                                            self.sources_all.prop_dict['star']['wavel'].value, 
-                                            self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
         #star_flux_e_sec_um = self.sources_all.prop_dict['star']['flux_e_sec_um'].interpolate(wavel_bin_centers)
 
-        del_Np_prime_del_t = exoplanet_flux_e_sec_um * del_lambda_array # approximates an integral over lambda (final units are e/sec/um * um = e/sec)
-        # stellar signal
-        del_Ns_prime_del_t = star_flux_e_sec_um * del_lambda_array # approximates an integral over lambda 
+
 
         # quantum efficiency
-        eta = float(self.config["detector"]["quantum_efficiency"])
+        #eta = float(self.config["detector"]["quantum_efficiency"])
         # null
-        nulling_factor = float(self.config["nulling"]["nulling_factor"])
+        #nulling_factor = float(self.config["nulling"]["nulling_factor"])
 
         # read noise
-        R = self.sources_all.sources_instrum['read_noise_e_pix-1'] # in e- per pixel rms
+        #R = self.sources_all.sources_instrum['read_noise_e_pix-1'] # in e- per pixel rms
         # dark current in one pixel
-        D_rate = self.sources_all.sources_instrum['dark_current_e_pix-1_sec-1']
-        D_tot = self.sources_all.sources_instrum['dark_current_e_pix-1']
 
-        # Reshape arrays for broadcasting
-        del_Np_prime_del_t_reshaped = np.tile( del_Np_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
-        del_Ns_prime_del_t_reshaped = np.tile( del_Ns_prime_del_t, (len(D_tot), 1) ) # shape (N_dark_current, N_wavel)
+
+ 
         
         # the number of pixels for each wavelength bin
         ## ## NOTE np.sum(footprint_spec_cube[0,:,:]) MEANS THAT THE NUMBER OF PIXELS IS THE SAME FOR ALL WAVELENGTH BINS
         #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
         n_pix = np.sum(footprint_spec_cube[0,:,:]) * u.pix
         
-        # note: either D_rate or R can be an array of length >1, but not both
-        D_rate_reshaped = np.tile(D_rate, (len(wavel_bin_centers), 1) ).T # shape (N_dark_current, N_wavel)
-        R_reshaped = np.tile(R, (len(wavel_bin_centers), 1) ).T # shape (N_R, N_wavel)
-
-        ipdb.set_trace()
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
-        s2n = self.s2n_val(n_int=n_int, t_int=t_int, n_pix=n_pix, del_Np_prime_del_t=del_Np_prime_del_t_reshaped, del_Nstar_prime_del_t=del_Ns_prime_del_t_reshaped, null=nulling_factor, R=R_reshaped, D_rate=D_rate_reshaped, eta_qm=eta)
+        s2n = self.s2n_val(wavel_bin_centers=wavel_bin_centers, del_lambda_array=del_lambda_array, n_pix=n_pix)
 
 
 
@@ -245,27 +305,82 @@ class NoiseCalculator:
 
         #ipdb.set_trace()
         s2n = s2n.value # get rid of the sqrt(e-) units for plotting
+
+
+        # stuff for plots
+        # parse dark current values (can be comma-separated list)
+        dark_current_str = self.config['detector']['dark_current']
+        if ',' in dark_current_str:
+            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')]
+            dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values])
+        else:
+            dark_current_values = float(dark_current_str)
+            dark_current_display = f"{float(dark_current_str):.2f}"
+        # do the same for read noise
+        read_noise_str = self.config['detector']['read_noise']
+        if ',' in read_noise_str:
+            read_noise_values = [float(x.strip()) for x in read_noise_str.split(',')]
+            read_noise_display = ', '.join([f"{val:.2f}" for val in read_noise_values])
+        else:
+            read_noise_display = f"{float(read_noise_str):.2f}"
+            read_noise_values = float(read_noise_str)
+
+        # Prepare two left-aligned columns for figure metadata
+        instrumental_lines = [
+            "INSTRUMENTAL:",
+            f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
+            f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
+            f"quantum efficiency = {float(self.config['detector']['quantum_efficiency']):.2f}",
+            f"dark current = {dark_current_display} e-/pix/sec",
+            f"read noise = {read_noise_display} e- rms",
+            f"gain = {float(self.config['detector']['gain']):.2f} e-/ADU",
+            f"pix per wavel bin = {float(self.config['detector']['pix_per_wavel_bin']):.2f}",
+            f"integration time = {float(self.config['observation']['integration_time']):.2f} sec",
+            f"number of integrations = {float(self.config['observation']['n_int']):.2f}"
+        ]
+        astrophysical_lines = [
+            "ASTROPHYSICAL:",
+            f"stellar nulling = {bool(self.config['nulling']['null'])}",
+            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            f"distance = {float(self.config['target']['distance']):.2f} pc",
+            f"planet temperature = {float(self.config['target']['pl_temp']):.2f} K",
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
+        ]
+
+
+        
+        ############################
         # 2D plot of S/N vs wavelength and dark current
         plt.close()
 
-        param_name = "Dark current" if np.size(D_rate) > 1 else "Read noise"
-        param_units_string = str(D_rate.unit) if np.size(D_rate) > 1 else str(R.unit)
-        param_values = np.array(D_rate if np.size(D_rate) > 1 else R)  # length N
+        param_name = "Dark current" if np.size(dark_current_values) > 1 else "Read noise"
+        param_units_string = 'e_pix-1'
+        param_values = dark_current_values if np.size(dark_current_values) > 1 else read_noise_values
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 6))
         im = ax.imshow(s2n, aspect='auto', origin='lower')
+        # Add contour lines for S/N = 1 (dashed) and S/N = 5 (solid)
+        ax.contour(s2n, levels=[1, 5], colors=['white', 'white'], linewidths=2, linestyles=['dashed', 'solid'])
 
         # Choose up to ~10 ticks to keep labels readable
+        param_values = dark_current_values if np.asarray(dark_current_values).size > 1 else read_noise_values
+        param_values = np.asarray(param_values, dtype=float)  
         N = len(param_values)
         tick_idx = np.linspace(0, N - 1, num=min(N, 10), dtype=int)
         ax.set_yticks(tick_idx)
-        ax.set_yticklabels([f"{v:g}" for v in param_values[tick_idx]])
+        labels = [f"{param_values[i]:g}" for i in tick_idx]
+        ax.set_yticklabels(labels)
 
-        ax.set_ylabel(param_name)
-        ax.set_xlabel("Wavelength bin")
+        ax.set_ylabel(param_name + " (" + param_units_string + ")")
+        ax.set_xlabel("Wavelength bin (" + str(wavel_abcissa.unit) + ")")
         fig.colorbar(im, ax=ax, label="S/N")
+        # Keep a concise axes title and add two figure-level columns
+        ax.set_title("S/N")
+        fig.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
+        fig.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
+        #plt.tight_layout()
+        plt.subplots_adjust(top=0.7,right=0.8)
         plt.show()
-        ipdb.set_trace()
 
         #plt.imshow(s2n,aspect='auto', origin='lower')
         #plt.imshow(s2n, origin='lower')
@@ -297,33 +412,20 @@ class NoiseCalculator:
         )
         ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
         plt.ylabel('Dark current (e- sec-1 pix-1)')
-        plt.title('S/N, int time = ' + str(int(t_int.value)) + ' sec, n_int = ' + str(int(n_int)))
+        # Keep a concise axes title and add two figure-level columns
+        ax_bottom.set_title("S/N")
+        fig2 = plt.gcf()
+        fig2.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
+        fig2.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
         plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"2d_s2n_vs_wavelength_and_dark_current.png"
         #plt.show()
         plt.savefig(file_name_plot)
         logger.info(f"Wrote plot {file_name_plot}")
-
-        ipdb.set_trace()
         plt.close()
-        # Parse dark current values (can be comma-separated list)
-        dark_current_str = self.config['detector']['dark_current']
-        if ',' in dark_current_str:
-            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')]
-            dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values])
-        else:
-            dark_current_display = f"{float(dark_current_str):.2f}"
+
         
-        title_lines = [
-            "S/N",
-            "\n",
-            f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
-            f"throughput = {float(self.config['telescope']['throughput']):.2f}",
-            f"dark current = {dark_current_display} e-/pix/sec",
-            f"read noise = {float(self.config['detector']['read_noise']):.2f} e- rms",
-            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
-            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
-        ]
+
         '''
         for plot_num in range(0,len(s2n[:,0])):
             # draw a histogram-like plot of S/N using step plot that respects bin widths
@@ -338,12 +440,10 @@ class NoiseCalculator:
             #plt.plot(wavel_abcissa, s2n[plot_num,:], label=str(int(plot_num)))
         '''
         # Create seaborn histogram with custom bin edges
-        ipdb.set_trace()
         plt.figure(figsize=(10, 6))
         #sns.histplot(data=s2n[0,:], bins=wavel_bin_edges_lower, alpha=0.7, edgecolor='black', linewidth=1)
         for plot_num in range(0,len(s2n[:,0])):
             plt.scatter(wavel_bin_centers, s2n[plot_num,:], alpha=0.5)
-            ipdb.set_trace()
         # Add vertical lines at bin edges for reference
         #for line in wavel_bin_edges_lower:
         #     plt.axvline(x=line, color='gray', linestyle='--', alpha=0.5)
@@ -361,7 +461,11 @@ class NoiseCalculator:
         plt.xlim([4, 18])
         plt.ylabel('S/N per wavelength bin')
         plt.xlabel('Wavelength (um)')
-        plt.title("\n".join(title_lines))
+        # Keep a concise axes title and add two figure-level columns
+        plt.title("S/N")
+        fig3 = plt.gcf()
+        fig3.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
+        fig3.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
         plt.legend()
         plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"

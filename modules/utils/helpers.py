@@ -67,7 +67,7 @@ def load_config(config_file):
 def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
 
     # stellar radius
-    rad_star = 69.6340 * 1e9 * u.cm
+    rad_star = float(config['target']['rad_star']) * 69.6340 * 1e9 * u.cm
 
     # fluxes
     # stellar BB spectrum, BB_nu
@@ -122,7 +122,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
 def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, read_sample_file: bool = False, plot: bool = False) -> np.ndarray:
 
     # planet radius
-    rad_planet = 0.637 * 1e9 * u.cm
+    rad_planet = float(config['target']['rad_planet']) * 0.637 * 1e9 * u.cm
 
     # planet BB spectrum
     temp_bb_planet = float(config['target']['pl_temp'])
@@ -223,11 +223,11 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # plot: whether to plot the result and FYI plot of the whole background
 
     # set some parameters
-    tau_opt = 4e-8
-    T_eff = 265.*u.K
-    T_sol = 5778.*u.K
-    A_albedo = 0.22
-    rad_sol = 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
+    tau_opt = float(config['target']['tau_opt_zodiacal'])
+    T_eff_zodiacal = float(config['target']['T_eff_zodiacal']) * u.K
+    T_sol = float(config['target']['T_sol']) * u.K
+    A_albedo = float(config['target']['A_albedo'])
+    rad_sol = float(config['target']['rad_star']) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
 
     lambda_rel_lon_los = float(config["observation"]["lambda_rel_lon_los"]) 
     beta_lat_los = float(config["observation"]["beta_lat_los"])
@@ -238,7 +238,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # lambda_rel_lon_array: array of relative longitudes
     # beta_lat_array: array of latitudes
 
-    bb_1 = BlackBody(temperature=T_eff,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    bb_1 = BlackBody(temperature=T_eff_zodiacal,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     bb_2 = BlackBody(temperature=T_sol,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
 
     # the BB term (see Eqn. 14 in Dannert+ 2022) of the zodiacal background

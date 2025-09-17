@@ -96,7 +96,7 @@ class InstrumentDepTerms:
             "Photoelectrons, post-aperture",
             "\n",
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
-            f"throughput = {float(self.config['telescope']['throughput']):.2f}",
+            f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
             f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
             fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
         ]
