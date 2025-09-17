@@ -225,7 +225,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # set some parameters
     tau_opt = float(config['target']['tau_opt_zodiacal'])
     T_eff_zodiacal = float(config['target']['T_eff_zodiacal']) * u.K
-    T_sol = float(config['target']['T_sol']) * u.K
+    T_sol = 5778.0 * u.K # of Sunb; does not change!
     A_albedo = float(config['target']['A_albedo'])
     rad_sol = float(config['target']['rad_star']) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
 
@@ -373,16 +373,17 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     # T(r) = 278.3K * Ls^(0.25) * r^-(0.5)
 
 
-    def T_temp(Ls, r):
-        # Ls: luminosity of star (units L_sol)
+    def T_temp(r):
         # r: radius in disk (units AU)
+
+        Ls = float(config['target']['L_star'])
 
         T = 278.3*u.K * ((Ls)**0.25) * ((r/u.au)**-0.5)
 
         return T
 
 
-    def Sigma_m(r, r0, alpha, Ls, z, Sigma_m_0):
+    def Sigma_m(r, r0, alpha, z, Sigma_m_0):
         # r: radius in disk (units AU)
         # r0: reference radius (units AU)
         # alpha: power law index
@@ -399,15 +400,15 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     # Eqn. 16 in Dannert+ 2022 A&A 664:A22 
     # Slight variation in notation: Eqn. 1 in Kennedy+ 2015 ApJSS 216:23
     # N.b. Kennedy uses 'S' instead of 'I' 
-    def I_disk_lambda_r(r, r0, alpha, Ls, z, Sigma_m_0, wavel_array):
+    def I_disk_lambda_r(r, r0, alpha, z, Sigma_m_0, wavel_array):
 
-        bb = BlackBody(temperature=T_temp(Ls=Ls, r=r),  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+        bb = BlackBody(temperature=T_temp(r=r),  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
 
-        return Sigma_m(r=r, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0) * bb(wavel_array)
+        return Sigma_m(r=r, r0=r0, alpha=alpha, z=z, Sigma_m_0=Sigma_m_0) * bb(wavel_array)
 
 
     # surface brightness as function of wavelength I(lambda): I_disk_lambda_r integrated over dA = r dr dtheta
-    def I_disk_lambda(r_array, r0, alpha, Ls, z, Sigma_m_0, wavel_array):
+    def I_disk_lambda(r_array, r0, alpha, z, Sigma_m_0, wavel_array):
 
         # don't give r_array units, because it messes up the list comprehension & np.array below
         #r_array = r_array * u.AU
@@ -420,7 +421,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         #r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test =  I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test2 = r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
-        integrand = np.array( [radius * np.pi * I_disk_lambda_r(radius, r0, alpha, Ls, z, Sigma_m_0, wavel_array) for radius in r_array] ) # this loses units in np.array() operation
+        integrand = np.array( [radius * np.pi * I_disk_lambda_r(radius, r0, alpha, z, Sigma_m_0, wavel_array) for radius in r_array] ) # this loses units in np.array() operation
         # factor of pi steradians comes from integrating over dtheta (one hemisphere of the disk)
         
         # integrate over r in r_array using the trapezoidal rule (logarithmic spacing), to leave array dimensions (1, lambda)
@@ -449,15 +450,15 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     
     # see Kennedy 2015 Table 1
     alpha = 0.34
-    z = 1
+    z = float(config['target']['z_exozodiacal'])
     Sigma_m_0 = 7.12e-8
-    Ls = 1
+    Ls = float(config['target']['L_star'])
     r0 = np.sqrt(Ls) * u.au # see Kennedy 2015 ApJSS, sec. 2.2.3
 
-    T_array = T_temp(Ls=Ls, r=r_array)
+    T_array = T_temp(r=r_array)
 
     # units W / um
-    luminosity_energy_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, Ls=Ls, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
+    luminosity_energy_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
 
     # convert to photons
     # units 1 / (um sec)

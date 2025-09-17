@@ -328,22 +328,28 @@ class NoiseCalculator:
         # Prepare two left-aligned columns for figure metadata
         instrumental_lines = [
             "INSTRUMENTAL:",
+            "\n",
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
+            f"stellar nulling = {bool(self.config['nulling']['null'])}",
+            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
             f"quantum efficiency = {float(self.config['detector']['quantum_efficiency']):.2f}",
             f"dark current = {dark_current_display} e-/pix/sec",
             f"read noise = {read_noise_display} e- rms",
             f"gain = {float(self.config['detector']['gain']):.2f} e-/ADU",
             f"pix per wavel bin = {float(self.config['detector']['pix_per_wavel_bin']):.2f}",
             f"integration time = {float(self.config['observation']['integration_time']):.2f} sec",
-            f"number of integrations = {float(self.config['observation']['n_int']):.2f}"
+            f"number of integrations = {int(self.config['observation']['n_int']):.2f}"
         ]
         astrophysical_lines = [
             "ASTROPHYSICAL:",
-            f"stellar nulling = {bool(self.config['nulling']['null'])}",
-            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            "\n",
+            f"stellar temperature = {float(self.config['target']['T_star']):.2f} K",
+            f"stellar radius = {float(self.config['target']['rad_star']):.2f} solar radii",
             f"distance = {float(self.config['target']['distance']):.2f} pc",
             f"planet temperature = {float(self.config['target']['pl_temp']):.2f} K",
+            f"planet radius = {float(self.config['target']['rad_planet']):.2f} Earth radii",
+            f"planet albedo = {float(self.config['target']['A_albedo']):.2f}",
             fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
         ]
 
@@ -354,10 +360,10 @@ class NoiseCalculator:
         plt.close()
 
         param_name = "Dark current" if np.size(dark_current_values) > 1 else "Read noise"
-        param_units_string = 'e_pix-1'
+        param_units_string = 'e_pix-1_sec-1' if np.size(dark_current_values) > 1 else "e rms"
         param_values = dark_current_values if np.size(dark_current_values) > 1 else read_noise_values
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10, 8))
         im = ax.imshow(s2n, aspect='auto', origin='lower')
         # Add contour lines for S/N = 1 (dashed) and S/N = 5 (solid)
         ax.contour(s2n, levels=[1, 5], colors=['white', 'white'], linewidths=2, linestyles=['dashed', 'solid'])
@@ -379,7 +385,7 @@ class NoiseCalculator:
         fig.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
         fig.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
         #plt.tight_layout()
-        plt.subplots_adjust(top=0.7,right=0.8)
+        plt.subplots_adjust(top=0.6,right=0.8)
         plt.show()
 
         #plt.imshow(s2n,aspect='auto', origin='lower')
@@ -411,7 +417,7 @@ class NoiseCalculator:
             linestyles=['dashed', 'solid']
         )
         ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
-        plt.ylabel('Dark current (e- sec-1 pix-1)')
+        plt.ylabel(param_name + " (" + param_units_string + ")")
         # Keep a concise axes title and add two figure-level columns
         ax_bottom.set_title("S/N")
         fig2 = plt.gcf()
@@ -439,17 +445,15 @@ class NoiseCalculator:
             #plt.bar(wavel_bin_edges_lower.value, s2n[plot_num,:], width=bin_widths, align='edge', edgecolor='black', linewidth=0)
             #plt.plot(wavel_abcissa, s2n[plot_num,:], label=str(int(plot_num)))
         '''
-        # Create seaborn histogram with custom bin edges
-        plt.figure(figsize=(10, 6))
-        #sns.histplot(data=s2n[0,:], bins=wavel_bin_edges_lower, alpha=0.7, edgecolor='black', linewidth=1)
+        plt.figure(figsize=(10, 8))
         for plot_num in range(0,len(s2n[:,0])):
             plt.scatter(wavel_bin_centers, s2n[plot_num,:], alpha=0.5)
         # Add vertical lines at bin edges for reference
         #for line in wavel_bin_edges_lower:
         #     plt.axvline(x=line, color='gray', linestyle='--', alpha=0.5)
 
-        plt.scatter(wavel_bin_centers, s2n[0,:], color='black', alpha=0.5)
-        plt.scatter(wavel_bin_centers, s2n[1,:], color='red', alpha=0.5)
+        for plot_num in range(0,len(s2n[:,0])):
+            plt.scatter(wavel_bin_centers, s2n[plot_num,:], label= param_name + ": " + f"{param_values[plot_num]:g}" + " (" + param_units_string + ")")
         plt.axhline(y=1, color='gray', linestyle='--')
         plt.axhline(y=5, color='gray', linestyle='-')
         # Annotate S/N = 1 and S/N = 5 on the plot
@@ -469,17 +473,10 @@ class NoiseCalculator:
         plt.legend()
         plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
+        plt.subplots_adjust(top=0.6,right=0.8)
         plt.show()
         #plt.savefig(file_name_plot)
         logger.info(f"Wrote plot {file_name_plot}")
-        '''
-
-        s2n = np.divide(eta * Np_prime, 
-                        np.sqrt( eta * (Np_prime + nulling_factor * Ns_prime) + n_pix_array * (R**2 + D_tot) )
-                        )
-        '''
-
-
 
 
         return s2n

@@ -88,33 +88,56 @@ class InstrumentDepTerms:
         for source_name, source_val in self.sources_astroph.items():
             # if name is right and units are right
             if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-                dict_this = {source_name: {'wavel': source_val['wavel'], 'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] )}}
+                dict_this = {source_name: {'wavel': source_val['wavel'], 
+                'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] ),
+                'flux_pre_aperture_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']}}
                 self.prop_dict.update(dict_this)
 
         # overplot all the sources
         title_lines = [
-            "Photoelectrons, post-aperture",
             "\n",
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
             f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
             fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
         ]
+
+        ipdb.set_trace()
+
         if plot:
+
+            # pre-aperture fluxes
+            plt.clf()
+            for source_name, source_val in self.prop_dict.items():
+                plt.plot(source_val['wavel'], source_val['flux_pre_aperture_ph_sec_m2_um'], label=source_name)
+            plt.yscale('log')
+            plt.xlim([4, 18]) # for comparison with Dannert
+            plt.ylim([1e-3, 1e10]) # for comparison with Dannert
+            plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
+            for source_name, source_val in self.prop_dict.items():
+                plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
+            plt.legend()
+            plt.title("Photoelectrons, pre-aperture" + "\n".join(title_lines))
+            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_pre_aperture.png"
+            plt.tight_layout()
+            plt.savefig(file_name_plot)
+            logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
+
+            # post-aperture fluxes
             plt.clf()
             for source_name, source_val in self.prop_dict.items():
                 plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
-            plt.ylim([1e-8, 1e12]) # for comparison with Dannert
+            plt.ylim([1e-3, 1e10]) # for comparison with Dannert
             plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
             plt.ylabel(f"Flux (" + str(source_val['flux_post_aperture_ph_sec_um'].unit) + ")")
             plt.legend()
-            plt.title("\n".join(title_lines))
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources.png"
+            plt.title("Photoelectrons, post-aperture" + "\n".join(title_lines))
+            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_post_aperture.png"
             plt.tight_layout()
             plt.savefig(file_name_plot)
-            logging.info("Saved plot of incident flux to " + file_name_plot)
+            logging.info("Saved plot of incident flux post-aperture to " + file_name_plot)
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 
@@ -210,13 +233,14 @@ class Detector:
 
             # add to the cube
             footprint_cube[wavel_bin_num,:,:] = footprint_this
+            logging.info(f"Wavelength bin {wavel_bin_num} detector footprint is {footprint_this.sum()} pixels")
 
         # FYI FITS file
         # fits.writeto(f"/Users/eckhartspalding/Downloads/footprint_cube.fits", footprint_cube, overwrite=True)
 
         footprint_sum = np.sum(footprint_cube, axis=0)
 
-        logging.info(f"Detector footprint is {footprint_sum.sum()} pixels")
+        logging.info(f"Total detector footprint is {footprint_sum.sum()} pixels")
 
         if plot:
             plt.clf()
