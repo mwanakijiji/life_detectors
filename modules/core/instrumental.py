@@ -102,8 +102,6 @@ class InstrumentDepTerms:
             fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
         ]
 
-        ipdb.set_trace()
-
         if plot:
 
             # pre-aperture fluxes

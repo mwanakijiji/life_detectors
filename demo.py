@@ -74,7 +74,6 @@ def main(config_abs_file_name: str):
     _instrinsic_instrum = instrument_dep_terms.calculate_instrinsic_instrumental_noise()
 
     # find the noise
-    ipdb.set_trace()
     noise_calc = calculator.NoiseCalculator(config,
                                             sources_all = instrument_dep_terms)
 

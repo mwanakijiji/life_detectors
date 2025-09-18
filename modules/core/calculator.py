@@ -81,7 +81,7 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
-    def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix):
+    def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix_array):
         """ _star_planet_only
         Vectorized S/N function. Any single input variable can be an array while others remain scalars.
         Note this equation is for the case where there is only a planet and star signal, and no exozodiacal dust etc.
@@ -89,34 +89,23 @@ class NoiseCalculator:
         INPUTS:
         wavel_bin_centers: wavelength bin centers (um)
         del_lambda_array: wavelength bin widths (um)
-        n_int: number of integrations
-        t_int: time for 1 integration (sec)
-        n_pix: total number of pixels under the wavelength element footprint (pix)
-        del_Np_prime_del_t: planet signal rate (photo-electrons / sec) 
-        del_Nstar_prime_del_t: star signal rate (photo-electrons / sec)
-        null: nulling factor
-        R: read noise (photo-electrons rms)
-        D_rate: dark current rate (photo-electrons / (pix * sec))
-        eta_qm: quantum efficiency
+        n_pix_array: array of elements which represent the total number of pixels under each wavelength element footprint (pix)
 
         OUTPUTS:
         s2n: S/N (unitless); can be 2D
         """
 
-        # self.sources_all.prop_dict['star']
-
         # reinterpolate the fluxes onto the binned wavelength grid
-        ## ## TODO: IS THERE A BETTER WAY TO DO THIS, OTHER THAN INTERPOLATING?
-        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers, 
+        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['exoplanet']['wavel'].value, 
                                             self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
-        star_flux_e_sec_um = np.interp(wavel_bin_centers, 
+        star_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['star']['wavel'].value, 
                                             self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
-        exozodiacal_flux_e_sec_um = np.interp(wavel_bin_centers, 
+        exozodiacal_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['exozodiacal']['wavel'].value, 
                                             self.sources_all.prop_dict['exozodiacal']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
-        zodiacal_flux_e_sec_um = np.interp(wavel_bin_centers, 
+        zodiacal_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['zodiacal']['wavel'].value, 
                                             self.sources_all.prop_dict['zodiacal']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
 
@@ -131,7 +120,7 @@ class NoiseCalculator:
         # This ensures consistent shapes for vectorized operations
         n_int = np.asarray(int(self.config['observation']['n_int']))
         t_int = np.asarray(float(self.config['observation']['integration_time'])) * u.second
-        n_pix = np.asarray(n_pix) * u.pix
+        n_pix_array = np.asarray(n_pix_array) * u.pix
         del_Np_prime_del_t = np.asarray(del_Np_prime_del_t) * u.electron / u.second
         del_Ns_prime_del_t = np.asarray(del_Ns_prime_del_t) * u.electron / u.second
         null = np.asarray(float(self.config['nulling']['nulling_factor']))
@@ -195,10 +184,15 @@ class NoiseCalculator:
         # first term under square root in the denominator
         term_3 = eta_t * eta_qm * t_int * (del_Np_prime_del_t_reshaped + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t_reshaped)
 
+        if np.all(n_pix_array.value-np.roll(n_pix_array.value, 1) == np.zeros(n_pix_array.shape) * u.pix):
+            # if all values are the same
+            n_pix = n_pix_array[0]
+        else:
+            print('!! ----- TODO: elements of n_pix_array are not all the same; need to update the way dispersion is handled in this function to procced ----- !!')
+            exit()
+
         # second term under square root in the denominator
         term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped)
-
-
 
         return ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5
 
@@ -216,83 +210,45 @@ class NoiseCalculator:
         logging.info("Calculating S/N ...")
 
         ## ## TO DO: MAKE ALL WAVELS TO BE ON AN EXPLICIT COMMON BASIS ACCORDING TO THE BINNING
-        ## ## TO DO: INCORPORATE NYQUIST SAMPLING
         wavel_abcissa = self.sources_all.sources_astroph['star']['wavel']
 
-        # a constant pixel spacing for each wavelength bin is assumed
+        # a constant pixel spacing for each wavelength bin is assumed (but wavelength spacing within each bin is not constant)
 
-        # map wavelengths to pixels
-        res_spec = float(self.config["detector"]["spec_res"]) # spectral resolution (lambda/del_lambda)
-        # find bin edges
+        # map wavelengths-bins
+        R = float(self.config["detector"]["spec_res"]) # spectral resolution (lambda/del_lambda)
+        # bins are spaced geometrically, with recurrence relation lambda_i = lambda_{0} * (1 + 1/R)**i
+        lambda_min, lambda_max = float(self.config["wavelength_range"]["min"]) * u.um, float(self.config["wavelength_range"]["max"])  * u.um
+        # number of bins that fit fully in [lmin, lmax]
+        n_bins = int(np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / R)))
 
-        #del_lambda_array = wavel_abcissa / res_spec # size of wavelength bins (um)
-        #wavel_abcissa_array = wavel_abcissa - del_lambda_array/2 # center of wavelength bins (um)
-
-        # choose 4 um as the center of one bin, and stairstep from there
-        wavel_bin_edges_lower = np.array([])
-        wavel_bin_edges_upper = np.array([])
-        wavel_bin_centers = np.array([])
-        del_lambda_array = np.array([])
-        del_pixel_array = np.array([0]) # start with 0 pixel relative displacement (this array will effectively be the bid edges of each wavelength element in pixel space)
-
-        bin_edge_lower_this = 4.0
-        bin_edge_upper_this = 0.0
-        ## ## TO DO: SHIFT STARSTEP TO HAVE CENTERS OF BINS AT THE LOWER EDGE (BECAUSE THE BIN WIDTH IS SET BY THE RESOLUTION AT THE LOWER EDGE)
-        while bin_edge_upper_this < 20: # at wavelengths <20 um
-             del_lambda_this = bin_edge_lower_this / res_spec
-             bin_edge_upper_this = bin_edge_lower_this + del_lambda_this
-             wavel_bin_edges_lower = np.append(wavel_bin_edges_lower, bin_edge_lower_this)
-             wavel_bin_edges_upper = np.append(wavel_bin_edges_upper, bin_edge_upper_this)
-             wavel_bin_centers = np.append(wavel_bin_centers, (bin_edge_lower_this + bin_edge_upper_this) / 2)
-             del_lambda_array = np.append(del_lambda_array, del_lambda_this)
-             bin_edge_lower_this = bin_edge_upper_this
-             del_pixel_array = np.append(del_pixel_array, del_pixel_array[-1] + float(self.config["detector"]["pix_per_wavel_bin"]))
-        del_lambda_array = del_lambda_array * u.um # attach units
+        # geometric bin edges and centers
+        bin_edges = lambda_min * (1.0 + 1.0 / R) ** np.arange(n_bins + 1)
+        bin_centers = np.sqrt(bin_edges[:-1] * bin_edges[1:])
+        # wavelength bin widths (in wavelength units, not pixels)
+        bin_widths = bin_edges[1:]-bin_edges[:-1] # removed units for plotting
 
         # instantiate detector object
-        detector = Detector(config=self.config, num_wavel_bins=len(del_lambda_array))
+        detector = Detector(config=self.config, num_wavel_bins=n_bins)
         # get the illumination footprint (cube where each slice is the footprint for one wavelength bin)
         ## ## NOTE THIS IS KIND OF REDUNDANT RIGHT NOW, SINCE THE NUMBER OF PIXELS PER WAVELENGTH BIN IS CONSTANT AS CALCULATED BELOW; MIGHT CHANGE THIS LATER IF THE DISPERSION IS NOT CONSTANT
         footprint_spec_cube = detector.footprint_spectral(plot=True)
-
-        # wavelength bin widths (in wavelength units, not pixels)
-        bin_widths = [(hi - lo) for lo, hi in zip(wavel_bin_edges_lower, wavel_bin_edges_upper)] # removed units for plotting
-
-        #n_pix = 1 / disp # pixels per micron(pix/um)
-        #pix_abcissa = n_pix*wavel_abcissa - np.min(n_pix*wavel_abcissa) # remove offset
 
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["integration_time"]) * u.second
         n_int = float(self.config["observation"]["n_int"])
 
-        # total science (planet) signal (note this is not a function of time)
-        # _prime denotes it is not measured directly (i.e., photoelectrons and not ADU)
+        ## ## CONTINUE HERE
 
-        ## ## REMOVED HERE
-
-        #star_flux_e_sec_um = self.sources_all.prop_dict['star']['flux_e_sec_um'].interpolate(wavel_bin_centers)
-
-
-
-        # quantum efficiency
-        #eta = float(self.config["detector"]["quantum_efficiency"])
-        # null
-        #nulling_factor = float(self.config["nulling"]["nulling_factor"])
-
-        # read noise
-        #R = self.sources_all.sources_instrum['read_noise_e_pix-1'] # in e- per pixel rms
-        # dark current in one pixel
-
-
- 
-        
         # the number of pixels for each wavelength bin
-        ## ## NOTE np.sum(footprint_spec_cube[0,:,:]) MEANS THAT THE NUMBER OF PIXELS IS THE SAME FOR ALL WAVELENGTH BINS
+        # (in practice the number of pixels is the same for all wavelength bins, but this can be updated later if the dispersion is not constant)
         #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
-        n_pix = np.sum(footprint_spec_cube[0,:,:]) * u.pix
+        n_pix_array = u.Quantity([]) * u.pix
+        for wavel_bin_num in range(0, n_bins):
+            val = np.sum(footprint_spec_cube[wavel_bin_num, :, :]) * u.pix
+            n_pix_array = u.Quantity(np.append(n_pix_array, val))
         
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
-        s2n = self.s2n_val(wavel_bin_centers=wavel_bin_centers, del_lambda_array=del_lambda_array, n_pix=n_pix)
+        s2n = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array)
 
 
 
@@ -311,19 +267,19 @@ class NoiseCalculator:
         # parse dark current values (can be comma-separated list)
         dark_current_str = self.config['detector']['dark_current']
         if ',' in dark_current_str:
-            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')]
-            dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values])
+            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')] * u.electron / (u.pix * u.second)
+            dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values.value])
         else:
-            dark_current_values = float(dark_current_str)
+            dark_current_values = float(dark_current_str) * u.electron / (u.pix * u.second)
             dark_current_display = f"{float(dark_current_str):.2f}"
         # do the same for read noise
         read_noise_str = self.config['detector']['read_noise']
         if ',' in read_noise_str:
-            read_noise_values = [float(x.strip()) for x in read_noise_str.split(',')]
-            read_noise_display = ', '.join([f"{val:.2f}" for val in read_noise_values])
+            read_noise_values = [float(x.strip()) for x in read_noise_str.split(',')] * u.electron
+            read_noise_display = ', '.join([f"{val:.2f}" for val in read_noise_values.value])
         else:
             read_noise_display = f"{float(read_noise_str):.2f}"
-            read_noise_values = float(read_noise_str)
+            read_noise_values = float(read_noise_str) * u.electron
 
         # Prepare two left-aligned columns for figure metadata
         instrumental_lines = [
@@ -338,8 +294,8 @@ class NoiseCalculator:
             f"read noise = {read_noise_display} e- rms",
             f"gain = {float(self.config['detector']['gain']):.2f} e-/ADU",
             f"pix per wavel bin = {float(self.config['detector']['pix_per_wavel_bin']):.2f}",
-            f"integration time = {float(self.config['observation']['integration_time']):.2f} sec",
-            f"number of integrations = {int(self.config['observation']['n_int']):.2f}"
+            f"integration time per readout = {float(self.config['observation']['integration_time']):.2f} sec",
+            f"number of readouts = {int(self.config['observation']['n_int'])}"
         ]
         astrophysical_lines = [
             "ASTROPHYSICAL:",
@@ -361,25 +317,76 @@ class NoiseCalculator:
 
         param_name = "Dark current" if np.size(dark_current_values) > 1 else "Read noise"
         param_units_string = 'e_pix-1_sec-1' if np.size(dark_current_values) > 1 else "e rms"
-        param_values = dark_current_values if np.size(dark_current_values) > 1 else read_noise_values
+        param_values = dark_current_values if np.asarray(dark_current_values).size > 1 else read_noise_values
+        #param_values = np.asarray(param_values, dtype=float)  
+        N = len(param_values)
 
         fig, ax = plt.subplots(figsize=(10, 8))
-        im = ax.imshow(s2n, aspect='auto', origin='lower')
-        # Add contour lines for S/N = 1 (dashed) and S/N = 5 (solid)
-        ax.contour(s2n, levels=[1, 5], colors=['white', 'white'], linewidths=2, linestyles=['dashed', 'solid'])
 
-        # Choose up to ~10 ticks to keep labels readable
-        param_values = dark_current_values if np.asarray(dark_current_values).size > 1 else read_noise_values
-        param_values = np.asarray(param_values, dtype=float)  
-        N = len(param_values)
+        # Heatmap of S/N with contours overlaid
+        # make edges of the y-axis
+        y_c = param_values.value
+        y_edges = np.concatenate((
+            [y_c[0] - 0.5*(y_c[1] - y_c[0])],
+            0.5*(y_c[:-1] + y_c[1:]),
+            [y_c[-1] + 0.5*(y_c[-1] - y_c[-2])]
+        ))
+        # Align imshow with physical axes using wavelength edges and parameter range
+        im = ax.pcolormesh(
+            bin_edges.value, y_edges, s2n,
+            cmap='viridis', shading='flat'
+            )
+        contour = ax.contour(
+            bin_centers.value, param_values.value, s2n,
+            levels=[1, 5],
+            colors=['white', 'white'],
+            linewidths=2,
+            linestyles=['dashed', 'solid']
+        )
+        '''
+        ax.clabel(contour, inline=True, fmt='%g', fontsize=9)
+        fig.colorbar(im, ax=ax, label='S/N')
+        ax.set_xlabel(f"Wavelength ({bin_centers.unit})")
+        ax.set_ylabel(param_name + " (" + param_units_string + ")")
+        ax.set_title("S/N")
+        plt.tight_layout()
+        plt.show()
+        ipdb.set_trace()
+        im = ax.imshow(
+            s2n,
+            extent=[bin_edges[0].value, bin_edges[-1].value,
+                    np.min(param_values.value), np.max(param_values.value)],
+            origin='lower',
+            aspect='auto',
+            cmap='viridis'
+        )
+        contour = ax.contour(
+            bin_centers.value, param_values.value, s2n,
+            levels=[1, 5],
+            colors=['white', 'white'],
+            linewidths=2,
+            linestyles=['dashed', 'solid']
+        )
+        '''
+        ax.clabel(contour, inline=True, fmt='%g', fontsize=9)
+        fig.colorbar(im, ax=ax, label='S/N')
+        ax.set_xlabel(f"Wavelength ({bin_centers.unit})")
+        ax.set_ylabel(param_name + " (" + param_units_string + ")")
+        ax.set_title("S/N")
+        plt.tight_layout()
+        plt.show()
+        ipdb.set_trace()
+
+        '''
+        ipdb.set_trace()
         tick_idx = np.linspace(0, N - 1, num=min(N, 10), dtype=int)
         ax.set_yticks(tick_idx)
-        labels = [f"{param_values[i]:g}" for i in tick_idx]
+        labels = [f"{param_values[i].value:g}" for i in tick_idx]
         ax.set_yticklabels(labels)
 
         ax.set_ylabel(param_name + " (" + param_units_string + ")")
         ax.set_xlabel("Wavelength bin (" + str(wavel_abcissa.unit) + ")")
-        fig.colorbar(im, ax=ax, label="S/N")
+        fig.colorbar(contour, ax=ax, label="S/N")
         # Keep a concise axes title and add two figure-level columns
         ax.set_title("S/N")
         fig.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
@@ -387,6 +394,7 @@ class NoiseCalculator:
         #plt.tight_layout()
         plt.subplots_adjust(top=0.6,right=0.8)
         plt.show()
+        '''
 
         #plt.imshow(s2n,aspect='auto', origin='lower')
         #plt.imshow(s2n, origin='lower')
@@ -447,13 +455,13 @@ class NoiseCalculator:
         '''
         plt.figure(figsize=(10, 8))
         for plot_num in range(0,len(s2n[:,0])):
-            plt.scatter(wavel_bin_centers, s2n[plot_num,:], alpha=0.5)
+            plt.scatter(bin_centers, s2n[plot_num,:], alpha=0.5)
         # Add vertical lines at bin edges for reference
         #for line in wavel_bin_edges_lower:
         #     plt.axvline(x=line, color='gray', linestyle='--', alpha=0.5)
 
         for plot_num in range(0,len(s2n[:,0])):
-            plt.scatter(wavel_bin_centers, s2n[plot_num,:], label= param_name + ": " + f"{param_values[plot_num]:g}" + " (" + param_units_string + ")")
+            plt.scatter(bin_centers, s2n[plot_num,:], label= param_name + ": " + f"{param_values[plot_num].value:g}" + " (" + param_units_string + ")")
         plt.axhline(y=1, color='gray', linestyle='--')
         plt.axhline(y=5, color='gray', linestyle='-')
         # Annotate S/N = 1 and S/N = 5 on the plot
