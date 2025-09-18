@@ -45,6 +45,7 @@ def main(config_abs_file_name: str):
     incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
     incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)
+    ipdb.set_trace()
     
     # put all sources into dictionary
     sources_astroph = {

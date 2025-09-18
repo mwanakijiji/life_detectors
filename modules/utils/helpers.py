@@ -119,7 +119,11 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     return luminosity_photons_star, luminosity_energy_star
 
 
-def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, read_sample_file: bool = False, plot: bool = False) -> np.ndarray:
+def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
+
+    # what should serve as the source of the planet spectrum? blackbody or file?
+    planet_source = str(config['target']['planet_source'])
+    logging.info(f"Planet source: {planet_source}")
 
     # planet radius
     rad_planet = float(config['target']['rad_planet']) * 0.637 * 1e9 * u.cm
@@ -127,27 +131,39 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
     # planet BB spectrum
     temp_bb_planet = float(config['target']['pl_temp'])
     bb_planet_lambda = BlackBody(temperature=temp_bb_planet*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    ipdb.set_trace()
     # planet surface flux
-    if read_sample_file:
-        ## ## NOT WORKING YET
-        df = pd.read_csv('/Users/eckhartspalding/Documents/job_science/postdoc_eth/life/example_spectrum.txt', delim_whitespace=True, names=('wavel','flux'))
-        # units of df['flux'] are u.photon / (u.micron * u.s * u.m**2 * u.sr)
+    if planet_source == 'file':
+
+        # this input file appears to be linearly-sampled in wavelength, with flux in units of u.photon / (u.s * u.m**2 * u.um)
+        file_to_read_in = '/Users/eckhartspalding/Documents/git.repos/life_detectors/data/example_planet_spectrum.txt'
+        df = pd.read_csv(file_to_read_in, delim_whitespace=True, names=('wavel','flux'))
+        logging.info(f"Read in planet spectrum from {file_to_read_in}")
+
+        ipdb.set_trace()
+        # units of df['flux'] are u.photon / (u.s * u.m**2 * u.um)
         # so total units of test_photons below are sr * (above) = u.photon / (u.micron * u.s * u.m**2)
-        test_photons = np.pi*u.sr * df['flux'].values * u.photon / (u.micron * u.s * u.m**2 * u.sr)
+        test_luminosity = np.pi*u.sr * df['flux'].values * u.W/(u.m**2 * u.um) 
+        
         
         # resample the spectrum onto the wavelength grid we gave it above
         #test_photons = test_photons.to(1 / u.micron / u.s)
         # Create interpolation function
         interp_func = interp1d(
             df['wavel'].values, 
-            test_photons, 
+            test_luminosity, 
             kind='linear', 
             bounds_error=False, 
             fill_value=0.0
         )
         # Interpolate to new wavelength grid
         new_flux = interp_func(wavelength_um)
-        emission_photons = new_flux * u.photon / (u.micron * u.s * u.m**2)
+        luminosity_energy_earth = new_flux * u.W/(u.m**2 * u.um)
+
+        emission_photons = emission_energy * (wavelength_um / (const.h * const.c)) * u.photon
+        emission_photons = emission_photons.to(u.photon / (u.um * u.s * u.m**2)) # units ph / (s um m2)
+
+        test_photons = test_luminosity * (const.h * const.c / wavelength_um)
 
         # current units are u.ph / (u.micron * u.s * u.m**2)
         # want units of u.ph / (u.micron * u.s)
@@ -167,7 +183,7 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
         #wavelength_um = df['wavel'].values * u.um
         #luminosity_photons_planet = df['luminosity_photons'].values * 1 / u.micron / u.s
-    else:
+    elif planet_source == 'BB':
         # bb_planet_lambda() units are W / (micron sr m2)
         # so total units of flux_planet are sr * (above) = W / (micron m2)
         flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
@@ -519,7 +535,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     # for unresolved sources, units ph /(um sec),  W / um
     # note these are independent of distance from Earth
     luminosity_photons_star, luminosity_energy_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
-    luminosity_photons_planet, luminosity_energy_planet = generate_planet_spectrum(config, wavelength_um, read_sample_file=False, plot=plot) # unresolved
+    luminosity_photons_planet, luminosity_energy_planet = generate_planet_spectrum(config, wavelength_um, plot=plot) # unresolved
     luminosity_photons_exozodi, luminosity_energy_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
     # notes on zodiacal units:
     # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV

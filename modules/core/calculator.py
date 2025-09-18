@@ -175,8 +175,6 @@ class NoiseCalculator:
             D_rate_reshaped = D_rate
             R_reshaped = R
 
-        ipdb.set_trace()
-
         # term in front
         term_1 = np.sqrt(n_int)
 
@@ -196,7 +194,45 @@ class NoiseCalculator:
         # second term under square root in the denominator
         term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped)
 
-        return ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5
+        s2n_tot = ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5
+
+        # FYI plot of fundamental noise sources
+        plt.clf()
+        plt.plot(wavel_bin_centers.value, D_rate[0] * np.ones(len(wavel_bin_centers)), label='Dark current', linestyle='dashed')
+        plt.plot(wavel_bin_centers.value, np.sqrt(del_Nez_prime_del_t), label='Exozodiacal')
+        plt.plot(wavel_bin_centers.value, np.sqrt(del_Nz_prime_del_t), label='Zodiacal')
+        plt.plot(wavel_bin_centers.value, np.sqrt(null * del_Ns_prime_del_t), label='Nulled Star (trans = ' + str(null) + ')')
+        plt.legend()
+        plt.yscale('log')
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('Noise (ph/sec)')
+        plt.title('Noise contributions (only 1 value of dark current or read noise)')
+        file_name_plot = '/Users/eckhartspalding/Downloads/s2n_tot.png'
+        #plt.show()
+        plt.savefig(file_name_plot)
+        logger.info(f"Saved plot of noise contributions to {file_name_plot}")
+        plt.close()
+
+        ipdb.set_trace()
+        # plot the significance of the terms that go into the S/N expression
+        plt.clf()
+        plt.figure(figsize=(10, 6))
+        plt.plot(wavel_bin_centers.value, term_2, label='term_2')
+        plt.plot(wavel_bin_centers.value, term_3[0,:], label='term_3')
+        plt.plot(wavel_bin_centers.value, term_4[0,:], label='term_4')
+        plt.legend()
+        plt.yscale('log')
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('Noise (ph/sec)')
+        plt.title('S/N expression term contributions (only 1 value of dark current or read noise)')
+        file_name_plot = '/Users/eckhartspalding/Downloads/s2n_expression_contributions.png'
+        #plt.show()
+        plt.tight_layout()
+        plt.savefig(file_name_plot)
+        logger.info(f"Saved plot of noise contributions to {file_name_plot}")
+        plt.close()
+
+        return s2n_tot
 
 
     def s2n_e(self):
