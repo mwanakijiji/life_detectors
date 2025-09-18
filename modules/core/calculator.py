@@ -175,6 +175,8 @@ class NoiseCalculator:
             D_rate_reshaped = D_rate
             R_reshaped = R
 
+        ipdb.set_trace()
+
         # term in front
         term_1 = np.sqrt(n_int)
 
@@ -236,8 +238,6 @@ class NoiseCalculator:
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["integration_time"]) * u.second
         n_int = float(self.config["observation"]["n_int"])
-
-        ## ## CONTINUE HERE
 
         # the number of pixels for each wavelength bin
         # (in practice the number of pixels is the same for all wavelength bins, but this can be updated later if the dispersion is not constant)
