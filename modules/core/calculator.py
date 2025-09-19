@@ -96,9 +96,10 @@ class NoiseCalculator:
         """
 
         # reinterpolate the fluxes onto the binned wavelength grid
+        ## ## CONTINUE HERE
         exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
-                                            self.sources_all.prop_dict['exoplanet']['wavel'].value, 
-                                            self.sources_all.prop_dict['exoplanet']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+                                            self.sources_all.prop_dict['exoplanet_bb']['wavel'].value, 
+                                            self.sources_all.prop_dict['exoplanet_bb']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
         star_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['star']['wavel'].value, 
                                             self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)

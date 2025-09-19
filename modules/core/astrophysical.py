@@ -13,6 +13,9 @@ import ipdb
 import configparser
 import matplotlib.pyplot as plt
 from astropy import units as u
+import astropy.constants as const
+import pandas as pd
+
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..data.units import UnitConverter
@@ -39,7 +42,12 @@ class AstrophysicalSources:
         self.spectra = {}
         self._load_spectra()
     
+
+    #def _load_model_spectrum(self, source_name: str) -> None:
+    #    """Load model spectrum for an exoplanet."""
+    #    pass
     
+
     def _load_spectra(self) -> None:
         """Load spectral data for all astrophysical sources."""
         #sources_config = self.config.get("astrophysical_sources", {})
@@ -55,7 +63,7 @@ class AstrophysicalSources:
                     logger.info(f"Loaded spectrum for {source_name}: {spectrum_file_name}")
 
                 except Exception as e:
-                    logger.error(f"Failed to load spectrum for {source_name}: {e}")
+                    logger.warning(f"Did not load self-generated spectrum for {source_name}: {e}; either missing, or will need to read in from other file")
         else:
             logger.warning("No [astrophysical_sources] section found in config file.")
     
@@ -65,7 +73,7 @@ class AstrophysicalSources:
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
         Args:
-            source_name: Name of the source (star, exoplanet, etc.)
+            source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb, exoplanet_model_10pc)
             null: apply the nulling factor? (only applies to star target)
             
         Returns:
@@ -77,46 +85,76 @@ class AstrophysicalSources:
         # should star be nulled?
         null = bool(self.config["nulling"]["null"])
         logger.info(f"Nulling of star: {null}")
-
-        if source_name not in self.spectra:
-            logger.warning(f"Spectrum not available for {source_name}")
-            return np.array([])
         
         wavelength = np.linspace(float(self.config['wavelength_range']['min']),
                                float(self.config['wavelength_range']['max']),
                                int(self.config['wavelength_range']['n_points'])) * u.um
-        
-        spectrum = self.spectra[source_name]
-        
-        # Interpolate to the requested wavelength grid
-        # (note this is not integrating over wavelength for each interpolated data point) 
-        interpolated_spectrum = spectrum.interpolate(wavelength)
-        
-        # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
-        if source_name != "zodiacal":
-            distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
-            distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
-        
-        # Apply nulling factor for on-axis sources
-        nulling_factor = self.config["nulling"]["nulling_factor"]
 
-        # Convert flux_unit string to astropy unit object
-        flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
-        
-        # treatment of units and nulling depending on the source
-        if source_name == "zodiacal":
-            # no distance correction and no nulling
-            flux_incident = interpolated_spectrum.flux * flux_unit_obj
-        elif null and (source_name == "star"):  
-            # apply nulling to star only
-            flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
-            logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
+        if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
+
+            spectrum = self.spectra[source_name]
+            
+            # Interpolate to the requested wavelength grid
+            # (note this is not integrating over wavelength for each interpolated data point) 
+            interpolated_spectrum = spectrum.interpolate(wavelength)
+            
+            # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
+            if source_name != "zodiacal":
+                distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
+                distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
+            
+            # Apply nulling factor for on-axis sources
+            nulling_factor = self.config["nulling"]["nulling_factor"]
+
+            # Convert flux_unit string to astropy unit object
+            flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
+            
+            # treatment of units and nulling depending on the source
+            if source_name == "zodiacal":
+                # no distance correction and no nulling
+                flux_incident = interpolated_spectrum.flux * flux_unit_obj
+            elif null and (source_name == "star"):  
+                # apply nulling to star only
+                flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
+                logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
+            else:
+                # no nulling
+                flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
+                logger.info(f"No nulling factor applied to {source_name}.")
+
+            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+
+        elif source_name == "exoplanet_model_10pc":
+
+            # check that the desired distance is 10 pc; if not, will have to update this
+            if float(self.config["target"]["distance"]) != 10.0:
+                logger.warning(f"Distance {float(self.config['target']['distance'])} pc is not 10 pc; will have to update this.")
+                exit()
+
+            # this is a model spectrum from a file with different units, formatting
+            file_name_exoplanet_model_10pc = self.config['astrophysical_sources']['exoplanet_model_10pc']
+            df = pd.read_csv(file_name_exoplanet_model_10pc, delim_whitespace=True, names=['wavelength', 'flux', 'err_flux'])
+
+            wavel = df['wavelength'].values * u.micron
+            flux_nu = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)
+            err_flux_nu = df['err_flux'].values * u.erg / (u.second * u.Hz * u.m**2)
+
+            # convert to F_lambda
+            flux_lambda = flux_nu * (const.c / wavel**2)
+            flux_lambda = flux_lambda.to(u.W / (u.m**2 * u.micron))
+
+            # convert to photon flux
+            flux_photons = flux_lambda * (wavel / (const.h * const.c)) * u.ph
+            flux_photons = flux_photons.to(u.ph / (u.micron * u.s * u.m**2))
+
+            # interpolate
+            flux_incident = np.interp(x = wavelength, 
+                                            xp = wavel, 
+                                            fp = flux_photons)
+
         else:
-            # no nulling
-            flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
-            logger.info(f"No nulling factor applied to {source_name}.")
-
-        flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+            logger.warning(f"Spectrum not available for {source_name}")
+            return np.array([])
 
         incident_dict['wavel'] = wavelength
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
@@ -130,8 +168,8 @@ class AstrophysicalSources:
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e9]) # for comparison with Dannert
-            plt.xlabel(f"Wavelength ({spectrum.wavelength_unit})")
-            plt.ylabel(f"Flux (" + str(flux_incident.unit) + ")")
+            plt.xlabel(f"Wavelength ({incident_dict['wavel'].unit})")
+            plt.ylabel(f"Flux (" + str(incident_dict['astro_flux_ph_sec_m2_um'].unit) + ")")
             plt.title(f"Incident flux from {source_name} (at Earth)")
             file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
             plt.savefig(file_name_plot)

@@ -17,7 +17,7 @@ from modules.config import loader, validator
 from modules.utils.helpers import create_sample_data, load_config
 from modules.data.units import UnitConverter
 
-def main(config_abs_file_name: str):
+def main(config_abs_file_name: str, sources_to_include: list):
     """Run the demonstration."""
 
     # set up logging
@@ -42,15 +42,16 @@ def main(config_abs_file_name: str):
 
     # all output units should be in photons s-1 um-1 m-2
     incident_astro_star = astrophysical_sources.calculate_incident_flux(source_name = "star", plot=True)
-    incident_astro_exoplanet = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet", plot=True)
+    incident_astro_exoplanet_bb = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet_bb", plot=True)
+    incident_astro_exoplanet_model_10pc = astrophysical_sources.calculate_incident_flux(source_name = "exoplanet_model_10pc", plot=True)
     incident_astro_exozodi = astrophysical_sources.calculate_incident_flux(source_name = "exozodiacal", plot=True)
     incident_astro_zodiacal = astrophysical_sources.calculate_incident_flux(source_name = "zodiacal", plot=True)
-    ipdb.set_trace()
     
-    # put all sources into dictionary
+    # put all sources into dictionary (will be included depending on sources_to_include)
     sources_astroph = {
         "star": incident_astro_star,
-        "exoplanet": incident_astro_exoplanet,
+        "exoplanet_bb": incident_astro_exoplanet_bb,
+        "exoplanet_model_10pc": incident_astro_exoplanet_model_10pc,
         "exozodiacal": incident_astro_exozodi,
         "zodiacal": incident_astro_zodiacal
     }
@@ -76,7 +77,9 @@ def main(config_abs_file_name: str):
 
     # find the noise
     noise_calc = calculator.NoiseCalculator(config,
-                                            sources_all = instrument_dep_terms)
+                                            sources_all = instrument_dep_terms, 
+                                            sources_to_include = sources_to_include)
+    ## ## CONTINUE HERE; make sources_to_include work, so that only things we want go into the S/N calculation
 
     # pass astro signal through the nuller and find contribution to readout in ADU
     s2n = noise_calc.s2n_e()
@@ -129,4 +132,5 @@ def main(config_abs_file_name: str):
 
     '''
 if __name__ == "__main__":
-    main(config_abs_file_name = "/Users/eckhartspalding/Documents/git.repos/life_detectors/modules/config/demo_config.ini") 
+    main(config_abs_file_name = "/Users/eckhartspalding/Documents/git.repos/life_detectors/modules/config/demo_config.ini", 
+            sources_to_include = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]) 

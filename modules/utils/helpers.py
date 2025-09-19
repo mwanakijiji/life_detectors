@@ -119,7 +119,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     return luminosity_photons_star, luminosity_energy_star
 
 
-def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
+def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
 
     # what should serve as the source of the planet spectrum? blackbody or file?
     planet_source = str(config['target']['planet_source'])
@@ -131,8 +131,8 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
     # planet BB spectrum
     temp_bb_planet = float(config['target']['pl_temp'])
     bb_planet_lambda = BlackBody(temperature=temp_bb_planet*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
-    ipdb.set_trace()
     # planet surface flux
+    '''
     if planet_source == 'file':
 
         # this input file appears to be linearly-sampled in wavelength, with flux in units of u.photon / (u.s * u.m**2 * u.um)
@@ -183,15 +183,15 @@ def generate_planet_spectrum(config: configparser.ConfigParser, wavelength_um: n
         #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
         #wavelength_um = df['wavel'].values * u.um
         #luminosity_photons_planet = df['luminosity_photons'].values * 1 / u.micron / u.s
-    elif planet_source == 'BB':
-        # bb_planet_lambda() units are W / (micron sr m2)
-        # so total units of flux_planet are sr * (above) = W / (micron m2)
-        flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
-        # planet luminosity
-        luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
-        luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
-        luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
-        luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
+    '''
+    # bb_planet_lambda() units are W / (micron sr m2)
+    # so total units of flux_planet are sr * (above) = W / (micron m2)
+    flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
+    # planet luminosity
+    luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
+    luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
+    luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
+    luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
 
     if plot:
         plt.clf()
@@ -534,8 +534,8 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
     # for unresolved sources, units ph /(um sec),  W / um
     # note these are independent of distance from Earth
-    luminosity_photons_star, luminosity_energy_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved
-    luminosity_photons_planet, luminosity_energy_planet = generate_planet_spectrum(config, wavelength_um, plot=plot) # unresolved
+    luminosity_photons_star, luminosity_energy_star = generate_star_spectrum(config, wavelength_um, plot=plot) # unresolved; just a BB
+    luminosity_photons_planet, luminosity_energy_planet = generate_planet_bb_spectrum(config, wavelength_um, plot=plot) # unresolved; just a BB
     luminosity_photons_exozodi, luminosity_energy_exozodi = generate_exozodiacal_spectrum(config, wavelength_um, plot=plot) # unresolved
     # notes on zodiacal units:
     # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
@@ -552,16 +552,16 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_energy_units": str(luminosity_energy_star.unit),
             "luminosity_photons": luminosity_photons_star,
             "luminosity_photons_units": str(luminosity_photons_star.unit),
-            "plot_name": "star_spectrum.png"
+            "plot_name": "star_BB_spectrum.png"
         },
-        "exoplanet_spectrum.txt": {
-            "description": "Exoplanet spectrum",
+        "exoplanet_bb_spectrum.txt": {
+            "description": "Blackbody exoplanet spectrum",
             "wavelength_um": wavelength_um,
             "luminosity_energy": luminosity_energy_planet,
             "luminosity_energy_units": str(luminosity_energy_planet.unit),
             "luminosity_photons": luminosity_photons_planet,
             "luminosity_photons_units": str(luminosity_photons_planet.unit),
-            "plot_name": "exoplanet_spectrum.png"
+            "plot_name": "exoplanet_bb_spectrum.png"
         },
             "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
