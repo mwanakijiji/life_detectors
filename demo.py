@@ -60,7 +60,8 @@ def main(config_abs_file_name: str, sources_to_include: list):
     logging.info("Passing astrophysical flux through telescope aperture to detector plane...")
     instrument_dep_terms = instrumental.InstrumentDepTerms(config, 
                                                             unit_converter = UnitConverter(),
-                                                            sources_astroph = sources_astroph)
+                                                            sources_astroph = sources_astroph,
+                                                            sources_to_include = sources_to_include)
     # pass the astrophysical flux through the telescope aperture to the detector plane and into detector units
     # updates an object to contain the total number of photo-electrons incident on the detector, per wavelength element
     _pass_aperture = instrument_dep_terms.pass_through_aperture(plot=True)

@@ -48,7 +48,7 @@ class NoiseCalculator:
     Puts astrophysical and instrumental sources together.
     """
     
-    def __init__(self, config: Dict, sources_all):
+    def __init__(self, config: Dict, sources_all, sources_to_include: list):
         """
         Initialize the noise calculator.
         
@@ -64,6 +64,7 @@ class NoiseCalculator:
 
         # the object that is the 'origin' of the various noise contributions for the calculations to follow
         self.sources_all = sources_all
+        self.sources_to_include = sources_to_include
 
         #logging.info("Calculating noise...")
         #self.prop_dict = noise_origin.prop_dict
@@ -96,10 +97,21 @@ class NoiseCalculator:
         """
 
         # reinterpolate the fluxes onto the binned wavelength grid
-        ## ## CONTINUE HERE
-        exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
-                                            self.sources_all.prop_dict['exoplanet_bb']['wavel'].value, 
-                                            self.sources_all.prop_dict['exoplanet_bb']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        # either a BB planet or a model spectrum
+        if ("exoplanet_bb" in self.sources_to_include) and ("exoplanet_model_10pc" in self.sources_to_include):
+            logging.error('!! ----- Two different planet models being used ----- !!')
+            exit()
+        elif "exoplanet_bb" in self.sources_to_include:
+            exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
+                                                self.sources_all.prop_dict['exoplanet_bb']['wavel'].value, 
+                                                self.sources_all.prop_dict['exoplanet_bb']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        elif "exoplanet_model_10pc" in self.sources_to_include:
+            exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
+                                                self.sources_all.prop_dict['exoplanet_model_10pc']['wavel'].value, 
+                                                self.sources_all.prop_dict['exoplanet_model_10pc']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        else:
+            logging.warning('No planet model being used')
+
         star_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                             self.sources_all.prop_dict['star']['wavel'].value, 
                                             self.sources_all.prop_dict['star']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
@@ -214,7 +226,6 @@ class NoiseCalculator:
         logger.info(f"Saved plot of noise contributions to {file_name_plot}")
         plt.close()
 
-        ipdb.set_trace()
         # plot the significance of the terms that go into the S/N expression
         plt.clf()
         plt.figure(figsize=(10, 6))
@@ -306,6 +317,9 @@ class NoiseCalculator:
         if ',' in dark_current_str:
             dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')] * u.electron / (u.pix * u.second)
             dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values.value])
+            #parts = [float(x.strip()) for x in dark_current_str.split(',')]
+            #dark_current = np.arange(parts[0], parts[1], parts[2]) * u.electron / (u.pix * u.second)
+            ipdb.set_trace()
         else:
             dark_current_values = float(dark_current_str) * u.electron / (u.pix * u.second)
             dark_current_display = f"{float(dark_current_str):.2f}"
@@ -325,7 +339,7 @@ class NoiseCalculator:
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
             f"stellar nulling = {bool(self.config['nulling']['null'])}",
-            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.4f}",
             f"quantum efficiency = {float(self.config['detector']['quantum_efficiency']):.2f}",
             f"dark current = {dark_current_display} e-/pix/sec",
             f"read noise = {read_noise_display} e- rms",
@@ -412,7 +426,6 @@ class NoiseCalculator:
         ax.set_title("S/N")
         plt.tight_layout()
         plt.show()
-        ipdb.set_trace()
 
         '''
         ipdb.set_trace()

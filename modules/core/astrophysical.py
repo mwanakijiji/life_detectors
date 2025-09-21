@@ -134,6 +134,7 @@ class AstrophysicalSources:
             # this is a model spectrum from a file with different units, formatting
             file_name_exoplanet_model_10pc = self.config['astrophysical_sources']['exoplanet_model_10pc']
             df = pd.read_csv(file_name_exoplanet_model_10pc, delim_whitespace=True, names=['wavelength', 'flux', 'err_flux'])
+            logger.info(f"Loaded model exoplanetspectrum for {source_name}: {file_name_exoplanet_model_10pc}")
 
             wavel = df['wavelength'].values * u.micron
             flux_nu = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)

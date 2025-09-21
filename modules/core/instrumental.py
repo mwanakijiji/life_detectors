@@ -20,17 +20,19 @@ from ..data.units import UnitConverter
 class InstrumentDepTerms:
     # Provides the effects of the instrument (including astro flux passed through the telescope aperture)
 
-    def __init__(self, config: Dict, unit_converter: UnitConverter, sources_astroph: dict):
+    def __init__(self, config: Dict, unit_converter: UnitConverter, sources_astroph: dict, sources_to_include: list):
         '''
         Args:
             config: Configuration dictionary
             unit_converter: Unit conversion object
             sources: Dictionary of sources of flux; {'wavel': <Quantity um>, 'astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
+            sources_to_include: List of sources to actuallyinclude in the S/N calculation (and plots of incident fluxes)
         '''
 
         self.config = config
         self.unit_converter = unit_converter ## ## TODO: DO I NEED THIS?
         self.sources_astroph = sources_astroph # all sources of astrophysical flux, as are incident on the instrument
+        self.sources_to_include = sources_to_include
 
         # initialize dict to carry intrinsic instrumental terms (independent of astrophysics)
         self.sources_instrum = {}
@@ -64,7 +66,6 @@ class InstrumentDepTerms:
         # dark current rate 
         # e/pix/sec
         dark_current_str = self.config["detector"]["dark_current"]
-        ## ## TODO: DO I WANT TO MAKE THIS MORE FLEXIBLE TO ALLOW OTHER TERMS TO BE IN THE FORM OF ARRAYS TOO?
         dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array
         logging.info(f'Dark current is {dark_current_rate_e_pix_sec} e-/pix/sec')
 
@@ -94,20 +95,31 @@ class InstrumentDepTerms:
                 self.prop_dict.update(dict_this)
 
         # overplot all the sources
+        
         title_lines = [
             "\n",
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
             f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
-            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg"
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
+            f"z_exozodiacal = {float(self.config['target']['z_exozodiacal'])}",
+            f"A_albedo = {float(self.config['target']['A_albedo'])}",
+            f"L_star = {float(self.config['target']['L_star'])} L_sol",
+            f"rad_star = {float(self.config['target']['rad_star'])} solar radii",
+            f"T_star = {float(self.config['target']['T_star'])} K",
+            f"rad_planet = {float(self.config['target']['rad_planet'])} Earth radii",
+            f"pl_temp = {float(self.config['target']['pl_temp'])} K",
+            f"distance = {float(self.config['target']['distance'])} pc"
         ]
 
         if plot:
 
             # pre-aperture fluxes
             plt.clf()
+            plt.figure(figsize=(6, 6))
             for source_name, source_val in self.prop_dict.items():
-                plt.plot(source_val['wavel'], source_val['flux_pre_aperture_ph_sec_m2_um'], label=source_name)
+                if source_name in self.sources_to_include:
+                    plt.plot(source_val['wavel'], source_val['flux_pre_aperture_ph_sec_m2_um'], label=source_name)
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e10]) # for comparison with Dannert
@@ -115,8 +127,8 @@ class InstrumentDepTerms:
             for source_name, source_val in self.prop_dict.items():
                 plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
             plt.legend()
-            plt.title("Photoelectrons, pre-aperture" + "\n".join(title_lines))
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_pre_aperture.png"
+            plt.title("Photoelectrons, pre-aperture\n" + "\n".join(title_lines), loc='left')
+            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_pre_aperture.pdf"
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
@@ -124,7 +136,8 @@ class InstrumentDepTerms:
             # post-aperture fluxes
             plt.clf()
             for source_name, source_val in self.prop_dict.items():
-                plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
+                if source_name in self.sources_to_include:
+                    plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e10]) # for comparison with Dannert
