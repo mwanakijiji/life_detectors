@@ -66,7 +66,13 @@ class InstrumentDepTerms:
         # dark current rate 
         # e/pix/sec
         dark_current_str = self.config["detector"]["dark_current"]
-        dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array
+        if ',' in dark_current_str:
+            parts = [float(x.strip()) for x in dark_current_str.split(',')]
+            dark_current_rate_e_pix_sec = np.arange(parts[0], parts[1], parts[2]) * u.electron / (u.pix * u.second)
+        else:
+            dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array confirming to (start, stop, step)
+        #dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array
+
         logging.info(f'Dark current is {dark_current_rate_e_pix_sec} e-/pix/sec')
 
         # total dark current in e-, based on integration time

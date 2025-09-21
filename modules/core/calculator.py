@@ -14,7 +14,8 @@ import configparser
 import ipdb
 import astropy.units as u
 import matplotlib.pyplot as plt
-import seaborn as sns
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentDepTerms, Detector
@@ -315,10 +316,11 @@ class NoiseCalculator:
         # parse dark current values (can be comma-separated list)
         dark_current_str = self.config['detector']['dark_current']
         if ',' in dark_current_str:
-            dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')] * u.electron / (u.pix * u.second)
+            #dark_current_values = [float(x.strip()) for x in dark_current_str.split(',')] * u.electron / (u.pix * u.second)
+            #dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values.value])
+            parts = [float(x.strip()) for x in dark_current_str.split(',')]
+            dark_current_values = np.arange(parts[0], parts[1], parts[2]) * u.electron / (u.pix * u.second)
             dark_current_display = ', '.join([f"{val:.2f}" for val in dark_current_values.value])
-            #parts = [float(x.strip()) for x in dark_current_str.split(',')]
-            #dark_current = np.arange(parts[0], parts[1], parts[2]) * u.electron / (u.pix * u.second)
             ipdb.set_trace()
         else:
             dark_current_values = float(dark_current_str) * u.electron / (u.pix * u.second)
@@ -387,9 +389,11 @@ class NoiseCalculator:
             bin_edges.value, y_edges, s2n,
             cmap='viridis', shading='flat'
             )
+        levels_2d = self.config['plotting']['s2n_levels_2d']
+        levels_2d = [float(x.strip()) for x in levels_2d.split(',')]
         contour = ax.contour(
             bin_centers.value, param_values.value, s2n,
-            levels=[1, 5],
+            levels=levels_2d,
             colors=['white', 'white'],
             linewidths=2,
             linestyles=['dashed', 'solid']
@@ -509,9 +513,12 @@ class NoiseCalculator:
         # Add vertical lines at bin edges for reference
         #for line in wavel_bin_edges_lower:
         #     plt.axvline(x=line, color='gray', linestyle='--', alpha=0.5)
+        cmap = cm.viridis  # or any other colormap
+        norm = mcolors.Normalize(vmin=np.min(param_values.value), vmax=np.max(param_values.value))
 
         for plot_num in range(0,len(s2n[:,0])):
-            plt.scatter(bin_centers, s2n[plot_num,:], label= param_name + ": " + f"{param_values[plot_num].value:g}" + " (" + param_units_string + ")")
+            color = cmap(norm(param_values[plot_num].value))
+            plt.scatter(bin_centers, s2n[plot_num,:], label= param_name + ": " + f"{param_values[plot_num].value:g}" + " (" + param_units_string + ")", color=color)
         plt.axhline(y=1, color='gray', linestyle='--')
         plt.axhline(y=5, color='gray', linestyle='-')
         # Annotate S/N = 1 and S/N = 5 on the plot
@@ -523,12 +530,18 @@ class NoiseCalculator:
         plt.xlim([4, 18])
         plt.ylabel('S/N per wavelength bin')
         plt.xlabel('Wavelength (um)')
+
+        ax = plt.gca()
+        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax)
+        cbar.set_label(param_name + " (" + param_units_string + ")")
         # Keep a concise axes title and add two figure-level columns
         plt.title("S/N")
         fig3 = plt.gcf()
         fig3.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
         fig3.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
-        plt.legend()
+        #plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.tight_layout()
         file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
         plt.subplots_adjust(top=0.6,right=0.8)
