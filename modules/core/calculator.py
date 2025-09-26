@@ -16,6 +16,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import pickle
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentDepTerms, Detector
@@ -56,6 +57,7 @@ class NoiseCalculator:
         Args:
             config: Configuration dictionary containing all parameters
             sources_all: the object including the various fluxes and noise contributions, from astro and instrumental sources
+            sources_to_include: list of sources to include in the S/N calculation
             
         Raises:
             ValueError: If configuration is invalid
@@ -85,9 +87,8 @@ class NoiseCalculator:
 
     def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix_array):
         """ _star_planet_only
-        Vectorized S/N function. Any single input variable can be an array while others remain scalars.
-        Note this equation is for the case where there is only a planet and star signal, and no exozodiacal dust etc.
-        
+        Vectorized S/N function
+
         INPUTS:
         wavel_bin_centers: wavelength bin centers (um)
         del_lambda_array: wavelength bin widths (um)
@@ -210,6 +211,19 @@ class NoiseCalculator:
 
         s2n_tot = ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5
 
+        # save data
+        data_to_save = {
+            's2n_tot': s2n_tot,
+            'wavel_bin_centers': wavel_bin_centers,
+            'dark_current': D_rate,
+            'read_noise': R
+        }
+        file_name_data = self.config['saving']['save_s2n_data']
+        with open(file_name_data, 'wb') as f:
+            pickle.dump(data_to_save, f)
+        logger.info(f"Saved S/N data to {file_name_data}")
+
+
         # FYI plot of fundamental noise sources
         plt.clf()
         plt.plot(wavel_bin_centers.value, D_rate[0] * np.ones(len(wavel_bin_centers)), label='Dark current', linestyle='dashed')
@@ -237,13 +251,15 @@ class NoiseCalculator:
         plt.yscale('log')
         plt.xlabel('Wavelength (um)')
         plt.ylabel('Noise (ph/sec)')
-        plt.title('S/N expression term contributions (only 1 value of dark current or read noise)')
+        plt.title('S/N expression term contributions (plotting only 1 value of dark current or read noise)')
         file_name_plot = '/Users/eckhartspalding/Downloads/s2n_expression_contributions.png'
         #plt.show()
         plt.tight_layout()
         plt.savefig(file_name_plot)
         logger.info(f"Saved plot of noise contributions to {file_name_plot}")
         plt.close()
+
+        ipdb.set_trace()
 
         return s2n_tot
 
