@@ -137,16 +137,19 @@ class AstrophysicalSources:
             logger.info(f"Loaded model exoplanetspectrum for {source_name}: {file_name_exoplanet_model_10pc}")
 
             wavel = df['wavelength'].values * u.micron
-            flux_nu = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)
-            err_flux_nu = df['err_flux'].values * u.erg / (u.second * u.Hz * u.m**2)
+            flux_nu_10pc = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)
+            err_flux_nu_10pc = df['err_flux'].values * u.erg / (u.second * u.Hz * u.m**2)
 
             # convert to F_lambda
-            flux_lambda = flux_nu * (const.c / wavel**2)
-            flux_lambda = flux_lambda.to(u.W / (u.m**2 * u.micron))
+            flux_lambda_10pc = flux_nu_10pc * (const.c / wavel**2)
+            flux_lambda_10pc = flux_lambda_10pc.to(u.W / (u.m**2 * u.micron))
 
             # convert to photon flux
-            flux_photons = flux_lambda * (wavel / (const.h * const.c)) * u.ph
-            flux_photons = flux_photons.to(u.ph / (u.micron * u.s * u.m**2))
+            flux_photons_10pc = flux_lambda_10pc * (wavel / (const.h * const.c)) * u.ph
+            flux_photons_10pc = flux_photons_10pc.to(u.ph / (u.micron * u.s * u.m**2))
+
+            # rescale this flux (from a source at 10 pc) to the desired distance
+            flux_photons = flux_photons_10pc * (10.0 / float(self.config["target"]["distance"])) ** 2
 
             # interpolate
             flux_incident = np.interp(x = wavelength, 

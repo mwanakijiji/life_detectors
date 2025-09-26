@@ -259,8 +259,6 @@ class NoiseCalculator:
         logger.info(f"Saved plot of noise contributions to {file_name_plot}")
         plt.close()
 
-        ipdb.set_trace()
-
         return s2n_tot
 
 
