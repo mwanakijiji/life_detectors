@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import pickle
+from astropy.io import fits
 
 from .astrophysical import AstrophysicalSources
 from .instrumental import InstrumentDepTerms, Detector
@@ -325,6 +326,38 @@ class NoiseCalculator:
         #ipdb.set_trace()
         s2n = s2n.value # get rid of the sqrt(e-) units for plotting
 
+    
+        # write the S/N data to a FITS file, with the config data in the header
+        file_name_fits = self.config['saving']['save_s2n_data']
+        hdu = fits.PrimaryHDU(s2n)
+        
+        # Add config data to header
+        relevant_sections = ['telescope', 'target', 'nulling', 'detector', 'observation', 'wavelength_range']
+        for section_name, _ in self.config.items():
+
+            if section_name not in relevant_sections:
+                continue
+
+            # Add a blank line before each section (except the first)
+            if len(hdu.header) > 0:
+                hdu.header.add_blank('')
+            
+            # Add section header as a comment
+            #hdu.header.add_comment(f"===== {section_name.upper()} =====")
+            
+            # Add each key-value pair in the section
+            for key, value in self.config[section_name].items():
+                # Create a hierarchical keyword using HIERARCH for long names
+                # FITS keywords are limited to 8 characters, but HIERARCH allows arbitrary length
+                hierarch_key = f"HIERARCH {section_name}.{key}"
+                try:
+                    hdu.header[hierarch_key] = value
+                except Exception as e:
+                    logger.warning(f"Could not add {hierarch_key} to FITS header: {e}")
+        
+        hdu.writeto(file_name_fits, overwrite=True)
+        logger.info(f"Wrote S/N data to {file_name_fits}")
+
 
         # stuff for plots
         # parse dark current values (can be comma-separated list)
@@ -355,7 +388,7 @@ class NoiseCalculator:
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
             f"stellar nulling = {bool(self.config['nulling']['null'])}",
-            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.4f}",
+            f"nulling transmission = {float(self.config['nulling']['nulling_factor']):.2e}",
             f"quantum efficiency = {float(self.config['detector']['quantum_efficiency']):.2f}",
             f"dark current = {dark_current_display} e-/pix/sec",
             f"read noise = {read_noise_display} e- rms",
