@@ -244,6 +244,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     T_sol = 5778.0 * u.K # of Sunb; does not change!
     A_albedo = float(config['target']['A_albedo'])
     rad_sol = float(config['target']['rad_star']) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
+    single_mirror_diameter = float(config['telescope']['single_mirror_diameter']) * u.m
 
     lambda_rel_lon_los = float(config["observation"]["lambda_rel_lon_los"]) 
     beta_lat_los = float(config["observation"]["beta_lat_los"])
@@ -261,6 +262,12 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     term_i_los = bb_1(wavelength_um) + A_albedo * bb_2(wavelength_um) * ( rad_sol / 1.5 ) ** 2
     # the second term, for single value of the background along the line-of-sight
     term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / (11.*u.um))**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
+
+    # make FYI quantities in terms of photons, for debugging (note term_ii_los is just geometric)
+    fyi_term_i_los = term_i_los * u.ph / ((const.h * const.c) / wavelength_um)
+    fyi_term_i_los = fyi_term_i_los.to(u.ph / ( u.micron * u.sr * u.second * u.m**2))
+
+    ipdb.set_trace()
 
     # for FYI 2D plot of the whole background
     N_beta = 100 # number of latitude points
@@ -286,6 +293,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
         I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
+        ipdb.set_trace()
         #I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
     
     # make a full spectrum of the emission along the line-of-sight
@@ -302,7 +310,17 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
 
     # now collect all the photons within (lambda_avg/B)**2 (a rough FOV) to find the total energy & photons along the line-of-sight
     ## ## TODO: this is still kind of hackneyed; find better way of evaluating total number of photons
-    fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) ** 2 
+    #fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) ** 2 
+
+    # replicates concept in FD's code, using 'half FOV'
+    # TODO: this is open to debate!
+    hfov = (wavelength_um.to(u.m) / (2. * single_mirror_diameter)) * u.rad
+    threshold_ampl =  1e-2 # this amplitude of the Gaussian is used to define the boundary of the effective FOV
+    radius_fov_effective = (4./np.pi) * hfov * np.sqrt( -np.log(threshold_ampl) )
+    fov_effective = np.pi * radius_fov_effective ** 2
+
+    ipdb.set_trace()
+    
     fov_effective = fov_effective.to(u.sr)
 
     I_lambda_los_array_photons = I_lambda_los_array_photons * fov_effective 
