@@ -106,7 +106,7 @@ class InstrumentDepTerms:
             "\n",
             f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
             f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
-            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.2f}",
+            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.1e}",
             fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
             f"z_exozodiacal = {float(self.config['target']['z_exozodiacal'])}",
             f"A_albedo = {float(self.config['target']['A_albedo'])}",
@@ -122,7 +122,7 @@ class InstrumentDepTerms:
 
             # pre-aperture fluxes
             plt.clf()
-            plt.figure(figsize=(6, 6))
+            plt.figure(figsize=(8, 8))
             for source_name, source_val in self.prop_dict.items():
                 if source_name in self.sources_to_include:
                     plt.plot(source_val['wavel'], source_val['flux_pre_aperture_ph_sec_m2_um'], label=source_name)
@@ -155,6 +155,7 @@ class InstrumentDepTerms:
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux post-aperture to " + file_name_plot)
+            ipdb.set_trace()
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 

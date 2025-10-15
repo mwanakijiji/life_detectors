@@ -140,7 +140,6 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         df = pd.read_csv(file_to_read_in, delim_whitespace=True, names=('wavel','flux'))
         logging.info(f"Read in planet spectrum from {file_to_read_in}")
 
-        ipdb.set_trace()
         # units of df['flux'] are u.photon / (u.s * u.m**2 * u.um)
         # so total units of test_photons below are sr * (above) = u.photon / (u.micron * u.s * u.m**2)
         test_luminosity = np.pi*u.sr * df['flux'].values * u.W/(u.m**2 * u.um) 
@@ -267,8 +266,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     fyi_term_i_los = term_i_los * u.ph / ((const.h * const.c) / wavelength_um)
     fyi_term_i_los = fyi_term_i_los.to(u.ph / ( u.micron * u.sr * u.second * u.m**2))
 
-    ipdb.set_trace()
-
     # for FYI 2D plot of the whole background
     N_beta = 100 # number of latitude points
     N_rel_lon = 200 # number of longitude points
@@ -293,7 +290,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
         I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
-        ipdb.set_trace()
         #I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
     
     # make a full spectrum of the emission along the line-of-sight
@@ -318,8 +314,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     threshold_ampl =  1e-2 # this amplitude of the Gaussian is used to define the boundary of the effective FOV
     radius_fov_effective = (4./np.pi) * hfov * np.sqrt( -np.log(threshold_ampl) )
     fov_effective = np.pi * radius_fov_effective ** 2
-
-    ipdb.set_trace()
     
     fov_effective = fov_effective.to(u.sr)
 
