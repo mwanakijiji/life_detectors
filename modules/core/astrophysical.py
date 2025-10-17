@@ -113,7 +113,7 @@ class AstrophysicalSources:
             if source_name == "zodiacal":
                 # no distance correction and no nulling
                 flux_incident = interpolated_spectrum.flux * flux_unit_obj
-            elif null and (source_name == "star"):  
+            elif null and (source_name == "star"):
                 # apply nulling to star only
                 flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
                 logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")

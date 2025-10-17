@@ -260,7 +260,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # the BB term (see Eqn. 14 in Dannert+ 2022) of the zodiacal background
     term_i_los = bb_1(wavelength_um) + A_albedo * bb_2(wavelength_um) * ( rad_sol / 1.5 ) ** 2
     # the second term, for single value of the background along the line-of-sight
-    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / (11.*u.um))**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
+    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los * np.pi/180.) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / (11.*u.um))**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
 
     # make FYI quantities in terms of photons, for debugging (note term_ii_los is just geometric)
     fyi_term_i_los = term_i_los * u.ph / ((const.h * const.c) / wavelength_um)
@@ -321,6 +321,8 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     I_lambda_los_array_energy = I_lambda_los_array_energy * fov_effective
     I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.second * u.um * u.m**2 ))
     I_lambda_los_array_energy = I_lambda_los_array_energy.to(u.W / (u.um * u.m**2 ))
+
+    ipdb.set_trace()
 
     if plot:
         plt.clf()
