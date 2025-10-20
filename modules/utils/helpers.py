@@ -257,10 +257,11 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     bb_1 = BlackBody(temperature=T_eff_zodiacal,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     bb_2 = BlackBody(temperature=T_sol,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
 
-    # the BB term (see Eqn. 14 in Dannert+ 2022) of the zodiacal background
+    # the BB term of the zodiacal background
+    # Ref. Eqn. 5.2 in Kelsall+ 2005, 'The DARWINsim science simulator', Sci-A/2005/297/Darwin/DMS
     term_i_los = bb_1(wavelength_um) + A_albedo * bb_2(wavelength_um) * ( rad_sol / 1.5 ) ** 2
     # the second term, for single value of the background along the line-of-sight
-    term_ii_los = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_los * np.pi/180.) * np.cos(beta_lat_los * np.pi/180.)) ) / ( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.36 * (wavelength_um / (11.*u.um))**(-0.8) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
+    term_ii_los =  ( np.pi/np.arccos(np.cos(lambda_rel_lon_los * np.pi/180.) * np.cos(beta_lat_los * np.pi/180.)) ) / ( np.sqrt( (np.sin(beta_lat_los * np.pi/180.) ** 2.) + 0.6 * (wavelength_um / (11.*u.um))**(-0.4) * np.cos(beta_lat_los * np.pi/180.) ** 2.) )
 
     # make FYI quantities in terms of photons, for debugging (note term_ii_los is just geometric)
     fyi_term_i_los = term_i_los * u.ph / ((const.h * const.c) / wavelength_um)
@@ -286,7 +287,8 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         # units W / (um * sr * m2)
         term_i_2d = bb_1(wavel_this) + A_albedo * bb_2(wavel_this) * ( rad_sol / 1.5 ) ** 2
         # unitless; note the wavel_this/u.um is necessary to avoid math errors
-        term_ii_2d = np.sqrt( ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.36 * ((wavel_this/u.um) / 11.)**(-0.8) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
+        term_ii_2d = ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( np.sqrt(np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.6 * (wavel_this / (11.*u.um))**(-0.4) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) 
+        ipdb.set_trace()
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
         I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
