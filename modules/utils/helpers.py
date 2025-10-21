@@ -19,6 +19,7 @@ from astropy.visualization import quantity_support
 from scipy.interpolate import interp1d
 #from astropy import constants as const
 from astropy import constants as const
+from matplotlib.colors import LogNorm
 
 
 logger = logging.getLogger(__name__)
@@ -287,8 +288,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         # units W / (um * sr * m2)
         term_i_2d = bb_1(wavel_this) + A_albedo * bb_2(wavel_this) * ( rad_sol / 1.5 ) ** 2
         # unitless; note the wavel_this/u.um is necessary to avoid math errors
-        term_ii_2d = ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( np.sqrt(np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.6 * (wavel_this / (11.*u.um))**(-0.4) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) 
-        ipdb.set_trace()
+        term_ii_2d = ( np.pi/np.arccos(np.cos(lambda_rel_lon_grid * np.pi/180.) * np.cos(beta_lat_grid * np.pi/180.)) ) / ( np.sqrt( (np.sin(beta_lat_grid * np.pi/180.) ** 2.) + 0.6 * (wavel_this / (11.*u.um))**(-0.4) * np.cos(beta_lat_grid * np.pi/180.) ** 2.) )
         
         I_lambda_2d_energy[str(wavel_this)] = tau_opt * term_i_2d * term_ii_2d # for units W  / (micron sr m2)
         I_nu_2d_energy[str(wavel_this)] = (I_lambda_2d_energy[str(wavel_this)] * (wavel_this)**2 / const.c).to(u.MJy / u.sr) # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
@@ -324,8 +324,6 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.second * u.um * u.m**2 ))
     I_lambda_los_array_energy = I_lambda_los_array_energy.to(u.W / (u.um * u.m**2 ))
 
-    ipdb.set_trace()
-
     if plot:
         plt.clf()
         # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each for a different wavelength
@@ -333,8 +331,21 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
             idx = np.abs(wavelength_um/u.um - wl/u.um).argmin()
+            '''
             im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower', 
                                extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)], aspect='auto')
+            '''
+            # colorscale like in Kendall+ 2005
+            im = axes[i].imshow(
+                I_nu_2d_energy[str(wl)].value,
+                origin='lower',
+                extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)],
+                aspect='auto',
+                norm=LogNorm(),
+                cmap='rainbow'
+                
+            )
+
             axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]/u.um:.1f} μm')
             axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda_{\rm rel}$ (deg)')
             axes[i].set_ylabel(r'Latitude $\beta$ (deg)')
