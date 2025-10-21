@@ -130,10 +130,10 @@ def main():
     print("=" * 50)
     
     # Run examples
-    example_simple_batch()
+    #example_simple_batch()
     example_single_calculation()
-    example_parameter_sweep()
-    example_custom_sources()
+    #example_parameter_sweep()
+    #example_custom_sources()
     
     print("\n" + "=" * 50)
     print("All examples completed!")
