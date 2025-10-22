@@ -155,7 +155,6 @@ class InstrumentDepTerms:
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux post-aperture to " + file_name_plot)
-            ipdb.set_trace()
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 

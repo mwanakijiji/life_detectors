@@ -26,7 +26,7 @@ def example_simple_batch():
         sources_to_include=sources,
         base_filename="s2n_simple",
         overwrite=True,
-        plot=False
+        plot=True
     )
     
     print(f"Processed {len(results)} calculations")
@@ -51,7 +51,7 @@ def example_single_calculation():
         n_int=n_int,
         output_path=output_path,
         overwrite=True,
-        plot=False
+        plot=True
     )
     
     if success:
@@ -80,7 +80,7 @@ def example_parameter_sweep():
         sources_to_include=sources,
         base_filename="s2n_sweep",
         overwrite=True,
-        plot=False
+        plot=True
     )
     
     # Print summary
@@ -117,7 +117,7 @@ def example_custom_sources():
             sources_to_include=sources,
             base_filename=f"s2n_{name_suffix}",
             overwrite=True,
-            plot=False
+            plot=True
         )
         
         all_results.extend(results)
@@ -130,8 +130,8 @@ def main():
     print("=" * 50)
     
     # Run examples
-    #example_simple_batch()
-    example_single_calculation()
+    example_simple_batch()
+    #example_single_calculation()
     #example_parameter_sweep()
     #example_custom_sources()
     
