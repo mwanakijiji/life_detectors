@@ -7,7 +7,7 @@ import sys
 import time
 import ipdb
 
-dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/example_data/'
+dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251022_spectral_width_2_smallest/'
 output_dir = '/Users/eckhartspalding/Downloads/'
 
 # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -52,7 +52,7 @@ print(f"Saved nan FITS data cube to: {output_fits_path}")
 # read in FITS data cube
 #with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
 
-def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desired, wavel_min: float):
+def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desired, s2n_threshold: float = 5, wavel_min: float = 6):
     '''
     INPUTS:
     s2n_sample_slice: single cube with one slice of S/N values (as written out by pipeline) for a single integration time, with addl slices to indicate wavelengths and dark currents
@@ -64,6 +64,7 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
         [0 axis]: corresponds to n_int
     n_int_array: 1D array of numbers of integrations corresponding to slices of the s2n_cube
     n_int_desired: int, number of integrations we want to know about
+    s2n_threshold: float, threshold for S/N
     wavel_min: minimum wavelength for which we need S/N of 5 
 
     RETURNS:
@@ -131,19 +132,21 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
         '''
 
         print('s2n_min: ', s2n_min)
-        if s2n_min > 5:
+        if s2n_min > s2n_threshold:
             idx_dc_max = idx_dc
 
             roi = s2n_desired_int[0,idx_dc,:]
 
-            # sanity check: take median and min and make sure they're the same
-            print('median: ', np.nanmedian(s2n_desired_int[0,idx_dc,:]))
-            print('min: ', np.nanmin(s2n_desired_int[0,idx_dc,:]))
+            # sanity check: take median and min of the DC and make sure they're the same
 
-            if np.nanmedian(roi) != np.nanmin(roi):
-                print('! ---- median and mean of the DC in the ROI are not the same ---- !')
 
             dc_max = s2n_desired_int[3,idx_dc_max,:]
+
+            print('median: ', np.nanmedian(dc_max))
+            print('min: ', np.nanmin(dc_max))
+            ipdb.set_trace()
+            if np.round(np.nanmedian(roi), 4) != np.round(np.nanmin(roi), 4):
+                print('! ---- median and mean of the DC in the ROI are not the same ---- !')
 
 
         else:
@@ -157,24 +160,27 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 
 
 
-s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
 
+
+# read in the data
+s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
 with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
     s2n_sample_slice = hdul[0].data
-
 with fits.open(s2n_cube_file_name) as hdul:
     s2n_cube = hdul[0].data
 
 
-
+# for given S/N and wavelength range, what max DC do I need?
 test_dc_max, test_s2n_desired_int = dc_from_s2n_and_lambda(s2n_sample_slice=s2n_sample_slice, 
                             s2n_cube=s2n_cube, 
                             n_int_array=n_int_array, 
                             n_int_desired=25920, 
-                            wavel_min=10.)
+                            s2n_threshold=2,
+                            wavel_min=8.)
 
 print('test_dc_max: ', test_dc_max)
 
+# FYI
 output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
 hdu = fits.PrimaryHDU(test_s2n_desired_int)
 hdulist = fits.HDUList([hdu])
