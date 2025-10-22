@@ -69,7 +69,7 @@ def example_parameter_sweep():
     config_path = "modules/config/demo_config.ini"
     
     # Create a range of n_int values
-    n_int_values = list(range(1000, 10001, 1000))  # 1000, 2000, ..., 10000
+    n_int_values = list(range(100, 2592000, 36000))  # 1000, 2000, ..., 10000
     output_dir = "parameter_sweep"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     
@@ -130,9 +130,9 @@ def main():
     print("=" * 50)
     
     # Run examples
-    example_simple_batch()
+    #example_simple_batch()
     #example_single_calculation()
-    #example_parameter_sweep()
+    example_parameter_sweep()
     #example_custom_sources()
     
     print("\n" + "=" * 50)

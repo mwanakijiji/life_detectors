@@ -184,12 +184,15 @@ class NoiseCalculator:
         if len(D_rate) > 1:
             D_rate_reshaped = np.tile(D_rate, (len(wavel_bin_centers), 1) ).T # shape (N_dark_current, N_wavel)
             R_reshaped = R * np.ones((len(D_rate), len(wavel_bin_centers))) # shape (N_dark_current, N_wavel)
+            #var_to_return = np.copy(D_rate_reshaped, deep=True) # pass this back to the calling function for saving FITS cubes during parameter sweep
         elif len(R) > 1:
             D_rate_reshaped = D_rate * np.ones((len(R), len(wavel_bin_centers))) # shape (N_dark_current, N_wavel)
             R_reshaped = np.tile(R, (len(wavel_bin_centers), 1) ).T # shape (N_R, N_wavel)
+            #var_to_return = np.copy(R_reshaped, deep=True)
         else:
             D_rate_reshaped = D_rate
             R_reshaped = R
+            #var_to_return = None
 
         # term in front
         term_1 = np.sqrt(n_int)
@@ -260,7 +263,7 @@ class NoiseCalculator:
             logger.info(f"Saved plot of noise contributions to {file_name_plot}")
             plt.close()
 
-        return s2n_tot
+        return s2n_tot #, var_to_return
 
 
     def s2n_e(self, plot: bool = False):
@@ -312,9 +315,8 @@ class NoiseCalculator:
             n_pix_array = u.Quantity(np.append(n_pix_array, val))
         
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
+        # return S/N; and the variable values that are either the dark current or read noise (whichever has length >1)
         s2n = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array)
-
-
 
         '''
         # old formulation
@@ -329,7 +331,7 @@ class NoiseCalculator:
     
         # write the S/N data to a FITS file, with the config data in the header
         file_name_fits = self.config['saving']['save_s2n_data']
-        hdu = fits.PrimaryHDU(s2n)
+        hdu = fits.PrimaryHDU()  # s2n will be packed into this later
         
         # Add config data to header
         relevant_sections = ['telescope', 'target', 'nulling', 'detector', 'observation', 'wavelength_range']
@@ -354,12 +356,9 @@ class NoiseCalculator:
                     hdu.header[hierarch_key] = value
                 except Exception as e:
                     logger.warning(f"Could not add {hierarch_key} to FITS header: {e}")
-        
-        hdu.writeto(file_name_fits, overwrite=True)
-        logger.info(f"Wrote S/N data to {file_name_fits}")
 
 
-        # stuff for plots
+        # stuff for plots and FITS file too
         # parse dark current values (can be comma-separated list)
         dark_current_str = self.config['detector']['dark_current']
         if ',' in dark_current_str:
@@ -379,6 +378,20 @@ class NoiseCalculator:
         else:
             read_noise_display = f"{float(read_noise_str):.2f}"
             read_noise_values = float(read_noise_str) * u.electron
+
+        # pack stuff into FITS file and save
+        # add two slices denoting the wavelength bin centers, wavelength bin widths, and the dark current values
+        s2n_wavel_bin_centers = np.zeros(s2n.shape)
+        s2n_wavel_bin_widths = np.zeros(s2n.shape)
+        s2n_dc = np.zeros(s2n.shape)
+        # s2n_wavel is function of x only, s2n_dc is function of y only
+        s2n_wavel_bin_centers[:,:] = np.tile(bin_centers.value, (s2n.shape[0], 1))
+        s2n_wavel_bin_widths[:,:] = np.tile(bin_widths.value, (s2n.shape[0], 1))
+        s2n_dc[:,:] = np.tile(dark_current_values.value.reshape(-1, 1), (1, s2n.shape[1]))
+        s2n_complete = np.stack((s2n, s2n_wavel_bin_centers, s2n_wavel_bin_widths, s2n_dc), axis=0)
+        hdu.data = s2n_complete
+        hdu.writeto(file_name_fits, overwrite=True)
+        logger.info(f"Wrote S/N, wavelength, and dark current data to {file_name_fits}")
 
         # Prepare two left-aligned columns for figure metadata
         instrumental_lines = [

@@ -163,7 +163,7 @@ def batch_process(config_path: str, n_int_values: List[int],
     
     for n_int in n_int_values:
         # Create output filename
-        output_filename = f"{base_filename}_n{n_int}.fits"
+        output_filename = f"{base_filename}_n{n_int:08d}.fits"
         output_path = os.path.join(output_dir, output_filename)
         
         print(f"Processing n_int = {n_int}...")
