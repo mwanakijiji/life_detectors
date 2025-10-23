@@ -7,6 +7,7 @@ import sys
 import time
 import ipdb
 
+
 dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251022_spectral_width_2_smallest/'
 output_dir = '/Users/eckhartspalding/Downloads/'
 
@@ -82,6 +83,7 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 
     # find the slice that corresponds to the integration time (to be precise, the number of integrations)
     n_int_slice = np.argmin(np.abs(np.array(n_int_array) - n_int_desired))
+    n_int_this = n_int_array[n_int_slice]
     #print(f"n_int_slice: {n_int_slice}")
     #print(f"n_int_array: {n_int_array}")
 
@@ -156,7 +158,7 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 
 
     # find the maximum S/N value in the desired region
-    return dc_max, s2n_desired_int
+    return dc_max, s2n_desired_int, n_int_this
 
 
 
@@ -166,12 +168,13 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
 with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
     s2n_sample_slice = hdul[0].data
+    #header = hdul[0].header.copy()
 with fits.open(s2n_cube_file_name) as hdul:
     s2n_cube = hdul[0].data
 
 
 # for given S/N and wavelength range, what max DC do I need?
-test_dc_max, test_s2n_desired_int = dc_from_s2n_and_lambda(s2n_sample_slice=s2n_sample_slice, 
+test_dc_max, test_s2n_desired_int, n_int_this = dc_from_s2n_and_lambda(s2n_sample_slice=s2n_sample_slice, 
                             s2n_cube=s2n_cube, 
                             n_int_array=n_int_array, 
                             n_int_desired=25920, 
@@ -182,8 +185,14 @@ print('test_dc_max: ', test_dc_max)
 
 # FYI
 output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
-hdu = fits.PrimaryHDU(test_s2n_desired_int)
+
+header = fits.Header()
+header['N_INT'] = n_int_this
+
+hdu = fits.PrimaryHDU(test_s2n_desired_int, header=header)
 hdulist = fits.HDUList([hdu])
+# Update the header with N_INT value
+
 hdulist.writeto(output_fits_path, overwrite=True)
 print(f"Saved FITS file of test_s2n_desired_int to: {output_fits_path}")
 
