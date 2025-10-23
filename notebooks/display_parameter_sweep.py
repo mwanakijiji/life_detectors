@@ -110,17 +110,18 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 
     # loop over the rows of the S/N cube corresponding to DC, working our way from low DC to high
     # until there is a point when a region within the ROI of the S/N space is no longer has S/N > 5
+    s2n_desired_int_copy = np.copy(s2n_desired_int) # make copy, since we don't want nans in the final file written out
     for idx_dc in range(s2n_desired_int.shape[1]):
 
         for i in range(0,4):
-            s2n_desired_int[i,:,:][mask] = np.nan
+            s2n_desired_int_copy[i,:,:][mask] = np.nan
 
-        print(s2n_desired_int.shape[1])
+        print(s2n_desired_int_copy.shape[1])
         print('checking idx_dc: ', idx_dc)
 
         # find the minimum S/N value in the ROI
         idx_dc_max = None
-        s2n_min = np.nanmin(s2n_desired_int[0,idx_dc,:])
+        s2n_min = np.nanmin(s2n_desired_int_copy[0,idx_dc,:])
 
         # plot the ROI
         '''
@@ -135,18 +136,17 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
         if s2n_min > s2n_threshold:
             idx_dc_max = idx_dc
 
-            roi = s2n_desired_int[0,idx_dc,:]
+            roi = s2n_desired_int_copy[0,idx_dc,:]
 
             # sanity check: take median and min of the DC and make sure they're the same
 
 
-            dc_max = s2n_desired_int[3,idx_dc_max,:]
+            dc_max = s2n_desired_int_copy[3,idx_dc_max,:]
 
             print('median: ', np.nanmedian(dc_max))
             print('min: ', np.nanmin(dc_max))
-            ipdb.set_trace()
             if np.round(np.nanmedian(roi), 4) != np.round(np.nanmin(roi), 4):
-                print('! ---- median and mean of the DC in the ROI are not the same ---- !')
+                print('! ---- median and min of the DC in the ROI are not the same ---- !')
 
 
         else:
