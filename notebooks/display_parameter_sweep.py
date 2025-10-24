@@ -48,12 +48,8 @@ hdulist.writeto(output_fits_path, overwrite=True)
 print(f"Saved nan FITS data cube to: {output_fits_path}")
 '''
 
-# plot 1: For a given integration time, what DC is necessary for S/N>5 at lambda > 6 um? 8 um?
-
-# read in FITS data cube
-#with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
-
-def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desired, s2n_threshold: float = 5, wavel_min: float = 6):
+# QUESTION 1: For a given integration time, what DC is necessary for S/N>5 at lambda > 6 um? 8 um?
+def dc_from_n_int_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desired, s2n_threshold: float = 5, wavel_min: float = 6):
     '''
     INPUTS:
     s2n_sample_slice: single cube with one slice of S/N values (as written out by pipeline) for a single integration time, with addl slices to indicate wavelengths and dark currents
@@ -152,49 +148,115 @@ def dc_from_s2n_and_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desire
 
 
         else:
-            # if the min S/N < 5, break out of the loop; this effectively keeps the last row of of the DC array
+            # if the min S/N < N, break out of the loop; this effectively keeps the last row of of the DC array
             break
-
-
 
     # find the maximum S/N value in the desired region
     return dc_max, s2n_desired_int, n_int_this
 
 
+# QUESTION 2: For a given DC, what integration time is necessary for S/N>5 at lambda > 6 um? 8 um?
+def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired: float, s2n_threshold: float = 5, wavel_min: float = 6):
+    '''
+    INPUTS:
+    s2n_sample_slice: single cube with one slice of S/N values (as written out by pipeline) for a single integration time, with addl slices to indicate wavelengths and dark currents
+        [0]: S/N values
+        [1]: wavelength bin centers
+        [2]: wavelength bin widths
+        [3]: dark current values
+    s2n_cube: 3D array of S/N values for all integration times (note this cube does not have slices for wavelengths and dark currents)
+        [all slices]: S/N values     
+        [height axis]: corresponds to integration times
+    n_int_array: 1D array of numbers of integrations corresponding to slices of the s2n_cube
+    dc_desired: float, dark current we are interested in
+    s2n_threshold: float, threshold for S/N
+    wavel_min: minimum wavelength for which we need S/N of 5 
+
+    RETURNS:
+    cube_s2n_nint_wavel: 3D array of acceptable S/N values, number of integrations, and wavelength bin centers
+    n_int_this: int, number of integrations that achieves S/N>N in any wavelength bin at lambda > wavel_min
+    '''
+
+
+    # Check if array lengths match the corresponding axes in the s2n_cube
+    if len(n_int_array) != s2n_cube.shape[0]:
+        raise ValueError(f"Length of n_int_array ({len(n_int_array)}) does not match the number of integrations axis of s2n_cube ({s2n_cube.shape[0]})")
+    # extract the DCs from the s2n_sample_slice
+    dc_array = s2n_sample_slice[3,:,0]
+
+    # find the slice that corresponds to the DC
+    dc_slice_idx = np.argmin(np.abs(np.array(dc_array) - dc_desired))
+    s2n_cube_dc_slice = s2n_cube[:,dc_slice_idx,:] # S/N array with dims (y, x)=(DC, wavelength)
+
+    # make arrays denoting n_int and wavelength
+    n_int_slice = np.tile(n_int_array, (s2n_cube_dc_slice.shape[1], 1)).T
+    wavel_slice = np.tile(s2n_sample_slice[1,0,:], (s2n_cube_dc_slice.shape[0], 1))
+
+    # pack everything into a single cube with slices
+    # [0]: S/N values
+    # [1]: number of integrations
+    # [2]: wavelength bin centers
+    cube_s2n_nint_wavel = np.concatenate((s2n_cube_dc_slice[None, ...], n_int_slice[None, ...], wavel_slice[None, ...]), axis=0)
+
+    # now mask out the regions below the S/N threshold AND the cutoff wavelength
+    mask_s2n = cube_s2n_nint_wavel[0,:,:] < s2n_threshold
+    mask_wavel = cube_s2n_nint_wavel[2,:,:] < wavel_min
+    mask_added = mask_wavel.astype(int) + mask_s2n.astype(int)
+    mask_combined = (mask_added == 0).astype(bool)
+    cube_s2n_nint_wavel[0,:,:][~mask_combined] = np.nan
+
+    # loop through the rows of the slice of n_int and find the first row with non-nan values, and keep the index n_int_idx
+    # (note that this does not necessarily indicate that ALL of the S/N bins are >5; it just means that at least one is) 
+    for n_int_idx in range(0,cube_s2n_nint_wavel.shape[1]):
+        if np.any(~np.isnan(cube_s2n_nint_wavel[0,n_int_idx,:])):
+            break
+
+    n_int_this = n_int_array[n_int_idx]
+
+    # return the cube (with the S/N values, n_int, and wavelength); and the number of integrations n_int 
+    return cube_s2n_nint_wavel, n_int_this
 
 
 
-# read in the data
-s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
-with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
-    s2n_sample_slice = hdul[0].data
-    #header = hdul[0].header.copy()
-with fits.open(s2n_cube_file_name) as hdul:
-    s2n_cube = hdul[0].data
+def main():
+
+    # read in the data
+    s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
+    with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
+        s2n_sample_slice = hdul[0].data
+        #header = hdul[0].header.copy()
+    with fits.open(s2n_cube_file_name) as hdul:
+        s2n_cube = hdul[0].data
 
 
-# for given S/N and wavelength range, what max DC do I need?
-test_dc_max, test_s2n_desired_int, n_int_this = dc_from_s2n_and_lambda(s2n_sample_slice=s2n_sample_slice, 
-                            s2n_cube=s2n_cube, 
-                            n_int_array=n_int_array, 
-                            n_int_desired=25920, 
-                            s2n_threshold=2,
-                            wavel_min=8.)
+    # for given S/N and wavelength range, what max DC do I need?
+    '''
+    test_dc_max, test_s2n_desired_int, n_int_this = dc_from_n_int_s2n_lambda(s2n_sample_slice=s2n_sample_slice, 
+                                s2n_cube=s2n_cube, 
+                                n_int_array=n_int_array, 
+                                n_int_desired=25920, 
+                                s2n_threshold=2,
+                                wavel_min=8.)
 
-print('test_dc_max: ', test_dc_max)
+    print('test_dc_max: ', test_dc_max)
+    '''
+    
+    test = n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired=15, s2n_threshold=5, wavel_min=5)
 
-# FYI
-output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
+    # FYI
+    output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
 
-header = fits.Header()
-header['N_INT'] = n_int_this
+    header = fits.Header()
+    header['N_INT'] = n_int_this
 
-hdu = fits.PrimaryHDU(test_s2n_desired_int, header=header)
-hdulist = fits.HDUList([hdu])
-# Update the header with N_INT value
+    hdu = fits.PrimaryHDU(test_s2n_desired_int, header=header)
+    hdulist = fits.HDUList([hdu])
+    # Update the header with N_INT value
 
-hdulist.writeto(output_fits_path, overwrite=True)
-print(f"Saved FITS file of test_s2n_desired_int to: {output_fits_path}")
+    hdulist.writeto(output_fits_path, overwrite=True)
+    print(f"Saved FITS file of test_s2n_desired_int to: {output_fits_path}")
 
+    ipdb.set_trace()
 
-ipdb.set_trace()
+if __name__ == '__main__':
+    main()
