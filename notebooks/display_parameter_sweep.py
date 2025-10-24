@@ -254,6 +254,32 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
     s2n_same_int_no_dc = s2n_cube[n_int_idx,0,:]
     s2n_prime_s2n_ratio = s2n_baseline / s2n_same_int_no_dc
 
+    plt.clf()
+    fig, ax1 = plt.subplots()
+    
+    # Plot the ratio on the left y-axis
+    ax1.plot(wavel_slice[0,:], s2n_prime_s2n_ratio, 'b-', label='(S/N)\'/(S/N)')
+    ax1.set_xlabel('Wavelength (um)')
+    ax1.set_ylabel('(S/N)\'/(S/N)', color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+    
+    # Create a second y-axis for the S/N values
+    ax2 = ax1.twinx()
+    ax2.plot(wavel_slice[0,:], s2n_baseline, 'r-', label='S/N with DC='+str(dc_desired))
+    ax2.plot(wavel_slice[0,:], s2n_same_int_no_dc, 'r--', label='S/N with DC=0')
+    ax2.set_ylabel('S/N', color='r')
+    ax2.tick_params(axis='y', labelcolor='r')
+    
+    # Combine legends from both axes
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
+    
+    plt.title('S/N ratio and individual S/N values for same integration time')
+    file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_prime_s2n_ratio.png')
+    plt.savefig(file_name_plot)
+    print(f"Saved plot of (S/N)\'/(S/N) as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
+
     # return the cube (with the S/N values, n_int, and wavelength); and the number of integrations n_int 
     return cube_s2n_nint_wavel, n_int_this, t_prime_t_ratio, s2n_prime_s2n_ratio
 
