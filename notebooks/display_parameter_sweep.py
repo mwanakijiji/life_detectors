@@ -175,6 +175,8 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
     RETURNS:
     cube_s2n_nint_wavel: 3D array of acceptable S/N values, number of integrations, and wavelength bin centers
     n_int_this: int, number of integrations that achieves S/N>N in any wavelength bin at lambda > wavel_min
+    t_prime_t_ratio: float, ratio of integration times with and without systematics
+    s2n_prime_s2n_ratio: float, ratio of (S/N)'/(S/N) for the same integration time, where (S/N)' is with systematics and (S/N) is without
     '''
 
 
@@ -213,8 +215,47 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
     n_int_this = n_int_array[n_int_idx]
 
+    # the S/N for the spectrum corresponding to this DC and integration time
+    s2n_baseline = s2n_cube[n_int_idx,dc_slice_idx,:]
+
+    #########################################################
+    ## find ratio t_prime/t, where t_prime is with systematics and t is without
+    # first get the slice of S/N corresponding to DC=0, with dims (n_int, wavelength)
+    # recall s2n_cube dims are (n_int, DC, wavelength)
+    s2n_dc_zero = s2n_cube[:,0,:]
+    # now find the index of this slice that shows S/N as function of wavelength that is most similar to the S/N for the given non-zero DC and integration time?
+    loss_array = np.sum(np.power(s2n_dc_zero - s2n_baseline, 2), axis=1)
+    n_int_similar_zero_idx = np.argmin(loss_array) # at what n_int is the loss minimized?
+    n_int_similar_zero_dc = n_int_array[n_int_similar_zero_idx]
+    s2n_similar_zero_dc = s2n_cube[n_int_similar_zero_idx,0,:]
+    t_prime_t_ratio = n_int_this / n_int_similar_zero_dc
+
+    plt.clf()
+    plt.plot(wavel_slice[0,:], s2n_similar_zero_dc, label='DC=0')
+    plt.plot(wavel_slice[0,:], s2n_baseline, label='DC='+str(dc_desired))
+    # Annotate the plot with the t_prime/t ratio
+    plt.annotate(f't\'/t = {t_prime_t_ratio:.3f}', 
+                 xy=(0.05, 0.95), 
+                 xycoords='axes fraction',
+                 fontsize=11, 
+                 color='black', 
+                 verticalalignment='top', 
+                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.7))
+    plt.xlabel('Wavelength (um)')
+    plt.ylabel('S/N')
+    plt.title('S/N as function of wavelength for DC=0 and DC='+str(dc_desired))
+    plt.legend()
+    file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_similar_zero_dc.png')
+    plt.savefig(file_name_plot)
+    print(f"Saved plot of S/N as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
+
+    #########################################################
+    ## find (S/N)'/(S/N) for the same integration time, where (S/N)' is with systematics and (S/N) is without
+    s2n_same_int_no_dc = s2n_cube[n_int_idx,0,:]
+    s2n_prime_s2n_ratio = s2n_baseline / s2n_same_int_no_dc
+
     # return the cube (with the S/N values, n_int, and wavelength); and the number of integrations n_int 
-    return cube_s2n_nint_wavel, n_int_this
+    return cube_s2n_nint_wavel, n_int_this, t_prime_t_ratio, s2n_prime_s2n_ratio
 
 
 
@@ -241,7 +282,7 @@ def main():
     print('test_dc_max: ', test_dc_max)
     '''
     
-    test = n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired=15, s2n_threshold=5, wavel_min=5)
+    test = n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired=25, s2n_threshold=15, wavel_min=5)
 
     # FYI
     output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
