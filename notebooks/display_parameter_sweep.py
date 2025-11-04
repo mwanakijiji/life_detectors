@@ -8,28 +8,6 @@ import time
 import ipdb
 
 
-dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251022_spectral_width_2_smallest/'
-output_dir = '/Users/eckhartspalding/Downloads/'
-
-# read in all the FITS files in the directory, sort them by filename, and put the data into a cube
-fits_files = sorted([f for f in os.listdir(dir_sample_data) if f.lower().endswith('.fits')])
-
-# List to hold the data arrays
-data_list = []
-n_int_array = []
-
-for fname in fits_files:
-    fpath = os.path.join(dir_sample_data, fname)
-    with fits.open(fpath) as hdul:
-        # take S/N data (wavelength and dark current is in the other slices)
-        data = hdul[0].data[0,:,:]
-        data_list.append(data)
-
-        # get number of integrations by parsing the filename
-        n_int = int(fname.split('_')[-1].split('.')[0].split('n')[1])
-        n_int_array.append(n_int)
-
-
 '''
 # make a copy that sets S/N<5 to nan
 data_cube_nan = np.where(data_cube < 5, np.nan, data_cube)
@@ -156,7 +134,7 @@ def dc_from_n_int_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, n_int_desi
 
 
 # QUESTION 2: For a given DC, what integration time is necessary for S/N>5 at lambda > 6 um? 8 um?
-def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired: float, s2n_threshold: float = 5, wavel_min: float = 6):
+def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired: float, s2n_threshold: float = 5, wavel_min: float = 6, plot: bool = True):
     '''
     INPUTS:
     s2n_sample_slice: single cube with one slice of S/N values (as written out by pipeline) for a single integration time, with addl slices to indicate wavelengths and dark currents
@@ -171,6 +149,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
     dc_desired: float, dark current we are interested in
     s2n_threshold: float, threshold for S/N
     wavel_min: minimum wavelength for which we need S/N of 5 
+    plot: bool, whether to make FYI plots
 
     RETURNS:
     cube_s2n_nint_wavel: 3D array of acceptable S/N values, number of integrations, and wavelength bin centers
@@ -230,55 +209,57 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
     s2n_similar_zero_dc = s2n_cube[n_int_similar_zero_idx,0,:]
     t_prime_t_ratio = n_int_this / n_int_similar_zero_dc
 
-    plt.clf()
-    plt.plot(wavel_slice[0,:], s2n_similar_zero_dc, label='DC=0')
-    plt.plot(wavel_slice[0,:], s2n_baseline, label='DC='+str(dc_desired))
-    # Annotate the plot with the t_prime/t ratio
-    plt.annotate(f't\'/t = {t_prime_t_ratio:.3f}', 
-                 xy=(0.05, 0.95), 
-                 xycoords='axes fraction',
-                 fontsize=11, 
-                 color='black', 
-                 verticalalignment='top', 
-                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.7))
-    plt.xlabel('Wavelength (um)')
-    plt.ylabel('S/N')
-    plt.title('S/N as function of wavelength for DC=0 and DC='+str(dc_desired))
-    plt.legend()
-    file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_similar_zero_dc.png')
-    plt.savefig(file_name_plot)
-    print(f"Saved plot of S/N as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
+    if plot:
 
-    #########################################################
-    ## find (S/N)'/(S/N) for the same integration time, where (S/N)' is with systematics and (S/N) is without
-    s2n_same_int_no_dc = s2n_cube[n_int_idx,0,:]
-    s2n_prime_s2n_ratio = s2n_baseline / s2n_same_int_no_dc
+        plt.clf()
+        plt.plot(wavel_slice[0,:], s2n_similar_zero_dc, label='DC=0')
+        plt.plot(wavel_slice[0,:], s2n_baseline, label='DC='+str(dc_desired))
+        # Annotate the plot with the t_prime/t ratio
+        plt.annotate(f't\'/t = {t_prime_t_ratio:.3f}', 
+                    xy=(0.05, 0.95), 
+                    xycoords='axes fraction',
+                    fontsize=11, 
+                    color='black', 
+                    verticalalignment='top', 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.7))
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('S/N')
+        plt.title('S/N as function of wavelength for DC=0 and DC='+str(dc_desired))
+        plt.legend()
+        file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_similar_zero_dc.png')
+        plt.savefig(file_name_plot)
+        print(f"Saved plot of S/N as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
 
-    plt.clf()
-    fig, ax1 = plt.subplots()
-    
-    # Plot the ratio on the left y-axis
-    ax1.plot(wavel_slice[0,:], s2n_prime_s2n_ratio, 'b-', label='(S/N)\'/(S/N)')
-    ax1.set_xlabel('Wavelength (um)')
-    ax1.set_ylabel('(S/N)\'/(S/N)', color='b')
-    ax1.tick_params(axis='y', labelcolor='b')
-    
-    # Create a second y-axis for the S/N values
-    ax2 = ax1.twinx()
-    ax2.plot(wavel_slice[0,:], s2n_baseline, 'r-', label='S/N with DC='+str(dc_desired))
-    ax2.plot(wavel_slice[0,:], s2n_same_int_no_dc, 'r--', label='S/N with DC=0')
-    ax2.set_ylabel('S/N', color='r')
-    ax2.tick_params(axis='y', labelcolor='r')
-    
-    # Combine legends from both axes
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-    
-    plt.title('S/N ratio and individual S/N values for same integration time')
-    file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_prime_s2n_ratio.png')
-    plt.savefig(file_name_plot)
-    print(f"Saved plot of (S/N)\'/(S/N) as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
+        #########################################################
+        ## find (S/N)'/(S/N) for the same integration time, where (S/N)' is with systematics and (S/N) is without
+        s2n_same_int_no_dc = s2n_cube[n_int_idx,0,:]
+        s2n_prime_s2n_ratio = s2n_baseline / s2n_same_int_no_dc
+
+        plt.clf()
+        fig, ax1 = plt.subplots()
+        
+        # Plot the ratio on the left y-axis
+        ax1.plot(wavel_slice[0,:], s2n_prime_s2n_ratio, 'b-', label='(S/N)\'/(S/N)')
+        ax1.set_xlabel('Wavelength (um)')
+        ax1.set_ylabel('(S/N)\'/(S/N)', color='b')
+        ax1.tick_params(axis='y', labelcolor='b')
+        
+        # Create a second y-axis for the S/N values
+        ax2 = ax1.twinx()
+        ax2.plot(wavel_slice[0,:], s2n_baseline, 'r-', label='S/N with DC='+str(dc_desired))
+        ax2.plot(wavel_slice[0,:], s2n_same_int_no_dc, 'r--', label='S/N with DC=0')
+        ax2.set_ylabel('S/N', color='r')
+        ax2.tick_params(axis='y', labelcolor='r')
+        
+        # Combine legends from both axes
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
+        
+        plt.title('S/N ratio and individual S/N values for same integration time')
+        file_name_plot = os.path.join('/Users/eckhartspalding/Downloads/junk_s2n_prime_s2n_ratio.png')
+        plt.savefig(file_name_plot)
+        print(f"Saved plot of (S/N)\'/(S/N) as function of wavelength for DC=0 and DC={dc_desired} to {file_name_plot}")
 
     # return the cube (with the S/N values, n_int, and wavelength); and the number of integrations n_int 
     return cube_s2n_nint_wavel, n_int_this, t_prime_t_ratio, s2n_prime_s2n_ratio
@@ -287,8 +268,38 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251104_2pix_wide_footprint_month_observation/'
+    output_dir = '/Users/eckhartspalding/Downloads/'
+
+    # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
+    fits_files = sorted([f for f in os.listdir(dir_sample_data) if f.lower().endswith('.fits')])
+
+    # List to hold the data arrays
+    data_list = []
+    n_int_array = []
+
+    for fname in fits_files:
+        fpath = os.path.join(dir_sample_data, fname)
+        with fits.open(fpath) as hdul:
+            # take S/N data (wavelength and dark current is in the other slices)
+            data = hdul[0].data[0,:,:]
+            data_list.append(data)
+
+            # get number of integrations by parsing the filename
+            n_int = int(fname.split('_')[-1].split('.')[0].split('n')[1])
+            n_int_array.append(n_int)
+
+    s2n_cube = np.stack(data_list, axis=0)
+    # Save the 3D S/N data cube (s2n_cube) to a FITS file for later use
+    output_fits_path = os.path.join(output_dir, 'data_cube.fits')
+    hdu = fits.PrimaryHDU(s2n_cube)
+    hdulist = fits.HDUList([hdu])
+    hdulist.writeto(output_fits_path, overwrite=True)
+    print(f"Saved S/N data cube to: {output_fits_path}")
+
+    ipdb.set_trace()
     # read in the data
-    s2n_cube_file_name = '/Users/eckhartspalding/Downloads/data_cube.fits'
+    s2n_cube_file_name = output_fits_path
     with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
         s2n_sample_slice = hdul[0].data
         #header = hdul[0].header.copy()

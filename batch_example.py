@@ -69,7 +69,8 @@ def example_parameter_sweep():
     config_path = "modules/config/demo_config.ini"
     
     # Create a range of n_int values
-    n_int_values = list(range(100, 2592000, 36000))  # 1000, 2000, ..., 10000
+    # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
+    n_int_values = list[int](range(25920, 2*25920, 36))  # 1000, 2000, ..., 10000
     output_dir = "parameter_sweep"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     
