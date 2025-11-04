@@ -203,11 +203,11 @@ class NoiseCalculator:
         # first term under square root in the denominator
         term_3 = eta_t * eta_qm * t_int * (del_Np_prime_del_t_reshaped + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t_reshaped)
 
-        if np.all(n_pix_array.value-np.roll(n_pix_array.value, 1) == np.zeros(n_pix_array.shape) * u.pix):
-            # if all values are the same
+        if np.all(np.round(n_pix_array.value-np.roll(n_pix_array.value, 1), 3) == np.zeros(n_pix_array.shape) * u.pix):
+            # if all values in the array are the same (i.e., dispersion is oversimplified as a constant)
             n_pix = n_pix_array[0]
         else:
-            print('!! ----- TODO: elements of n_pix_array are not all the same; need to update the way dispersion is handled in this function to procced ----- !!')
+            print('!! ----- TODO: elements of n_pix_array are not all the same; need to update the way dispersion is handled in this function to proceed ----- !!')
             exit()
 
         # second term under square root in the denominator
