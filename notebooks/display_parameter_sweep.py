@@ -268,7 +268,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251104_2pix_wide_footprint_month_observation/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251104_R20_2pix_wide_footprint_2month_observation/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -297,7 +297,7 @@ def main():
     hdulist.writeto(output_fits_path, overwrite=True)
     print(f"Saved S/N data cube to: {output_fits_path}")
 
-    ipdb.set_trace()
+    '''
     # read in the data
     s2n_cube_file_name = output_fits_path
     with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
@@ -308,7 +308,7 @@ def main():
 
 
     # for given S/N and wavelength range, what max DC do I need?
-    '''
+
     test_dc_max, test_s2n_desired_int, n_int_this = dc_from_n_int_s2n_lambda(s2n_sample_slice=s2n_sample_slice, 
                                 s2n_cube=s2n_cube, 
                                 n_int_array=n_int_array, 
@@ -317,13 +317,14 @@ def main():
                                 wavel_min=8.)
 
     print('test_dc_max: ', test_dc_max)
-    '''
+
     
     test = n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired=25, s2n_threshold=15, wavel_min=5)
 
     # FYI
     output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
 
+    ipdb.set_trace()
     header = fits.Header()
     header['N_INT'] = n_int_this
 
@@ -333,8 +334,8 @@ def main():
 
     hdulist.writeto(output_fits_path, overwrite=True)
     print(f"Saved FITS file of test_s2n_desired_int to: {output_fits_path}")
+    '''
 
-    ipdb.set_trace()
 
 if __name__ == '__main__':
     main()
