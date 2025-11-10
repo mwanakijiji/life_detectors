@@ -227,7 +227,27 @@ class NoiseCalculator:
             pickle.dump(data_to_save, f)
         logger.info(f"Saved S/N data to {file_name_data}")
 
+        print('!---- make the signal/pixel plot better ----- !!')
+        ipdb.set_trace()
+        
         if plot:
+
+            # FYI plot of (rough) total signal per pixel per sec
+            area_1_wavel_element_pix = float(self.config['detector']['pix_spectral_width']) * float(self.config['detector']['pix_per_wavel_bin'])
+            #pixels_along_length_of_spectrum = 
+            signal_per_pixel_per_sec = (del_Np_prime_del_t + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t) / area_1_wavel_element_pix
+            plt.clf()
+            plt.plot(np.arange(len(wavel_bin_centers.value)), signal_per_pixel_per_sec, label='Total signal per pixel')
+            plt.legend()
+            plt.yscale('log')
+            plt.xlabel('Wavelength bin number')
+            plt.ylabel('Total count rate (ph/sec/pix)')
+            plt.title('Total signal per pixel')
+            file_name_plot = '/Users/eckhartspalding/Downloads/total_signal_per_pixel.png'
+            plt.savefig(file_name_plot)
+            logger.info(f"Saved plot of total signal per pixel to {file_name_plot}")
+            plt.close()
+
             # FYI plot of fundamental noise sources
             plt.clf()
             plt.plot(wavel_bin_centers.value, D_rate[0] * np.ones(len(wavel_bin_centers)), label='Dark current', linestyle='dashed')

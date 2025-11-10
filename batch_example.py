@@ -70,8 +70,9 @@ def example_parameter_sweep():
     
     # Create a range of n_int values
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
-    n_int_values = list[int](range(100, 2*25920, 864))  # 1000, 2000, ..., 10000
-    output_dir = "parameter_sweep/20251105_R50_2pix_wide_footprint_2month_observation"
+    n_int_values = list[int](range(1*25920, 3*25920,1728))  # 1000, 2000, ..., 10000
+    #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
+    output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     
     results = batch_process(

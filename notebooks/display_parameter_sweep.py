@@ -268,7 +268,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251104_R20_2pix_wide_footprint_2month_observation/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251105_footprint_medium_R_50/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
