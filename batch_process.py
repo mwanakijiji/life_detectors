@@ -26,6 +26,9 @@ from modules.config import loader, validator
 from modules.utils.helpers import create_sample_data, load_config
 from modules.data.units import UnitConverter
 
+# Module-level logger so it's available everywhere in this file
+logger = logging.getLogger(__name__)
+
 def modify_config_file(config_path: str, n_int: int, qe: float, output_path: str) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
@@ -45,11 +48,11 @@ def modify_config_file(config_path: str, n_int: int, qe: float, output_path: str
 
     # Modify the values
     config.set('observation', 'n_int', str(n_int))
-    config.set('observation', 'qe', str(qe))
+    config.set('detector', 'quantum_efficiency', str(qe))
     config.set('saving', 'save_s2n_data', output_path)
     
     # Create a temporary config file
-    qe_str = f"{qe:.3f}".replace('.', 'p') # for making better string (since it's a decimal)
+    qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
     temp_config_path = config_path.replace('.ini', f'_temp_n{n_int}_qe{qe_str}.ini')
     with open(temp_config_path, 'w') as f:
         config.write(f)
@@ -76,13 +79,10 @@ def run_single_calculation(config_path: str,
     Returns:
         True if successful, False otherwise
     """
+
     try:
         # Create temporary config file with modified values
-        temp_config_path = modify_config_file(config_path, n_int, output_path)
-        
-        # Ensure logging is configured (both to file and stdout)
-        # This is safe to call multiple times; basicConfig is a no-op once handlers exist.
-        logger = logging.getLogger(__name__)
+        temp_config_path = modify_config_file(config_path, n_int, qe, output_path)
 
         # First log entry: which config file we're using (original and temp)
         logger.info(f"--------------------------------")
@@ -99,7 +99,7 @@ def run_single_calculation(config_path: str,
         except ImportError:
             _cp = None
 
-        logger.info("------- Config contents (by section) -------")
+        logger.info("------- Temp config contents -------")
 
         if _cp is not None and isinstance(config, _cp.ConfigParser):
             # Config is a ConfigParser: iterate its sections and items
@@ -191,7 +191,8 @@ def batch_process(config_path: str, n_int_values: List[float],
     Args:
         config_path: Path to the base configuration file
         n_int_values: List of n_int values to process
-        output_dir: Directory to save output FITS files
+        output_dir: Directory to save output FITS filesipdb
+        qe_values: List of qe values to process
         sources_to_include: List of sources to include in calculations
         base_filename: Base filename for output files (without extension)
         overwrite: Whether to overwrite existing files
@@ -213,9 +214,12 @@ def batch_process(config_path: str, n_int_values: List[float],
             output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
             output_path = os.path.join(output_dir, output_filename)
             
-            logging.info(f"Processing n_int = {n_int}...")
-            logging.info(f"Processing qe = {qe}...")
-            logging.info(f"Will be written to output_path = {output_path}...")
+            logging.info(f"--------------------------------")
+            logging.info(f"--------------------------------")
+            logging.info(f"Processing single calculation:")
+            logging.info(f"Parameter n_int = {n_int}")
+            logging.info(f"Parameter qe = {qe}")
+            logging.info(f"Will be written to output_path = {output_path}")
 
             success = run_single_calculation(
                 config_path=config_path,
@@ -274,7 +278,6 @@ def main():
     print(f"Sources: {args.sources}")
     print(f"Base filename: {args.base_filename}")
     print()
-    ipdb.set_trace()
     
     # Run batch processing
     results = batch_process(
