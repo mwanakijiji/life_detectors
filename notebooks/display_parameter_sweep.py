@@ -270,7 +270,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_M_star/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_K_star/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -347,8 +347,9 @@ def main():
     # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
     # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
 
-    s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe")
-    plt.title('Example plot, M star')
+    #s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe")
+    s2n.sel(n_int=25920, qe=0.8, method="nearest").plot(x="wavel", y="dc")
+    plt.title('Example plot, K star')
     plt.show()
 
 
