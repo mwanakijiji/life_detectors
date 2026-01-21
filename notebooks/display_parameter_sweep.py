@@ -6,6 +6,8 @@ import os
 import sys
 import time
 import ipdb
+import xarray as xr
+import pickle
 
 
 '''
@@ -276,65 +278,79 @@ def main():
 
     # List to hold the data arrays
     data_list = []
-    n_int_array = []
+    n_int_list = []
+    qe_list = []
 
+    # read in the data and sweeped parameters from the FITS files
     for fname in fits_files:
         fpath = os.path.join(dir_sample_data, fname)
         with fits.open(fpath) as hdul:
-            # take S/N data (wavelength and dark current is in the other slices)
-            data = hdul[0].data[0,:,:]
+            print('Reading in data from file: ', fpath)
+            # hdul[0].data has shape (4, n_dc, n_wavel); the 4 slices are [0]: S/N values, [1]: wavelength bin centers, [2]: wavelength bin widths, [3]: dark current values
+            data = hdul[0].data[0, :, :]   
             data_list.append(data)
 
-            # get number of integrations by parsing the filename
-            n_int = int(fname.split('_')[-1].split('.')[0].split('n')[1])
-            n_int_array.append(n_int)
+            # get sweeped parameters from FITS header
+            n_int = int(hdul[0].header['N_INT'])
+            qe = float(hdul[0].header['QE'])
 
-    s2n_cube = np.stack(data_list, axis=0)
-    # Save the 3D S/N data cube (s2n_cube) to a FITS file for later use
-    output_fits_path = os.path.join(output_dir, 'data_cube.fits')
-    hdu = fits.PrimaryHDU(s2n_cube)
-    hdulist = fits.HDUList([hdu])
-    hdulist.writeto(output_fits_path, overwrite=True)
-    print(f"Saved S/N data cube to: {output_fits_path}")
+            n_int_list.append(n_int)
+            qe_list.append(qe)
 
-    '''
-    # read in the data
-    s2n_cube_file_name = output_fits_path
-    with fits.open(os.path.join(dir_sample_data, fits_files[0])) as hdul:
-        s2n_sample_slice = hdul[0].data
-        #header = hdul[0].header.copy()
-    with fits.open(s2n_cube_file_name) as hdul:
-        s2n_cube = hdul[0].data
+            # for the final cube axes
+            dc_array = hdul[0].data[3, :, 0] 
+            wavel_array = hdul[0].data[1, 0, :]
 
 
-    # for given S/N and wavelength range, what max DC do I need?
-
-    test_dc_max, test_s2n_desired_int, n_int_this = dc_from_n_int_s2n_lambda(s2n_sample_slice=s2n_sample_slice, 
-                                s2n_cube=s2n_cube, 
-                                n_int_array=n_int_array, 
-                                n_int_desired=25920, 
-                                s2n_threshold=2,
-                                wavel_min=8.)
-
-    print('test_dc_max: ', test_dc_max)
-
+    # build sorted unique coordinate arrays and index maps
+    n_int_vals = np.array(sorted(set(n_int_list)))
+    qe_vals    = np.array(sorted(set(qe_list)))
+    Nn = len(n_int_vals)
+    Nq = len(qe_vals)
     
-    test = n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired=25, s2n_threshold=15, wavel_min=5)
+    # maps: value -> index
+    n_int_index = {v: i for i, v in enumerate(n_int_vals)}
+    qe_index    = {v: j for j, v in enumerate(qe_vals)}
+    n_dc, n_wavel = data_list[0].shape
+    cube = np.zeros((Nn, Nq, n_dc, n_wavel), dtype=float)
 
-    # FYI
-    output_fits_path = os.path.join(output_dir, 'test_s2n_desired_int.fits')
+
+    for data, n_int, qe in zip(data_list, n_int_list, qe_list):
+        i = n_int_index[n_int]
+        j = qe_index[qe]
+        cube[i, j, :, :] = data
+
+    s2n = xr.DataArray(
+        cube,
+        dims=("n_int", "qe", "dc", "wavel"),
+        coords={
+            "n_int": n_int_vals,
+            "qe": qe_vals,
+            "dc": dc_array,
+            "wavel": wavel_array,
+        },
+        name="s2n"
+    )
+
+    # pickle the s2n xarray
+    output_pickle_path = os.path.join(output_dir, "s2n_cube.pkl")
+    with open(output_pickle_path, "wb") as f:
+        pickle.dump(s2n, f)
+
+    print(f"Pickled S/N cube to: {output_pickle_path}")
 
     ipdb.set_trace()
-    header = fits.Header()
-    header['N_INT'] = n_int_this
+    # load the s2n xarray from the pickle file
+    with open(output_pickle_path, "rb") as f:
+        s2n = pickle.load(f)
+    
+    # example plots
+    # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
+    # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
 
-    hdu = fits.PrimaryHDU(test_s2n_desired_int, header=header)
-    hdulist = fits.HDUList([hdu])
-    # Update the header with N_INT value
-
-    hdulist.writeto(output_fits_path, overwrite=True)
-    print(f"Saved FITS file of test_s2n_desired_int to: {output_fits_path}")
-    '''
+    s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe")
+    plt.title('Example plot')
+    plt.show()
 
 
 if __name__ == '__main__':

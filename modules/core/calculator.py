@@ -350,7 +350,11 @@ class NoiseCalculator:
         # write the S/N data to a FITS file, with the config data in the header
         file_name_fits = self.config['saving']['save_s2n_data']
         hdu = fits.PrimaryHDU()  # s2n will be packed into this later
-        
+
+        # add the sweeped parameters to the header (these are what are used to make the axes of the big 4D cubes)
+        hdu.header['N_INT'] = self.config["observation"]["n_int"]
+        hdu.header['QE'] = self.config["detector"]["quantum_efficiency"]
+
         # Add config data to header
         relevant_sections = ['telescope', 'target', 'nulling', 'detector', 'observation', 'wavelength_range']
         for section_name, _ in self.config.items():
