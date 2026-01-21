@@ -228,7 +228,6 @@ class NoiseCalculator:
         logger.info(f"Saved S/N data to {file_name_data}")
 
         print('!---- make the signal/pixel plot better ----- !!')
-        ipdb.set_trace()
         
         if plot:
 
@@ -345,7 +344,6 @@ class NoiseCalculator:
                             n_pix_array_reshaped * (( R**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped))) # the R**2/(u.electron / u.pix) is necessary to make the units consistent 
         '''
 
-        #ipdb.set_trace()
         s2n = s2n.value # get rid of the sqrt(e-) units for plotting
 
     
@@ -486,7 +484,6 @@ class NoiseCalculator:
             ax.set_title("S/N")
             plt.tight_layout()
             plt.show()
-            ipdb.set_trace()
             im = ax.imshow(
                 s2n,
                 extent=[bin_edges[0].value, bin_edges[-1].value,
@@ -515,7 +512,6 @@ class NoiseCalculator:
             logger.info(f"Wrote plot {file_name_plot}")
 
             '''
-            ipdb.set_trace()
             tick_idx = np.linspace(0, N - 1, num=min(N, 10), dtype=int)
             ax.set_yticks(tick_idx)
             labels = [f"{param_values[i].value:g}" for i in tick_idx]
@@ -580,7 +576,6 @@ class NoiseCalculator:
             '''
             for plot_num in range(0,len(s2n[:,0])):
                 # draw a histogram-like plot of S/N using step plot that respects bin widths
-                ipdb.set_trace()
                 # Create x-coordinates that include both bin edges for proper step plotting
                 x_step = np.repeat(wavel_bin_edges_lower, 2)
                 x_step[1::2] = wavel_bin_edges_upper  # Replace every other element with upper edges
@@ -681,7 +676,6 @@ class NoiseCalculator:
 
         Returns:
 
-        ipdb.set_trace()
 
         # add the astrophysical and instrumental fluxes together, in units of ADU
         self.total_signal_adu = self.incident_astro['astro_adu_total'] + self.incident_instrum['dark_current_total_adu'] + self.incident_instrum['read_noise_adu']

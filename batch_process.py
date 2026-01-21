@@ -13,6 +13,9 @@ import logging
 from pathlib import Path
 from typing import List, Tuple, Optional
 import argparse
+import ipdb
+
+
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -23,7 +26,7 @@ from modules.config import loader, validator
 from modules.utils.helpers import create_sample_data, load_config
 from modules.data.units import UnitConverter
 
-def modify_config_file(config_path: str, n_int: int, output_path: str) -> str:
+def modify_config_file(config_path: str, n_int: int, qe: float, output_path: str) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
     
@@ -39,19 +42,24 @@ def modify_config_file(config_path: str, n_int: int, output_path: str) -> str:
     config = configparser.ConfigParser()
     config.read(config_path)
     
+
     # Modify the values
     config.set('observation', 'n_int', str(n_int))
+    config.set('observation', 'qe', str(qe))
     config.set('saving', 'save_s2n_data', output_path)
     
     # Create a temporary config file
-    temp_config_path = config_path.replace('.ini', f'_temp_n{n_int}.ini')
+    qe_str = f"{qe:.3f}".replace('.', 'p') # for making better string (since it's a decimal)
+    temp_config_path = config_path.replace('.ini', f'_temp_n{n_int}_qe{qe_str}.ini')
     with open(temp_config_path, 'w') as f:
         config.write(f)
     
     return temp_config_path
 
-def run_single_calculation(config_path: str, sources_to_include: List[str], 
-                          n_int: int, output_path: str, 
+def run_single_calculation(config_path: str, 
+                            sources_to_include: List[str], 
+                          n_int: int, qe: float,
+                          output_path: str, 
                           overwrite: bool = True, plot: bool = False) -> bool:
     """
     Run a single calculation with specified parameters.
@@ -60,6 +68,7 @@ def run_single_calculation(config_path: str, sources_to_include: List[str],
         config_path: Path to the configuration file
         sources_to_include: List of sources to include in calculation
         n_int: Number of integrations
+        qe: quantum efficiency
         output_path: Path for the output FITS file
         overwrite: Whether to overwrite existing files
         plot: Whether to generate plots
@@ -71,14 +80,48 @@ def run_single_calculation(config_path: str, sources_to_include: List[str],
         # Create temporary config file with modified values
         temp_config_path = modify_config_file(config_path, n_int, output_path)
         
-        # Set up logging
-        log_file = loader.setup_logging()
+        # Ensure logging is configured (both to file and stdout)
+        # This is safe to call multiple times; basicConfig is a no-op once handlers exist.
         logger = logging.getLogger(__name__)
-        logger.info(f"Running calculation with n_int={n_int}, output={output_path}")
-        
-        # Load the modified config
+
+        # First log entry: which config file we're using (original and temp)
+        logger.info(f"--------------------------------")
+        logger.info(f"Config path (base): {config_path}")
+        logger.info(f"Config path (temp, for batch processing): {temp_config_path}")
+
+        # Load the modified config and validate it
         config = load_config(config_file=temp_config_path)
         validator.validate_config(config)
+
+        # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
+        try:
+            import configparser as _cp  # local import to avoid circulars
+        except ImportError:
+            _cp = None
+
+        logger.info("------- Config contents (by section) -------")
+
+        if _cp is not None and isinstance(config, _cp.ConfigParser):
+            # Config is a ConfigParser: iterate its sections and items
+            for section_name in config.sections():
+                logger.info(f"[{section_name}]")
+                for key, value in config[section_name].items():
+                    logger.info(f"  {key} = {value}")
+        elif isinstance(config, dict):
+            # Config is a dict-of-dicts (as returned by some loaders)
+            logger.info(f"Top-level keys: {list(config.keys())}")
+            for section_name, section_dict in config.items():
+                logger.info(f"[{section_name}]")
+                if isinstance(section_dict, dict):
+                    for key, value in section_dict.items():
+                        logger.info(f"  {key} = {value}")
+                else:
+                    logger.info(f"  (section value) {section_dict}")
+        else:
+            # Fallback: just log the raw object
+            logger.info(f"(Unrecognized config type {type(config)}; raw repr follows)")
+            logger.info(repr(config))
+        logger.info(f"Running calculation with n_int={n_int}, output={output_path}")
         
         # Generate sample spectral data
         logger.info("Creating sample spectral data...")
@@ -137,7 +180,8 @@ def run_single_calculation(config_path: str, sources_to_include: List[str],
             os.remove(temp_config_path)
         return False
 
-def batch_process(config_path: str, n_int_values: List[int], 
+def batch_process(config_path: str, n_int_values: List[float], 
+                qe_values: List[float],
                   output_dir: str, sources_to_include: List[str],
                   base_filename: str = "s2n", overwrite: bool = True, 
                   plot: bool = False) -> List[Tuple[int, str, bool]]:
@@ -161,27 +205,34 @@ def batch_process(config_path: str, n_int_values: List[int],
     
     results = []
     
-    for n_int in n_int_values:
-        # Create output filename
-        output_filename = f"{base_filename}_n{n_int:08d}.fits"
-        output_path = os.path.join(output_dir, output_filename)
-        
-        print(f"Processing n_int = {n_int}...")
-        success = run_single_calculation(
-            config_path=config_path,
-            sources_to_include=sources_to_include,
-            n_int=n_int,
-            output_path=output_path,
-            overwrite=overwrite,
-            plot=plot
-        )
-        
-        results.append((n_int, output_path, success))
-        
-        if success:
-            print(f"  ✓ Success: {output_path}")
-        else:
-            print(f"  ✗ Failed: {output_path}")
+    for qe in qe_values:
+        for n_int in n_int_values:
+            # Create output filename
+            n_int = int(n_int)
+            qe_pct = int(round(qe * 100))  # e.g. 0.87 -> 87
+            output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
+            output_path = os.path.join(output_dir, output_filename)
+            
+            logging.info(f"Processing n_int = {n_int}...")
+            logging.info(f"Processing qe = {qe}...")
+            logging.info(f"Will be written to output_path = {output_path}...")
+
+            success = run_single_calculation(
+                config_path=config_path,
+                sources_to_include=sources_to_include,
+                n_int=n_int,
+                qe=qe,
+                output_path=output_path,
+                overwrite=overwrite,
+                plot=plot
+            )
+            
+            results.append((n_int, output_path, success))
+            
+            if success:
+                print(f"  ✓ Success: {output_path}")
+            else:
+                print(f"  ✗ Failed: {output_path}")
     
     return results
 
@@ -218,15 +269,18 @@ def main():
     print("=" * 40)
     print(f"Config file: {args.config}")
     print(f"n_int values: {args.n_int}")
+    print(f"QE values: {args.qe}")
     print(f"Output directory: {args.output_dir}")
     print(f"Sources: {args.sources}")
     print(f"Base filename: {args.base_filename}")
     print()
+    ipdb.set_trace()
     
     # Run batch processing
     results = batch_process(
         config_path=args.config,
         n_int_values=args.n_int,
+        qe_values=args.qe,
         output_dir=args.output_dir,
         sources_to_include=args.sources,
         base_filename=args.base_filename,

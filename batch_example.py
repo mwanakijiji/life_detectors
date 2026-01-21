@@ -8,6 +8,10 @@ This demonstrates different ways to run batch jobs with varying n_int values.
 import os
 from pathlib import Path
 from batch_process import batch_process, run_single_calculation
+import logging
+from modules.config import loader
+import ipdb
+import numpy as np
 
 def example_simple_batch():
     """Example 1: Simple batch processing with a few n_int values."""
@@ -65,19 +69,29 @@ def example_parameter_sweep():
     """Example 3: Parameter sweep with many n_int values."""
     print("\nExample 3: Parameter sweep")
     print("-" * 40)
+
+
     
-    config_path = "modules/config/demo_config.ini"
-    
+    # starting config for a single observation
+    # (parameters being swept will be overwritten)
+    config_single_obs_path = "modules/config/demo_config.ini" 
+    config_sweep_path = "modules/config/sweep_config.ini"
+
+    # read in the sweeped parameters
+    sweeped_params = loader.load_config(config_file=config_sweep_path)
+
     # Create a range of n_int values
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
-    n_int_values = list[int](range(1*25920, 3*25920,1728))  # 1000, 2000, ..., 10000
+    n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']), float(sweeped_params['observation']['n_int_step'])))  # 1000, 2000, ..., 10000
+    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']), float(sweeped_params['observation']['qe_step'])))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     
     results = batch_process(
-        config_path=config_path,
+        config_path=config_single_obs_path,
         n_int_values=n_int_values,
+        qe_values=qe_values,
         output_dir=output_dir,
         sources_to_include=sources,
         base_filename="s2n_sweep",
@@ -130,6 +144,12 @@ def main():
     """Run all examples."""
     print("Life Detectors - Batch Processing Examples")
     print("=" * 50)
+
+    log_file = loader.setup_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("========================================")
+    logger.info("Life Detectors - Batch Processing Examples")
+    logger.info(f"Log file: {log_file}")
     
     # Run examples
     #example_simple_batch()
