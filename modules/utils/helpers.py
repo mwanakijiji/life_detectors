@@ -67,7 +67,7 @@ def load_config(config_file):
 
 def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
 
-    # stellar radius
+    # host star radius
     rad_star = float(config['target']['rad_star']) * 69.6340 * 1e9 * u.cm
 
     # fluxes
@@ -75,7 +75,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     # units ergs/(cm^2 Hz sec sr)
     #bb_star_nu = BlackBody(temperature=5778*u.K)
     # convert BB_nu to BB_lambda
-    bb_star_lambda = BlackBody(temperature=5778*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
+    bb_star_lambda = BlackBody(temperature=float(config['target']['T_star'])*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # stellar surface flux, Fs_nu: multiply by pi steradians
     # W / (micron m2 sr) --> W / (micron m2)
     flux_star = np.pi * u.sr * bb_star_lambda(wavelength_um)
@@ -241,9 +241,10 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # set some parameters
     tau_opt = float(config['target']['tau_opt_zodiacal'])
     T_eff_zodiacal = float(config['target']['T_eff_zodiacal']) * u.K
-    T_sol = 5778.0 * u.K # of Sunb; does not change!
+    T_sol = 5778.0 * u.K # of Sun; does not change!
+    rad_sol = 1 # of Sun, in normalized units; does not change!
     A_albedo = float(config['target']['A_albedo'])
-    rad_sol = float(config['target']['rad_star']) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
+    rad_sol = float(rad_sol) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
     single_mirror_diameter = float(config['telescope']['single_mirror_diameter']) * u.m
 
     lambda_rel_lon_los = float(config["observation"]["lambda_rel_lon_los"]) 

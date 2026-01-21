@@ -270,7 +270,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20251105_footprint_medium_R_50/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_M_star/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -339,7 +339,6 @@ def main():
 
     print(f"Pickled S/N cube to: {output_pickle_path}")
 
-    ipdb.set_trace()
     # load the s2n xarray from the pickle file
     with open(output_pickle_path, "rb") as f:
         s2n = pickle.load(f)
@@ -349,7 +348,7 @@ def main():
     # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
 
     s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe")
-    plt.title('Example plot')
+    plt.title('Example plot, M star')
     plt.show()
 
 
