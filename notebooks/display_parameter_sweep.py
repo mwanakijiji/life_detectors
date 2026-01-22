@@ -8,6 +8,7 @@ import time
 import ipdb
 import xarray as xr
 import pickle
+import plotting_3d
 
 
 '''
@@ -339,18 +340,25 @@ def main():
 
     print(f"Pickled S/N cube to: {output_pickle_path}")
 
+    # simple plots, mostly FYI
     # load the s2n xarray from the pickle file
     with open(output_pickle_path, "rb") as f:
         s2n = pickle.load(f)
-    
     # example plots
     # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
     # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
-
-    #s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe")
     s2n.sel(n_int=25920, qe=0.8, method="nearest").plot(x="wavel", y="dc")
     plt.title('Example plot, K star')
     plt.show()
+
+    # 3D plotting
+    # pick one integration time
+    da = s2n.sel(n_int=25920, method="nearest")  # dims: (qe, dc, wavel)
+    # Ensure the axis order is exactly (qe, dc, wavel)
+    da = da.transpose("qe", "dc", "wavel")
+    # If there are NaNs, marching cubes will choke; fill or mask
+    da_filled = da.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0)
 
 
 if __name__ == '__main__':
