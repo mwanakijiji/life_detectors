@@ -5,7 +5,7 @@ import xarray as xr
 from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 import plotly.io as pio
-import ipdb
+import ipdb 
 
 def _angles_to_camera_eye(azimuth_deg, elevation_deg, distance=2.0):
     """
@@ -38,7 +38,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
         eye=dict(x=1.25, y=1.25, z=1.25)
-    ), task='show', filename=None):
+    ), task='show'):
     """
     Plot 3D isosurface of S/N data.
     
@@ -52,8 +52,6 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         Dictionary containing camera parameters for viewing orientation
     task : str
         'show' or 'save'
-    filename : str, optional
-        Filename for saving (default: auto-generated based on iso value)
     """
 
     # uniform-grid step
@@ -140,27 +138,10 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         title=f"Isosurface: s2n = {iso}"
     )
 
+    file_name = f"s2n_3d_qe_dc_wavel_iso_{iso}.png"
     if task == 'show':
         fig.show()
     elif task == 'save':
-        # Use provided filename or generate one
-        if filename is None:
-            file_name = f"s2n_3d_qe_dc_wavel_iso_{iso}.png"
-        else:
-            file_name = filename
-            # Ensure .png extension if not provided
-            if not file_name.endswith('.png'):
-                file_name += '.png'
-        
-        # Plotly requires kaleido package for image export: pip install kaleido
-        try:
-            fig.write_image(file_name, width=1200, height=900, scale=2)
-            print(f"Saved plot to {file_name}")
-        except Exception as e:
-            print(f"Error saving image: {e}")
-            print("Note: Plotly image export requires 'kaleido' package.")
-            print("Install it with: pip install kaleido")
-            # Fallback: save as HTML
-            html_name = file_name.replace('.png', '.html')
-            fig.write_html(html_name)
-            print(f"Saved as HTML instead: {html_name}")
+        # Use plotly's write_image method (requires kaleido)
+        fig.write_image(file_name)
+        print(f"Saved plot to {file_name}")

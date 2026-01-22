@@ -347,9 +347,27 @@ def main():
     # example plots
     # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
     # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
-    s2n.sel(n_int=25920, qe=0.8, method="nearest").plot(x="wavel", y="dc")
-    plt.title('Example plot, K star')
+    qe_choice = 0.8
+    iso = 5.0
+    sl = s2n.sel(n_int=25920, qe=qe_choice, method="nearest")
+    
+    # Create the plot using xarray's plot method
+    # This creates a figure and axes automatically
+    plot_handle = sl.plot(x="wavel", y="dc")
+    
+    # Get the current axes (the one created by xarray's plot)
+    ax = plt.gca()  # Get current axes - this is the one from xarray's plot
+    
+    # Overplot a white contour at S/N=iso on the same axes
+    X, Y = np.meshgrid(sl.wavel.values, sl.dc.values)
+    CS = ax.contour(X, Y, sl.values, levels=[iso], colors='white', linewidths=2)
+    #ax.clabel(CS, inline=True, fontsize=10)
+    ax.set_xlabel('Wavelength (um)')
+    ax.set_ylabel('Dark current (e-/s/pix)')
+    ax.set_title(f'K star, QE = {qe_choice:.2f}')
+    plt.tight_layout()  # Adjust layout to prevent label cutoff
     plt.show()
+    #fig.show()
 
     # 3D plotting
     # pick one integration time
@@ -365,8 +383,7 @@ def main():
         center=dict(x=0, y=0, z=0),
         eye=dict(x=zoom*1.25, y=zoom*1.25, z=zoom*0.5)
     )
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='save')
-    
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='show')
 
 
 if __name__ == '__main__':
