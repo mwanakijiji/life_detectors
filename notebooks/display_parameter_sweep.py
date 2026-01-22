@@ -383,7 +383,7 @@ def main():
         center=dict(x=0, y=0, z=0),
         eye=dict(x=zoom*1.25, y=zoom*1.25, z=zoom*0.5)
     )
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='show')
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='save')
 
 
 if __name__ == '__main__':

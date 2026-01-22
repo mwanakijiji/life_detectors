@@ -103,6 +103,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
 
     # marching_cubes returns vertices in index coordinates (i,j,k)
     verts, faces, normals, values = marching_cubes(vol, level=iso)
+    verts2, faces2, normals2, values2 = marching_cubes(vol, level=iso+1)
 
     # Map index coordinates -> physical coordinates using your xarray coords
     # Ensure coordinate arrays are also in native byte order
@@ -115,16 +116,29 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
     y_dc = np.interp(verts[:, 1], np.arange(len(dc)), dc)
     z_wv = np.interp(verts[:, 2], np.arange(len(wv)), wv)
 
-    ipdb.set_trace()
+    x_qe2 = np.interp(verts2[:, 0], np.arange(len(qe)), qe)
+    y_dc2 = np.interp(verts2[:, 1], np.arange(len(dc)), dc)
+    z_wv2 = np.interp(verts2[:, 2], np.arange(len(wv)), wv)
 
     fig = go.Figure(data=[
         go.Mesh3d(
             x=x_qe, y=y_dc, z=z_wv,
             i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
             opacity=0.6,
-            name=f"s2n = {iso} isosurface",
+            facecolor=['red'] * len(faces),  # Color for iso surface
+            name=f"s2n = {iso}",
+            showlegend=True,
         )
     ])
+
+    fig.add_trace(go.Mesh3d(
+        x=x_qe2, y=y_dc2, z=z_wv2,
+        i=faces2[:, 0], j=faces2[:, 1], k=faces2[:, 2],
+        opacity=0.1,
+        facecolor=['blue'] * len(faces2),  # Color for iso+1 surface
+        name=f"s2n = {iso+1}",
+        showlegend=True,
+    ))
     
     fig.update_layout(
         scene=dict(
@@ -134,8 +148,14 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
             camera=camera,
             aspectmode='cube',  # Change to 'cube' if you want equal visual scaling
         ),
-        margin=dict(l=0, r=0, t=30, b=0),
-        title=f"Isosurface: s2n = {iso}"
+        margin=dict(l=0, r=150, t=30, b=0),  # Add right margin for legend
+        #title=f"Isosurface: s2n = {iso}",
+        showlegend=True,  # Show legend to indicate iso values
+        legend=dict(
+            x=0.7,  # Position legend to the right
+            y=0.7,
+            bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent background
+        ),
     )
 
     file_name = f"s2n_3d_qe_dc_wavel_iso_{iso}.png"
