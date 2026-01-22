@@ -358,7 +358,15 @@ def main():
     da = da.transpose("qe", "dc", "wavel")
     # If there are NaNs, marching cubes will choke; fill or mask
     da_filled = da.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0)
+    # Add zoom feature to camera: "zoom" scales the field of view (default=1)
+    zoom = 1.5
+    camera = dict(
+        up=dict(x=0, y=1, z=0),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(x=zoom*1.25, y=zoom*1.25, z=zoom*0.5)
+    )
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='save')
+    
 
 
 if __name__ == '__main__':
