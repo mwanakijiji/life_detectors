@@ -12,6 +12,7 @@ import logging
 from modules.config import loader
 import ipdb
 import numpy as np
+import pandas as pd
 
 def example_simple_batch():
     """Example 1: Simple batch processing with a few n_int values."""
@@ -75,10 +76,19 @@ def example_parameter_sweep():
     # starting config for a single observation
     # (parameters being swept will be overwritten)
     config_single_obs_path = "modules/config/demo_config.ini" 
+    # config file for making a parameter sweep; this effectively make a batch job
     config_sweep_path = "modules/config/sweep_config.ini"
+    # if you want to apply the batch job with the above ini settings to an entire planet population, use this config file
+    config_planet_population_path = "modules/config/planet_population_config.ini"
 
     # read in the sweeped parameters
     sweeped_params = loader.load_config(config_file=config_sweep_path)
+
+    # for planet population, we need to read in the planet population file name
+    planet_population_params = loader.load_config(config_file=config_planet_population_path)
+    file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
+    # read in the planet population
+    planet_population = pd.read_csv(file_name, skiprows=1, delim_whitespace=True)
 
     # Create a range of n_int values
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
