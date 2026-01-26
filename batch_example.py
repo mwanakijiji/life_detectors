@@ -66,8 +66,14 @@ def example_single_calculation():
     
     return success
 
-def example_parameter_sweep():
-    """Example 3: Parameter sweep with many n_int values."""
+def example_parameter_sweep(planet_population: bool = False):
+    """
+    Example 3: Parameter sweep with many n_int values.
+
+    planet_population: bool = False
+        If True, the parameter sweep will be applied to an entire planet population.
+        If False, the parameter sweep will be applied to a single observation.
+    """
     print("\nExample 3: Parameter sweep")
     print("-" * 40)
 
@@ -84,36 +90,56 @@ def example_parameter_sweep():
     # read in the sweeped parameters
     sweeped_params = loader.load_config(config_file=config_sweep_path)
 
-    # for planet population, we need to read in the planet population file name
-    planet_population_params = loader.load_config(config_file=config_planet_population_path)
-    file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
-    # read in the planet population
-    planet_population = pd.read_csv(file_name, skiprows=1, delim_whitespace=True)
+    # if applying a parameter sweep to every planet in a population
+    if planet_population:
+        logging.info("Applying parameter sweep to an entire planet population")
+        # for planet population, we need to read in the planet population file name
+        planet_population_params = loader.load_config(config_file=config_planet_population_path)
+        file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
+        # read in the planet population
+        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
+    else:
+        logging.info("Applying parameter sweep to a single planetary system")
+        df_planet_population = [None] # need to wrap in a list for length 1
 
-    # Create a range of n_int values
+    # parameter sweep: create a range of n_int values
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
     n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']), float(sweeped_params['observation']['n_int_step'])))  # 1000, 2000, ..., 10000
     qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']), float(sweeped_params['observation']['qe_step'])))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+
+    for sys_num in range(len(df_planet_population)):
+
+        ipdb.set_trace()
+        if isinstance(df_planet_population, pd.DataFrame):
+            system_params = df_planet_population.iloc[sys_num]
+            logging.info(f"Processing system {sys_num} with parameters: {system_params}")
+            base_filename = f"s2n_sweep_sys_{sys_num:03d}"
+            
+        else:
+            system_params = None
+            logging.info(f"No planet population; doing parameter sweep for a single system")
+            base_filename = "s2n_sweep"
     
-    results = batch_process(
-        config_path=config_single_obs_path,
-        n_int_values=n_int_values,
-        qe_values=qe_values,
-        output_dir=output_dir,
-        sources_to_include=sources,
-        base_filename="s2n_sweep",
-        overwrite=True,
-        plot=True
-    )
+        results = batch_process(
+            config_path=config_single_obs_path,
+            n_int_values=n_int_values,
+            qe_values=qe_values,
+            output_dir=output_dir,
+            sources_to_include=sources,
+            base_filename=base_filename,
+            overwrite=True,
+            plot=True, 
+            system_params=system_params
+        )
     
-    # Print summary
-    successful = sum(1 for _, _, success in results if success)
-    print(f"Parameter sweep completed: {successful}/{len(results)} successful")
+        # Print summary
+        successful = sum(1 for _, _, success in results if success)
+        print(f"Parameter sweep completed: {successful}/{len(results)} successful")
     
-    return results
+    return
 
 def example_custom_sources():
     """Example 4: Batch processing with different source combinations."""
@@ -164,7 +190,7 @@ def main():
     # Run examples
     #example_simple_batch()
     #example_single_calculation()
-    example_parameter_sweep()
+    example_parameter_sweep(planet_population = True)
     #example_custom_sources()
     
     print("\n" + "=" * 50)

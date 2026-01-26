@@ -29,7 +29,7 @@ from modules.data.units import UnitConverter
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
-def modify_config_file(config_path: str, n_int: int, qe: float, output_path: str) -> str:
+def modify_config_file_sweep(config_path: str, n_int: int, qe: float, output_path: str) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
     
@@ -61,9 +61,12 @@ def modify_config_file(config_path: str, n_int: int, qe: float, output_path: str
 
 def run_single_calculation(config_path: str, 
                             sources_to_include: List[str], 
-                          n_int: int, qe: float,
+                          n_int: int, 
+                          qe: float,
                           output_path: str, 
-                          overwrite: bool = True, plot: bool = False) -> bool:
+                          overwrite: bool = True, 
+                          plot: bool = False, 
+                          system_params: Optional[dict] = None) -> bool:
     """
     Run a single calculation with specified parameters.
     
@@ -75,6 +78,7 @@ def run_single_calculation(config_path: str,
         output_path: Path for the output FITS file
         overwrite: Whether to overwrite existing files
         plot: Whether to generate plots
+        system_params: Optional[dict] = None: the planetary system parameters
         
     Returns:
         True if successful, False otherwise
@@ -82,15 +86,16 @@ def run_single_calculation(config_path: str,
 
     try:
         # Create temporary config file with modified values
-        temp_config_path = modify_config_file(config_path, n_int, qe, output_path)
+        temp_config_path_nint_qe = modify_config_file_sweep(config_path, n_int, qe, output_path) # use new n_int, QE values
+        temp_config_path_system_params = modify_config_file_system_params(config_path, system_params) # modify again, for a given planetary system 
 
         # First log entry: which config file we're using (original and temp)
         logger.info(f"--------------------------------")
         logger.info(f"Config path (base): {config_path}")
-        logger.info(f"Config path (temp, for batch processing): {temp_config_path}")
+        logger.info(f"Config path (temp, for batch processing): {temp_config_path_nint_qe}")
 
         # Load the modified config and validate it
-        config = load_config(config_file=temp_config_path)
+        config = load_config(config_file=temp_config_path_nint_qe)
         validator.validate_config(config)
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
@@ -180,11 +185,15 @@ def run_single_calculation(config_path: str,
             os.remove(temp_config_path)
         return False
 
-def batch_process(config_path: str, n_int_values: List[float], 
+def batch_process(config_path: str, 
+                n_int_values: List[float], 
                 qe_values: List[float],
-                  output_dir: str, sources_to_include: List[str],
-                  base_filename: str = "s2n", overwrite: bool = True, 
-                  plot: bool = False) -> List[Tuple[int, str, bool]]:
+                  output_dir: str, 
+                  sources_to_include: List[str],
+                  base_filename: str = "s2n", 
+                  overwrite: bool = True, 
+                  plot: bool = False, 
+                system_params: Optional[dict] = None) -> List[Tuple[int, str, bool]]:
     """
     Run batch processing with multiple n_int values.
     
@@ -197,6 +206,7 @@ def batch_process(config_path: str, n_int_values: List[float],
         base_filename: Base filename for output files (without extension)
         overwrite: Whether to overwrite existing files
         plot: Whether to generate plots
+        system_params: Optional dictionary of the planetary system parameters
         
     Returns:
         List of tuples (n_int, output_path, success)
@@ -228,7 +238,8 @@ def batch_process(config_path: str, n_int_values: List[float],
                 qe=qe,
                 output_path=output_path,
                 overwrite=overwrite,
-                plot=plot
+                plot=plot,
+                system_params=system_params
             )
             
             results.append((n_int, output_path, success))
@@ -288,7 +299,8 @@ def main():
         sources_to_include=args.sources,
         base_filename=args.base_filename,
         overwrite=args.overwrite,
-        plot=args.plot
+        plot=args.plot,
+        system_params=args.system_params
     )
     
     # Print summary

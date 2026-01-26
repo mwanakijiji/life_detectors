@@ -419,7 +419,8 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
 
     def T_temp(r):
         # r: radius in disk (units AU)
-
+        
+        ## ## TODO: peg this to the stellar temp, if possible
         Ls = float(config['target']['L_star'])
 
         T = 278.3*u.K * ((Ls)**0.25) * ((r/u.au)**-0.5)
