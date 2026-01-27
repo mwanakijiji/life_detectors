@@ -7,7 +7,7 @@ This demonstrates different ways to run batch jobs with varying n_int values.
 
 import os
 from pathlib import Path
-from batch_process import batch_process, run_single_calculation
+from batch_process import batch_qe_nint_process, run_single_calculation
 import logging
 from modules.config import loader
 import ipdb
@@ -24,7 +24,7 @@ def example_simple_batch():
     output_dir = "batch_output"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     
-    results = batch_process(
+    results = batch_qe_nint_process(
         config_path=config_path,
         n_int_values=n_int_values,
         output_dir=output_dir,
@@ -96,6 +96,7 @@ def example_parameter_sweep(planet_population: bool = False):
         # for planet population, we need to read in the planet population file name
         planet_population_params = loader.load_config(config_file=config_planet_population_path)
         file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
+        lum_types = planet_population_params['lum_type'] # to map luminosities with stellar types
         # read in the planet population
         df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
     else:
@@ -110,9 +111,10 @@ def example_parameter_sweep(planet_population: bool = False):
     output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
 
+    
+    # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):
 
-        ipdb.set_trace()
         if isinstance(df_planet_population, pd.DataFrame):
             system_params = df_planet_population.iloc[sys_num]
             logging.info(f"Processing system {sys_num} with parameters: {system_params}")
@@ -123,8 +125,9 @@ def example_parameter_sweep(planet_population: bool = False):
             logging.info(f"No planet population; doing parameter sweep for a single system")
             base_filename = "s2n_sweep"
     
-        results = batch_process(
-            config_path=config_single_obs_path,
+        # do parameter sweep over n_int and qe values for a single planetary system
+        results = batch_qe_nint_process(
+            base_config_path=config_single_obs_path,
             n_int_values=n_int_values,
             qe_values=qe_values,
             output_dir=output_dir,
@@ -132,7 +135,8 @@ def example_parameter_sweep(planet_population: bool = False):
             base_filename=base_filename,
             overwrite=True,
             plot=True, 
-            system_params=system_params
+            system_params=system_params, 
+            lum_types=lum_types
         )
     
         # Print summary
@@ -162,7 +166,7 @@ def example_custom_sources():
         print(f"\nProcessing sources: {sources}")
         output_dir = f"source_combinations/{name_suffix}"
         
-        results = batch_process(
+        results = batch_qe_nint_process(
             config_path=config_path,
             n_int_values=n_int_values,
             output_dir=output_dir,
@@ -196,7 +200,7 @@ def main():
     print("\n" + "=" * 50)
     print("All examples completed!")
     print("\nTo run the batch processor from command line:")
-    print("python batch_process.py --config modules/config/demo_config.ini \\")
+    print("python batch_qe_nint_process.py --config modules/config/demo_config.ini \\")
     print("                       --n-int 1000 3000 6000 9000 \\")
     print("                       --output-dir my_batch_output \\")
     print("                       --sources star exoplanet_model_10pc exozodiacal zodiacal")

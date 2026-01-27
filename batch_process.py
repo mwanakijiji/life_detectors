@@ -29,14 +29,13 @@ from modules.data.units import UnitConverter
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
-def modify_config_file_sweep(config_path: str, n_int: int, qe: float, output_path: str) -> str:
+def modify_config_file_sweep(config_path: str, n_int: int, qe: float) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
     
     Args:
         config_path: Path to the original configuration file
         n_int: New value for n_int
-        output_path: New path for the FITS output file
         
     Returns:
         Path to the temporary modified configuration file
@@ -49,7 +48,7 @@ def modify_config_file_sweep(config_path: str, n_int: int, qe: float, output_pat
     # Modify the values
     config.set('observation', 'n_int', str(n_int))
     config.set('detector', 'quantum_efficiency', str(qe))
-    config.set('saving', 'save_s2n_data', output_path)
+    #config.set('saving', 'save_s2n_data', output_path)
     
     # Create a temporary config file
     qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
@@ -59,14 +58,57 @@ def modify_config_file_sweep(config_path: str, n_int: int, qe: float, output_pat
     
     return temp_config_path
 
+
+def modify_config_file_pl_system_params(config_path: str, system_params: dict, lum_types: dict) -> str:
+    """
+    Create a modified configuration file which overwrites new planetary system parameters.
+    
+    Args:
+        config_path: Path to the original configuration file
+        system_params: Optional[dict] = None: the planetary system parameters
+        lum_types: Optional dictionary mapping the luminosities to the stellar types
+        
+    Returns:
+        Path to the temporary modified configuration file
+    """
+
+    if system_params is not None:
+
+        # Load the original config
+        config = configparser.ConfigParser()
+        config.read(config_path)
+        
+        # Modify the values
+        config.set('target', 'distance', str(system_params['Ds'])) # distance to the star (pc)
+        config.set('target', 'rad_planet', str(system_params['Rp'])) # planet radius (Earth radii)
+        config.set('target', 'rad_star', str(system_params['Rs'])) # stellar radius (solar radii)
+        config.set('target', 't_star', str(system_params['Ts'])) # stellar temperature (K)
+        ## ## TO DO: make sure the modified luminosity is being used right, if it is being used at all
+        config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
+        
+        # Create a temporary config file
+        file_name_string = f"temp_dist_{config['target']['distance']}_Rp_{config['target']['rad_planet']}_Rs_{config['target']['rad_planet']}_Ts_{config['target']['t_star']}_L_{config['target']['L_star']}"
+        #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
+        temp_config_path = config_path.replace('.ini', file_name_string + '.ini')
+        with open(temp_config_path, 'w') as f:
+            config.write(f)
+        logger.info(f"Created temporary config file for one planetary system: {temp_config_path}")
+
+    else:
+        # just return the original config path
+        return config_path
+    
+    return temp_config_path
+
+
 def run_single_calculation(config_path: str, 
                             sources_to_include: List[str], 
                           n_int: int, 
                           qe: float,
-                          output_path: str, 
                           overwrite: bool = True, 
                           plot: bool = False, 
-                          system_params: Optional[dict] = None) -> bool:
+                          system_params: Optional[dict] = None, 
+                          lum_types: Optional[dict] = None) -> bool:
     """
     Run a single calculation with specified parameters.
     
@@ -75,27 +117,33 @@ def run_single_calculation(config_path: str,
         sources_to_include: List of sources to include in calculation
         n_int: Number of integrations
         qe: quantum efficiency
-        output_path: Path for the output FITS file
         overwrite: Whether to overwrite existing files
         plot: Whether to generate plots
         system_params: Optional[dict] = None: the planetary system parameters
+        lum_types: Optional dictionary mapping the luminosities to the stellar types
         
     Returns:
-        True if successful, False otherwise
+        output_path: Path of the output FITS file
     """
 
-    try:
-        # Create temporary config file with modified values
-        temp_config_path_nint_qe = modify_config_file_sweep(config_path, n_int, qe, output_path) # use new n_int, QE values
-        temp_config_path_system_params = modify_config_file_system_params(config_path, system_params) # modify again, for a given planetary system 
+    if True:
+        # Create temporary config file with modified values: use new n_int, QE values
+        temp_config_path_nint_qe = modify_config_file_sweep(config_path, n_int, qe)
+        # modify again, for a given planetary system 
+        if system_params is not None:
+            temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, system_params = system_params, lum_types = lum_types)
+        else:
+            temp_config_path = temp_config_path_nint_qe
+
+        output_fits_file_path = temp_config_path.replace('.ini', '.fits')
 
         # First log entry: which config file we're using (original and temp)
         logger.info(f"--------------------------------")
         logger.info(f"Config path (base): {config_path}")
-        logger.info(f"Config path (temp, for batch processing): {temp_config_path_nint_qe}")
+        logger.info(f"Config path (temporary one for this case, for batch processing): {temp_config_path}")
 
         # Load the modified config and validate it
-        config = load_config(config_file=temp_config_path_nint_qe)
+        config = load_config(config_file=temp_config_path)
         validator.validate_config(config)
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
@@ -126,7 +174,7 @@ def run_single_calculation(config_path: str,
             # Fallback: just log the raw object
             logger.info(f"(Unrecognized config type {type(config)}; raw repr follows)")
             logger.info(repr(config))
-        logger.info(f"Running calculation with n_int={n_int}, output={output_path}")
+        logger.info(f"Running calculation with n_int={n_int}, output={output_fits_file_path}")
         
         # Generate sample spectral data
         logger.info("Creating sample spectral data...")
@@ -170,22 +218,22 @@ def run_single_calculation(config_path: str,
         # This will automatically save the FITS file 
         s2n = noise_calc.s2n_e()
         
-        logger.info(f"Successfully completed calculation with n_int={n_int}")
-        logger.info(f"Results saved to: {output_path}")
+        #logger.info(f"Successfully completed calculation with n_int={n_int}")
+        logger.info(f"Results saved to: {output_fits_file_path}")
         
         # Clean up temporary config file
-        os.remove(temp_config_path)
+        #os.remove(temp_config_path)
         
         return True
         
-    except Exception as e:
-        logger.error(f"Error in calculation with n_int={n_int}: {e}")
-        # Clean up temporary config file if it exists
-        if 'temp_config_path' in locals() and os.path.exists(temp_config_path):
-            os.remove(temp_config_path)
-        return False
+    #except Exception as e:
+    #    logger.error(f"Error in calculation with n_int={n_int}: {e}")
+    #    # Clean up temporary config file if it exists
+    #    if 'temp_config_path' in locals() and os.path.exists(temp_config_path):
+   #         os.remove(temp_config_path)
+   #     return False
 
-def batch_process(config_path: str, 
+def batch_qe_nint_process(base_config_path: str, 
                 n_int_values: List[float], 
                 qe_values: List[float],
                   output_dir: str, 
@@ -193,12 +241,13 @@ def batch_process(config_path: str,
                   base_filename: str = "s2n", 
                   overwrite: bool = True, 
                   plot: bool = False, 
-                system_params: Optional[dict] = None) -> List[Tuple[int, str, bool]]:
+                system_params: Optional[dict] = None, 
+                lum_types: Optional[dict] = None) -> List[Tuple[int, str, bool]]:
     """
     Run batch processing with multiple n_int values.
     
     Args:
-        config_path: Path to the base configuration file
+        base_config_path: Path to the base configuration file
         n_int_values: List of n_int values to process
         output_dir: Directory to save output FITS filesipdb
         qe_values: List of qe values to process
@@ -207,6 +256,7 @@ def batch_process(config_path: str,
         overwrite: Whether to overwrite existing files
         plot: Whether to generate plots
         system_params: Optional dictionary of the planetary system parameters
+        lum_types: Optional dictionary mapping the luminosities to the stellar types
         
     Returns:
         List of tuples (n_int, output_path, success)
@@ -221,35 +271,35 @@ def batch_process(config_path: str,
             # Create output filename
             n_int = int(n_int)
             qe_pct = int(round(qe * 100))  # e.g. 0.87 -> 87
-            output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
-            output_path = os.path.join(output_dir, output_filename)
+            #output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
+            #output_path = os.path.join(output_dir, output_filename)
             
             logging.info(f"--------------------------------")
             logging.info(f"--------------------------------")
             logging.info(f"Processing single calculation:")
             logging.info(f"Parameter n_int = {n_int}")
             logging.info(f"Parameter qe = {qe}")
-            logging.info(f"Will be written to output_path = {output_path}")
 
-            success = run_single_calculation(
-                config_path=config_path,
+            output_path = run_single_calculation(
+                config_path=base_config_path,
                 sources_to_include=sources_to_include,
                 n_int=n_int,
                 qe=qe,
-                output_path=output_path,
                 overwrite=overwrite,
                 plot=plot,
-                system_params=system_params
+                system_params=system_params, 
+                lum_types=lum_types
             )
             
-            results.append((n_int, output_path, success))
+            #results.append((n_int, output_path, success))
             
-            if success:
+            if output_path:
                 print(f"  ✓ Success: {output_path}")
             else:
                 print(f"  ✗ Failed: {output_path}")
     
-    return results
+    return #results
+
 
 def main():
     """Main entry point for the batch processing script."""

@@ -128,8 +128,7 @@ class AstrophysicalSources:
 
             # check that the desired distance is 10 pc; if not, will have to update this
             if float(self.config["target"]["distance"]) != 10.0:
-                logger.warning(f"Distance {float(self.config['target']['distance'])} pc is not 10 pc; will have to update this.")
-                exit()
+                logger.info(f"Distance {float(self.config['target']['distance'])} pc is not 10 pc; rescaling planet spectrum with true distance.")
 
             # this is a model spectrum from a file with different units, formatting
             file_name_exoplanet_model_10pc = self.config['astrophysical_sources']['exoplanet_model_10pc']
