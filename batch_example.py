@@ -108,32 +108,31 @@ def example_parameter_sweep(planet_population: bool = False):
     step_n_int = float(sweeped_params['observation']['n_int_step']) # is added to the range so as to include the stop value
     n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']) + step_n_int, step_n_int))  # 1000, 2000, ..., 10000
     step_qe = float(sweeped_params['observation']['qe_step'])
-    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + step_qe, step_qe))
+    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + 0.1*step_qe, step_qe))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
-    output_dir = "parameter_sweep/junk"
+    #output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
 
     
     # loop over all the planetary systems
-    ipdb.set_trace()
     for sys_num in range(len(df_planet_population)):
 
         if isinstance(df_planet_population, pd.DataFrame):
             system_params = df_planet_population.iloc[sys_num]
             logging.info(f"Processing system {sys_num} with parameters: {system_params}")
-            base_filename = f"s2n_sweep_sys_{sys_num:03d}"
+            base_filename = f"s2n_sweep_planet_index_{sys_num:07d}"
             
         else:
             system_params = None
             logging.info(f"No planet population; doing parameter sweep for a single system")
             base_filename = "s2n_sweep"
+
     
         # do parameter sweep over n_int and qe values for a single planetary system
         success_all = batch_qe_nint_process(
             base_config_path=config_single_obs_path,
             n_int_values=n_int_values,
             qe_values=qe_values,
-            output_dir=output_dir,
             sources_to_include=sources,
             base_filename=base_filename,
             overwrite=True,

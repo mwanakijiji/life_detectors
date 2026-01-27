@@ -7,6 +7,7 @@ and save the results as FITS files with different names.
 """
 
 import os
+from socket import IPV6_DONTFRAG
 import sys
 import configparser
 import logging
@@ -51,20 +52,24 @@ def modify_config_file_sweep(config_path: str, n_int: int, qe: float) -> str:
     #config.set('saving', 'save_s2n_data', output_path)
     
     # Create a temporary config file
+    temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
     qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-    temp_config_path = config_path.replace('.ini', f'_temp_n{n_int}_qe{qe_str}.ini')
+    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_n{n_int}_qe{qe_str}.ini')
+    if not os.path.exists(temp_config_dir):
+        os.makedirs(temp_config_dir, exist_ok=True)
     with open(temp_config_path, 'w') as f:
         config.write(f)
     
     return temp_config_path
 
 
-def modify_config_file_pl_system_params(config_path: str, system_params: dict, lum_types: dict) -> str:
+def modify_config_file_pl_system_params(config_path: str, base_filename: str, system_params: dict, lum_types: dict) -> str:
     """
     Create a modified configuration file which overwrites new planetary system parameters.
     
     Args:
         config_path: Path to the original configuration file
+        base_filename: string to distinguish individual planets (index number from df of planet population data)
         system_params: Optional[dict] = None: the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
         
@@ -95,7 +100,6 @@ def modify_config_file_pl_system_params(config_path: str, system_params: dict, l
 
         
         # Create a temporary config file
-        ipdb.set_trace()
 
         # Compose parts of the file name for readability
         nuniverse_part = f"Nuniverse_{config['target']['Nuniverse']}"
@@ -106,8 +110,13 @@ def modify_config_file_pl_system_params(config_path: str, system_params: dict, l
         ts_part = f"Ts_{config['target']['t_star']}"
         l_part = f"L_{config['target']['L_star']}"
         stype_part = f"Stype_{config['target']['Stype']}"
-        file_name_string = (
-            f"temp_{nuniverse_part}_"
+
+        # use this string to 
+        # 1. make a subdir (which will contain all the files for the different values of QE, n_int)
+        # 2. name the files in the subdir as well
+        file_basename_string = (
+            f"temp_{base_filename}_"
+            f"{nuniverse_part}_"
             f"{nstar_part}_"
             f"{dist_part}_"
             f"{rp_part}_"
@@ -117,7 +126,11 @@ def modify_config_file_pl_system_params(config_path: str, system_params: dict, l
             f"{stype_part}"
         )
         #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-        temp_config_path = config_path.replace('.ini', file_name_string + '.ini')
+        temp_config_path = config_path.replace('.ini', file_basename_string + '/' + file_basename_string + '.ini')
+
+        # Ensure the directory exists before writing the temporary config file
+        temp_config_dir = os.path.dirname(temp_config_path)
+        os.makedirs(temp_config_dir, exist_ok=True)
         with open(temp_config_path, 'w') as f:
             config.write(f)
         logger.info(f"Created temporary config file for one planetary system: {temp_config_path}")
@@ -130,6 +143,7 @@ def modify_config_file_pl_system_params(config_path: str, system_params: dict, l
 
 
 def run_single_calculation(config_path: str, 
+                            base_filename: str,
                             sources_to_include: List[str], 
                           n_int: int, 
                           qe: float,
@@ -142,6 +156,7 @@ def run_single_calculation(config_path: str,
     
     Args:
         config_path: Path to the configuration file
+        base_filename: string to distinguish individual planets (index number from df of planet population data)
         sources_to_include: List of sources to include in calculation
         n_int: Number of integrations
         qe: quantum efficiency
@@ -156,10 +171,11 @@ def run_single_calculation(config_path: str,
 
     if True:
         # Create temporary config file with modified values: use new n_int, QE values
+        ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
         temp_config_path_nint_qe = modify_config_file_sweep(config_path, n_int, qe)
         # modify again, for a given planetary system 
         if system_params is not None:
-            temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, system_params = system_params, lum_types = lum_types)
+            temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, base_filename = base_filename, system_params = system_params, lum_types = lum_types)
         else:
             temp_config_path = temp_config_path_nint_qe
 
@@ -178,7 +194,9 @@ def run_single_calculation(config_path: str,
         config.read(temp_config_path)
 
         # S/N results will be written to this file
-        output_fits_file_abs_path = os.path.join(config['dirs']['save_s2n_data_unique_dir'], os.path.basename(temp_config_path.replace('.ini', '.fits')))
+        # Insert QE and n_int into the filename before .fits
+        fname_base = temp_config_path.replace('.ini', '')
+        output_fits_file_abs_path = f"{fname_base}_nint_{n_int}_qe_{qe:.4f}.fits"
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
         try:
@@ -270,7 +288,6 @@ def run_single_calculation(config_path: str,
 def batch_qe_nint_process(base_config_path: str, 
                 n_int_values: List[float], 
                 qe_values: List[float],
-                  output_dir: str, 
                   sources_to_include: List[str],
                   base_filename: str = "s2n", 
                   overwrite: bool = True, 
@@ -283,7 +300,6 @@ def batch_qe_nint_process(base_config_path: str,
     Args:
         base_config_path: Path to the base configuration file
         n_int_values: List of n_int values to process
-        output_dir: Directory to save output FITS filesipdb
         qe_values: List of qe values to process
         sources_to_include: List of sources to include in calculations
         base_filename: Base filename for output files (without extension)
@@ -296,7 +312,7 @@ def batch_qe_nint_process(base_config_path: str,
         List of tuples (n_int, output_path, success)
     """
     # Create output directory if it doesn't exist
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    #Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     results = []
 
@@ -319,6 +335,7 @@ def batch_qe_nint_process(base_config_path: str,
 
             success = run_single_calculation(
                 config_path=base_config_path,
+                base_filename = base_filename,
                 sources_to_include=sources_to_include,
                 n_int=n_int,
                 qe=qe,
