@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from modules.core import calculator, astrophysical, instrumental
 from modules.config import loader, validator
-from modules.utils.helpers import create_sample_data, load_config
+from modules.utils.helpers import create_sample_data
 from modules.data.units import UnitConverter
 
 # Module-level logger so it's available everywhere in this file
@@ -135,16 +135,24 @@ def run_single_calculation(config_path: str,
         else:
             temp_config_path = temp_config_path_nint_qe
 
-        output_fits_file_path = temp_config_path.replace('.ini', '.fits')
+        ipdb.set_trace()
 
         # First log entry: which config file we're using (original and temp)
         logger.info(f"--------------------------------")
         logger.info(f"Config path (base): {config_path}")
         logger.info(f"Config path (temporary one for this case, for batch processing): {temp_config_path}")
 
-        # Load the modified config and validate it
-        config = load_config(config_file=temp_config_path)
-        validator.validate_config(config)
+        # Load config in two forms:
+        # - dict (for validation + directory creation)
+        # - ConfigParser (for downstream code that expects .has_section/.options)
+        # this is necessary for vestigial reasons while using only one load_config() function
+        config_dict = loader.load_config(config_file=temp_config_path, makedirs=True)
+        validator.validate_config(config_dict)
+        config = configparser.ConfigParser()
+        config.read(temp_config_path)
+
+        # S/N results will be written to this file
+        output_fits_file_abs_path = os.path.join(config['dirs']['save_s2n_data_unique_dir'], os.path.basename(temp_config_path.replace('.ini', '.fits')))
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
         try:
@@ -174,7 +182,7 @@ def run_single_calculation(config_path: str,
             # Fallback: just log the raw object
             logger.info(f"(Unrecognized config type {type(config)}; raw repr follows)")
             logger.info(repr(config))
-        logger.info(f"Running calculation with n_int={n_int}, output={output_fits_file_path}")
+        logger.info(f"Running calculation with n_int={n_int}, output={output_fits_file_abs_path}")
         
         # Generate sample spectral data
         logger.info("Creating sample spectral data...")
@@ -216,10 +224,11 @@ def run_single_calculation(config_path: str,
         )
         
         # This will automatically save the FITS file 
-        s2n = noise_calc.s2n_e()
+        ipdb.set_trace()    
+        s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
         
         #logger.info(f"Successfully completed calculation with n_int={n_int}")
-        logger.info(f"Results saved to: {output_fits_file_path}")
+        logger.info(f"Results saved to: {output_fits_file_abs_path}")
         
         # Clean up temporary config file
         #os.remove(temp_config_path)

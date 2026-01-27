@@ -222,10 +222,13 @@ class NoiseCalculator:
             'dark_current': D_rate,
             'read_noise': R
         }
-        file_name_data = self.config['saving']['save_s2n_data']
-        with open(file_name_data, 'wb') as f:
-            pickle.dump(data_to_save, f)
-        logger.info(f"Saved S/N data to {file_name_data}")
+        ipdb.set_trace()
+
+        # I think this is redundant!
+        #file_name_data = self.config['saving']['save_s2n_data']
+        #with open(file_name_data, 'wb') as f:
+        #    pickle.dump(data_to_save, f)
+        #logger.info(f"Saved S/N data to {file_name_data}")
 
         print('!---- make the signal/pixel plot better ----- !!')
         
@@ -285,7 +288,7 @@ class NoiseCalculator:
         return s2n_tot #, var_to_return
 
 
-    def s2n_e(self, plot: bool = False):
+    def s2n_e(self, file_name_fits_unique, plot: bool = False):
         '''
         Find S/N using photoelectrons
 
@@ -348,7 +351,8 @@ class NoiseCalculator:
 
     
         # write the S/N data to a FITS file, with the config data in the header
-        file_name_fits = self.config['saving']['save_s2n_data']
+        ipdb.set_trace()
+        file_name_fits_temp = self.config['saving']['save_s2n_data_temp'] # this is just a file that is repeatedly written over in the case of a batch job, but it handy if I want to check the last written thing
         hdu = fits.PrimaryHDU()  # s2n will be packed into this later
 
         # add the sweeped parameters to the header (these are what are used to make the axes of the big 4D cubes)
@@ -412,8 +416,11 @@ class NoiseCalculator:
         s2n_dc[:,:] = np.tile(dark_current_values.value.reshape(-1, 1), (1, s2n.shape[1]))
         s2n_complete = np.stack((s2n, s2n_wavel_bin_centers, s2n_wavel_bin_widths, s2n_dc), axis=0)
         hdu.data = s2n_complete
-        hdu.writeto(file_name_fits, overwrite=True)
-        logger.info(f"Wrote S/N, wavelength, and dark current data to {file_name_fits}")
+        hdu.writeto(file_name_fits_temp, overwrite=True)
+        logger.info(f"Wrote S/N, wavelength, and dark current data to overwriteable file {file_name_fits_temp}")
+        hdu.writeto(file_name_fits_unique, overwrite=True)
+        logger.info(f"Wrote S/N, wavelength, and dark current data to unique file {file_name_fits_unique}")
+
 
         # Prepare two left-aligned columns for figure metadata
         instrumental_lines = [

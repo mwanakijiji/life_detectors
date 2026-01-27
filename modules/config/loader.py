@@ -39,7 +39,7 @@ def save_config(config: Dict[str, Any], filepath: str) -> None:
         raise IOError(f"Error saving configuration to {filepath}: {e}")
 
 
-def load_config(config_file: str, makedirs: bool = False) -> dict:
+def load_config(config_file: str, makedirs: bool = True) -> dict:
     """Load configuration from a file.
     
     Args:

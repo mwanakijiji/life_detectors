@@ -58,11 +58,12 @@ def validate_file_path(filepath: Union[str, Path]) -> bool:
     except Exception:
         return False
 
-
+'''
 def load_config(config_file):
     config = configparser.ConfigParser()
     config.read(config_file)
     return config
+'''
 
 
 def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
