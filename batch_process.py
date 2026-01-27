@@ -81,13 +81,41 @@ def modify_config_file_pl_system_params(config_path: str, system_params: dict, l
         # Modify the values
         config.set('target', 'distance', str(system_params['Ds'])) # distance to the star (pc)
         config.set('target', 'rad_planet', str(system_params['Rp'])) # planet radius (Earth radii)
+        config.set('target', 'pl_temp', str(system_params['Tp'])) # planet temp (K)
         config.set('target', 'rad_star', str(system_params['Rs'])) # stellar radius (solar radii)
         config.set('target', 't_star', str(system_params['Ts'])) # stellar temperature (K)
         ## ## TO DO: make sure the modified luminosity is being used right, if it is being used at all
         config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
         
+        # for strings only
+        config.set('target', 'Stype', str(system_params['Stype']))
+        config.set('target', 'Nuniverse', str(system_params['Nuniverse']))
+        config.set('target', 'Nstar', str(system_params['Nstar']))
+
+
+        
         # Create a temporary config file
-        file_name_string = f"temp_dist_{config['target']['distance']}_Rp_{config['target']['rad_planet']}_Rs_{config['target']['rad_planet']}_Ts_{config['target']['t_star']}_L_{config['target']['L_star']}"
+        ipdb.set_trace()
+
+        # Compose parts of the file name for readability
+        nuniverse_part = f"Nuniverse_{config['target']['Nuniverse']}"
+        nstar_part = f"Nstar_{config['target']['Nstar']}"
+        dist_part = f"dist_{config['target']['distance']}"
+        rp_part = f"Rp_{config['target']['rad_planet']}"
+        rs_part = f"Rs_{config['target']['rad_star']}"
+        ts_part = f"Ts_{config['target']['t_star']}"
+        l_part = f"L_{config['target']['L_star']}"
+        stype_part = f"Stype_{config['target']['Stype']}"
+        file_name_string = (
+            f"temp_{nuniverse_part}_"
+            f"{nstar_part}_"
+            f"{dist_part}_"
+            f"{rp_part}_"
+            f"{rs_part}_"
+            f"{ts_part}_"
+            f"{l_part}_"
+            f"{stype_part}"
+        )
         #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
         temp_config_path = config_path.replace('.ini', file_name_string + '.ini')
         with open(temp_config_path, 'w') as f:
@@ -134,8 +162,6 @@ def run_single_calculation(config_path: str,
             temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, system_params = system_params, lum_types = lum_types)
         else:
             temp_config_path = temp_config_path_nint_qe
-
-        ipdb.set_trace()
 
         # First log entry: which config file we're using (original and temp)
         logger.info(f"--------------------------------")
@@ -224,7 +250,6 @@ def run_single_calculation(config_path: str,
         )
         
         # This will automatically save the FITS file 
-        ipdb.set_trace()    
         s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
         
         #logger.info(f"Successfully completed calculation with n_int={n_int}")
@@ -274,6 +299,9 @@ def batch_qe_nint_process(base_config_path: str,
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     results = []
+
+    # initialize for checking if all calculations for the QE, n_int run were successful
+    success_all = True
     
     for qe in qe_values:
         for n_int in n_int_values:
@@ -289,7 +317,7 @@ def batch_qe_nint_process(base_config_path: str,
             logging.info(f"Parameter n_int = {n_int}")
             logging.info(f"Parameter qe = {qe}")
 
-            output_path = run_single_calculation(
+            success = run_single_calculation(
                 config_path=base_config_path,
                 sources_to_include=sources_to_include,
                 n_int=n_int,
@@ -299,15 +327,15 @@ def batch_qe_nint_process(base_config_path: str,
                 system_params=system_params, 
                 lum_types=lum_types
             )
-            
-            #results.append((n_int, output_path, success))
-            
-            if output_path:
-                print(f"  ✓ Success: {output_path}")
+                        
+            if success:
+                logging.info(f"  ✓ Success for n_int={n_int}, qe={qe} and the following planetary system parameters:")
+                logging.info(system_params)
             else:
-                print(f"  ✗ Failed: {output_path}")
+                logging.info(f"  ✗ Failed for n_int={n_int}, qe={qe}")
+            success_all = success_all and bool(success) # was this calculation successful too?
     
-    return #results
+    return success_all
 
 
 def main():

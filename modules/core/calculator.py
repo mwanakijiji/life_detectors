@@ -222,7 +222,6 @@ class NoiseCalculator:
             'dark_current': D_rate,
             'read_noise': R
         }
-        ipdb.set_trace()
 
         # I think this is redundant!
         #file_name_data = self.config['saving']['save_s2n_data']
@@ -351,7 +350,6 @@ class NoiseCalculator:
 
     
         # write the S/N data to a FITS file, with the config data in the header
-        ipdb.set_trace()
         file_name_fits_temp = self.config['saving']['save_s2n_data_temp'] # this is just a file that is repeatedly written over in the case of a batch job, but it handy if I want to check the last written thing
         hdu = fits.PrimaryHDU()  # s2n will be packed into this later
 

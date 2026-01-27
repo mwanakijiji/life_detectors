@@ -105,14 +105,17 @@ def example_parameter_sweep(planet_population: bool = False):
 
     # parameter sweep: create a range of n_int values
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
-    n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']), float(sweeped_params['observation']['n_int_step'])))  # 1000, 2000, ..., 10000
-    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']), float(sweeped_params['observation']['qe_step'])))
+    step_n_int = float(sweeped_params['observation']['n_int_step']) # is added to the range so as to include the stop value
+    n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']) + step_n_int, step_n_int))  # 1000, 2000, ..., 10000
+    step_qe = float(sweeped_params['observation']['qe_step'])
+    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + step_qe, step_qe))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     output_dir = "parameter_sweep/junk"
     sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
 
     
     # loop over all the planetary systems
+    ipdb.set_trace()
     for sys_num in range(len(df_planet_population)):
 
         if isinstance(df_planet_population, pd.DataFrame):
@@ -126,7 +129,7 @@ def example_parameter_sweep(planet_population: bool = False):
             base_filename = "s2n_sweep"
     
         # do parameter sweep over n_int and qe values for a single planetary system
-        results = batch_qe_nint_process(
+        success_all = batch_qe_nint_process(
             base_config_path=config_single_obs_path,
             n_int_values=n_int_values,
             qe_values=qe_values,
@@ -140,8 +143,8 @@ def example_parameter_sweep(planet_population: bool = False):
         )
     
         # Print summary
-        successful = sum(1 for _, _, success in results if success)
-        print(f"Parameter sweep completed: {successful}/{len(results)} successful")
+        logging.info(f"Parameter sweep completed: all calculations successful = {success_all}")
+
     
     return
 

@@ -271,7 +271,8 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_K_star/'
+    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_K_star/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/test_planets_10/dist_3.49472_Rp_1.64709_Rs_1.64709_Ts_4070.0_L_0.4/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -383,7 +384,7 @@ def main():
         center=dict(x=0, y=0, z=0),
         eye=dict(x=zoom*1.25, y=zoom*1.25, z=zoom*0.5)
     )
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='save')
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='show')
 
 
 if __name__ == '__main__':
