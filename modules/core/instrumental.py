@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import astropy.io.fits as fits
 
 from ..data.units import UnitConverter
+from ..utils.helpers import format_plot_title
 
 
 class InstrumentDepTerms:
@@ -101,23 +102,6 @@ class InstrumentDepTerms:
                 self.prop_dict.update(dict_this)
 
         # overplot all the sources
-        
-        title_lines = [
-            "\n",
-            f"collecting area = {float(self.config['telescope']['collecting_area']):.2f} m²",
-            f"telescope throughput = {float(self.config['telescope']['eta_t']):.2f}",
-            f"stellar nulling = {bool(self.config['nulling']['null'])}, nulling transmission = {float(self.config['nulling']['nulling_factor']):.1e}",
-            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
-            f"z_exozodiacal = {float(self.config['target']['z_exozodiacal'])}",
-            f"A_albedo = {float(self.config['target']['A_albedo'])}",
-            f"L_star = {float(self.config['target']['L_star'])} L_sol",
-            f"rad_star = {float(self.config['target']['rad_star'])} solar radii",
-            f"T_star = {float(self.config['target']['T_star'])} K",
-            f"rad_planet = {float(self.config['target']['rad_planet'])} Earth radii",
-            f"pl_temp = {float(self.config['target']['pl_temp'])} K",
-            f"distance = {float(self.config['target']['distance'])} pc"
-        ]
-
         if plot:
 
             # pre-aperture fluxes
@@ -133,8 +117,8 @@ class InstrumentDepTerms:
             for source_name, source_val in self.prop_dict.items():
                 plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
             plt.legend()
-            plt.title("Photoelectrons, pre-aperture\n" + "\n".join(title_lines), loc='left')
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_pre_aperture.pdf"
+            plt.title(format_plot_title("Photoelectrons, pre-aperture", self.config), loc='left')
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.pdf"
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
@@ -150,8 +134,8 @@ class InstrumentDepTerms:
             plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
             plt.ylabel(f"Flux (" + str(source_val['flux_post_aperture_ph_sec_um'].unit) + ")")
             plt.legend()
-            plt.title("Photoelectrons, post-aperture" + "\n".join(title_lines))
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"photoelectrons_all_sources_post_aperture.png"
+            plt.title(format_plot_title("Photoelectrons, post-aperture", self.config))
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_post_aperture.png"
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux post-aperture to " + file_name_plot)
@@ -200,6 +184,9 @@ class Detector:
         self.num_wavel_bins = num_wavel_bins
         self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
 
+
+        self.config = config
+
         #self.gain = config["detector"]["gain"]
         #self.quantum_efficiency = config["detector"]["quantum_efficiency"]
         #self.photons_to_e = config["detector"]["photons_to_e"]
@@ -215,8 +202,9 @@ class Detector:
         #self.prop_dict['wavel'] = self.star_flux['wavel']
 
 
-    def footprint_spectral(self, plot: bool = True):
+    def footprint_spectral(self, file_name_plot: str, plot: bool = True):
         # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
+        # file_name_plot: name of the file to save the plot to
         # plot: whether to make an FYI plot of the footprint
 
         # lower-left corner of the footprint
@@ -261,12 +249,11 @@ class Detector:
 
         if plot:
             plt.clf()
-            plt.title(f"Detector spectral footprint (True)")
+            plt.title(format_plot_title("Detector spectral footprint (True)", self.config))
             plt.imshow(footprint_sum, origin='lower', cmap='gray')
             plt.xlabel(f"Pixel")
             plt.ylabel(f"Pixel")
             plt.gca().set_aspect('equal', adjustable='box')
-            file_name_plot = "/Users/eckhartspalding/Downloads/footprint_bool.png"
             plt.savefig(file_name_plot)
             logging.info(f"Saved plot of detector footprint containing all wavelength bins to {file_name_plot}")
 

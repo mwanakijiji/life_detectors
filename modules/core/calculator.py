@@ -24,6 +24,7 @@ from .instrumental import InstrumentDepTerms, Detector
 from .conversions import ConversionEngine
 from ..data.units import UnitConverter
 from ..config.validator import validate_config
+from ..utils.helpers import format_plot_title
 
 logger = logging.getLogger(__name__)
 
@@ -243,8 +244,8 @@ class NoiseCalculator:
             plt.yscale('log')
             plt.xlabel('Wavelength bin number')
             plt.ylabel('Total count rate (ph/sec/pix)')
-            plt.title('Total signal per pixel')
-            file_name_plot = '/Users/eckhartspalding/Downloads/total_signal_per_pixel.png'
+            plt.title(format_plot_title("Total signal per pixel", self.config))
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + 'total_signal_per_pixel.png'
             plt.savefig(file_name_plot)
             logger.info(f"Saved plot of total signal per pixel to {file_name_plot}")
             plt.close()
@@ -259,8 +260,13 @@ class NoiseCalculator:
             plt.yscale('log')
             plt.xlabel('Wavelength (um)')
             plt.ylabel('Noise (ph/sec)')
-            plt.title('Noise contributions (only 1 value of dark current or read noise)')
-            file_name_plot = '/Users/eckhartspalding/Downloads/s2n_tot.png'
+            plt.title(
+                format_plot_title(
+                    "Noise contributions (only 1 value of dark current or read noise)",
+                    self.config,
+                )
+            )
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + 's2n_tot.png'
             #plt.show()
             plt.savefig(file_name_plot)
             logger.info(f"Saved plot of noise contributions to {file_name_plot}")
@@ -276,8 +282,13 @@ class NoiseCalculator:
             plt.yscale('log')
             plt.xlabel('Wavelength (um)')
             plt.ylabel('Noise (ph/sec)')
-            plt.title('S/N expression term contributions (plotting only 1 value of dark current or read noise)')
-            file_name_plot = '/Users/eckhartspalding/Downloads/s2n_expression_contributions.png'
+            plt.title(
+                format_plot_title(
+                    "S/N expression term contributions (plotting only 1 value of dark current or read noise)",
+                    self.config,
+                )
+            )
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + 's2n_expression_contributions.png'
             #plt.show()
             plt.tight_layout()
             plt.savefig(file_name_plot)
@@ -321,7 +332,7 @@ class NoiseCalculator:
         detector = Detector(config=self.config, num_wavel_bins=n_bins)
         # get the illumination footprint (cube where each slice is the footprint for one wavelength bin)
         ## ## NOTE THIS IS KIND OF REDUNDANT RIGHT NOW, SINCE THE NUMBER OF PIXELS PER WAVELENGTH BIN IS CONSTANT AS CALCULATED BELOW; MIGHT CHANGE THIS LATER IF THE DISPERSION IS NOT CONSTANT
-        footprint_spec_cube = detector.footprint_spectral(plot=True)
+        footprint_spec_cube = detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
 
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["integration_time"]) * u.second
@@ -490,7 +501,7 @@ class NoiseCalculator:
             fig.colorbar(im, ax=ax, label='S/N')
             ax.set_xlabel(f"Wavelength ({bin_centers.unit})")
             ax.set_ylabel(param_name + " (" + param_units_string + ")")
-            ax.set_title("S/N")
+            ax.set_title(format_plot_title("S/N", self.config))
             plt.tight_layout()
             plt.show()
             im = ax.imshow(
@@ -513,10 +524,10 @@ class NoiseCalculator:
             fig.colorbar(im, ax=ax, label='S/N')
             ax.set_xlabel(f"Wavelength ({bin_centers.unit})")
             ax.set_ylabel(param_name + " (" + param_units_string + ")")
-            ax.set_title("S/N")
+            ax.set_title(format_plot_title("S/N", self.config))
             plt.tight_layout()
             #plt.show()
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"2d_s2n_vs_wavelength_and_dark_current.png"
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"2d_s2n_vs_wavelength_and_dark_current.png"
             plt.savefig(file_name_plot)
             logger.info(f"Wrote plot {file_name_plot}")
 
@@ -530,7 +541,7 @@ class NoiseCalculator:
             ax.set_xlabel("Wavelength bin (" + str(wavel_abcissa.unit) + ")")
             fig.colorbar(contour, ax=ax, label="S/N")
             # Keep a concise axes title and add two figure-level columns
-            ax.set_title("S/N")
+            ax.set_title(format_plot_title("S/N", self.config))
             fig.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
             fig.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
             #plt.tight_layout()
@@ -569,12 +580,12 @@ class NoiseCalculator:
             ax_bottom.clabel(contour, inline=True, fmt='%.1f', fontsize=9)
             plt.ylabel(param_name + " (" + param_units_string + ")")
             # Keep a concise axes title and add two figure-level columns
-            ax_bottom.set_title("S/N")
+            ax_bottom.set_title(format_plot_title("S/N", self.config))
             fig2 = plt.gcf()
             fig2.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
             fig2.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
             plt.tight_layout()
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"2d_s2n_vs_wavelength_and_dark_current.png"
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"2d_s2n_vs_wavelength_and_dark_current.png"
             #plt.show()
             plt.savefig(file_name_plot)
             logger.info(f"Wrote plot {file_name_plot}")
@@ -624,13 +635,13 @@ class NoiseCalculator:
             cbar = plt.colorbar(sm, ax=ax)
             cbar.set_label(param_name + " (" + param_units_string + ")")
             # Keep a concise axes title and add two figure-level columns
-            plt.title("S/N")
+            plt.title(format_plot_title("S/N", self.config))
             fig3 = plt.gcf()
             fig3.text(0.02, 0.98, "\n".join(instrumental_lines), ha='left', va='top')
             fig3.text(0.52, 0.98, "\n".join(astrophysical_lines), ha='left', va='top')
             #plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             plt.tight_layout()
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"1d_s2n_vs_wavelength_and_dark_current_per_wavelength_bin.png"
             plt.subplots_adjust(top=0.6,right=0.8)
             #plt.show()
             plt.savefig(file_name_plot)

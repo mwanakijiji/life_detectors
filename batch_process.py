@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from modules.core import calculator, astrophysical, instrumental
 from modules.config import loader, validator
-from modules.utils.helpers import create_sample_data
+from modules.utils.helpers import create_sample_data, ensure_plot_title_context
 from modules.data.units import UnitConverter
 
 # Module-level logger so it's available everywhere in this file
@@ -68,7 +68,7 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
     Create a modified configuration file which overwrites new planetary system parameters.
     
     Args:
-        config_path: Path to the original configuration file
+        config_path: Path to the original configuration file, which will be modified here
         base_filename: string to distinguish individual planets (index number from df of planet population data)
         system_params: Optional[dict] = None: the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
@@ -96,10 +96,8 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
         config.set('target', 'Stype', str(system_params['Stype']))
         config.set('target', 'Nuniverse', str(system_params['Nuniverse']))
         config.set('target', 'Nstar', str(system_params['Nstar']))
-
-
         
-        # Create a temporary config file
+        # Create a temporary config file, set up directory to contain stuff
 
         # Compose parts of the file name for readability
         nuniverse_part = f"Nuniverse_{config['target']['Nuniverse']}"
@@ -125,8 +123,17 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
             f"{l_part}_"
             f"{stype_part}"
         )
+
+        # make a long string of all the system parameters for FYI plots
+        #ipdb.set_trace()
+        #ensure_plot_title_context(config)
+
+        # save all stuff (FYI plots, SNR results, etc.) in the subdir
+        #ipdb.set_trace()
+        config.set('dirs', 'save_s2n_data_unique_dir', config['dirs']['save_s2n_data_unique_dir'] + file_basename_string + '/')
+
         #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-        temp_config_path = config_path.replace('.ini', file_basename_string + '/' + file_basename_string + '.ini')
+        temp_config_path = str(config['dirs']['save_s2n_data_unique_dir']) + file_basename_string + '.ini'
 
         # Ensure the directory exists before writing the temporary config file
         temp_config_dir = os.path.dirname(temp_config_path)
@@ -192,6 +199,7 @@ def run_single_calculation(config_path: str,
         validator.validate_config(config_dict)
         config = configparser.ConfigParser()
         config.read(temp_config_path)
+        ensure_plot_title_context(config)
 
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits

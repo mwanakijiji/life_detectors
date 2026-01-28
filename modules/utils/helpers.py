@@ -25,6 +25,126 @@ from matplotlib.colors import LogNorm
 logger = logging.getLogger(__name__)
 
 
+########################################################
+# start bunch of functions to get and set plot title context
+def _config_get(config, section: str, key: str, default: Optional[str] = None) -> Optional[str]:
+    try:
+        if isinstance(config, configparser.ConfigParser):
+            if not config.has_section(section):
+                return default
+            return config[section].get(key, default)
+        if isinstance(config, dict):
+            return config.get(section, {}).get(key, default)
+    except Exception:
+        return default
+    return default
+
+def _config_set_plot_title_context(config, value: str) -> None:
+    if not value:
+        return
+    if isinstance(config, configparser.ConfigParser):
+        if not config.has_section("plotting"):
+            config.add_section("plotting")
+        config.set("plotting", "title_context", value)
+    elif isinstance(config, dict):
+        config.setdefault("plotting", {})["title_context"] = value
+
+
+def _get_plot_title_context(config) -> str:
+    if isinstance(config, configparser.ConfigParser):
+        if config.has_section("plotting"):
+            return config["plotting"].get("title_context", "").strip()
+        return ""
+    if isinstance(config, dict):
+        return str(config.get("plotting", {}).get("title_context", "")).strip()
+    return ""
+
+
+def build_system_params_title(config) -> str:
+    lines = []
+
+    collecting_area = _config_get(config, "telescope", "collecting_area")
+    if collecting_area is not None:
+        lines.append(f"collecting area = {float(collecting_area):.2f} m^2")
+
+    eta_t = _config_get(config, "telescope", "eta_t")
+    if eta_t is not None:
+        lines.append(f"telescope throughput = {float(eta_t):.2f}")
+
+    nulling = _config_get(config, "nulling", "null")
+    nulling_factor = _config_get(config, "nulling", "nulling_factor")
+    if nulling is not None and nulling_factor is not None:
+        lines.append(
+            f"stellar nulling = {bool(nulling)}, nulling transmission = {float(nulling_factor):.1e}"
+        )
+
+    lambda_rel = _config_get(config, "observation", "lambda_rel_lon_los")
+    beta = _config_get(config, "observation", "beta_lat_los")
+    if lambda_rel is not None and beta is not None:
+        lines.append(
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = {float(beta):.2f} deg"
+        )
+
+    z_exozodiacal = _config_get(config, "target", "z_exozodiacal")
+    if z_exozodiacal is not None:
+        lines.append(f"z_exozodiacal = {float(z_exozodiacal)}")
+
+    A_albedo = _config_get(config, "target", "A_albedo")
+    if A_albedo is not None:
+        lines.append(f"A_albedo = {float(A_albedo)}")
+
+    L_star = _config_get(config, "target", "L_star")
+    if L_star is not None:
+        lines.append(f"L_star = {float(L_star)} L_sol")
+
+    rad_star = _config_get(config, "target", "rad_star")
+    if rad_star is not None:
+        lines.append(f"rad_star = {float(rad_star)} solar radii")
+
+    T_star = _config_get(config, "target", "T_star")
+    if T_star is not None:
+        lines.append(f"T_star = {float(T_star)} K")
+
+    rad_planet = _config_get(config, "target", "rad_planet")
+    if rad_planet is not None:
+        lines.append(f"rad_planet = {float(rad_planet)} Earth radii")
+
+    pl_temp = _config_get(config, "target", "pl_temp")
+    if pl_temp is not None:
+        lines.append(f"pl_temp = {float(pl_temp)} K")
+
+    distance = _config_get(config, "target", "distance")
+    if distance is not None:
+        lines.append(f"distance = {float(distance)} pc")
+
+    return "\n".join(lines)
+
+
+def ensure_plot_title_context(config) -> str:
+    existing = _get_plot_title_context(config)
+    if existing:
+        return existing
+    built = build_system_params_title(config)
+    _config_set_plot_title_context(config, built)
+    return built
+
+
+def format_plot_title(base_title: str, config) -> str:
+    title_context = _get_plot_title_context(config)
+    if not title_context:
+        return base_title
+    separator = "\n" if base_title else ""
+    # If 'base_title' is present, underline it; otherwise, just return the context.
+    if base_title:
+        # Underline the base title with '=' (length matches without ANSI/formatting, just plain text)
+        underline = "=" * len(base_title)
+        return f"{base_title}\n{underline}{separator}{title_context}"
+    else:
+        return f"{title_context}"
+
+# end bunch of functions to get and set the plot title context
+########################################################
+
 
 def format_number(value: float, precision: int = 2) -> str:
     """

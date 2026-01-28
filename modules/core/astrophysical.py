@@ -19,6 +19,7 @@ import pandas as pd
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..data.units import UnitConverter
+from ..utils.helpers import format_plot_title
 
 logger = logging.getLogger(__name__)
 
@@ -167,14 +168,21 @@ class AstrophysicalSources:
 
         if plot:
             plt.clf()
+            plt.figure(figsize=(8, 8)) 
             plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e9]) # for comparison with Dannert
             plt.xlabel(f"Wavelength ({incident_dict['wavel'].unit})")
             plt.ylabel(f"Flux (" + str(incident_dict['astro_flux_ph_sec_m2_um'].unit) + ")")
-            plt.title(f"Incident flux from {source_name} (at Earth)")
-            file_name_plot = "/Users/eckhartspalding/Downloads/" + f"incident_{source_name}.png"
+            plt.title(
+                format_plot_title(
+                    f"Incident flux from {source_name} (at Earth, rescaled for distance {float(self.config['target']['distance'])} pc)",
+                    self.config,
+                )
+            )
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"incident_{source_name}.png"
+            plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)
         
