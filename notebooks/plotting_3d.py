@@ -38,7 +38,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
         eye=dict(x=1.25, y=1.25, z=1.25)
-    ), task='show', axis_ranges: dict = None, view: str = None, projection_type: str = None):
+    ), task='show', axis_ranges: dict = None, view: str = None, projection_type: str = None, title: str = None, file_name: str = None):
     """
     Plot 3D isosurface of S/N data.
     
@@ -153,9 +153,9 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         camera_scene["projection"] = dict(type=projection_type)
 
     scene = dict(
-        xaxis_title="qe",
-        yaxis_title="dc",
-        zaxis_title="wavel",
+        xaxis_title="QE",
+        yaxis_title="Dark current (e-/s/pix)",
+        zaxis_title="Wavelength (um)",
         camera=camera_scene,
         aspectmode='cube',  # Change to 'cube' if you want equal visual scaling
     )
@@ -177,9 +177,9 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
             y=0.7,
             bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent background
         ),
+        title={'text': title, 'font': {'size': 6}},
     )
 
-    file_name = f"s2n_3d_qe_dc_wavel_iso_{iso}.png"
     if task == 'show':
         fig.show()
     elif task == 'save':

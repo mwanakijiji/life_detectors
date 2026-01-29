@@ -271,12 +271,23 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_K_star/'
-    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/temp_s2n_sweep_planet_index_0000000_Nuniverse_0_Nstar_0_dist_14.92631_Rp_0.99314_Rs_1.01_Ts_5720.0_L_1.0_Stype_G/'
-    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/temp_s2n_sweep_planet_index_0000003_Nuniverse_0_Nstar_4_dist_3.49717_Rp_1.88237_Rs_0.672_Ts_4330.0_L_0.4_Stype_K/'
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000000_Nuniverse_72_Nstar_142_dist_5.12952_Rp_1.63547_Rs_1.86_Ts_7800_L_15.0_Stype_A/'
+    st_type = 'M'
+    if st_type == 'A':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
+    elif st_type == 'F':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_F/temp_s2n_sweep_planet_index_0000006_Nuniverse_496_Nstar_157_dist_10.929_Rp_0.90768_Rs_1.18_Ts_6000_L_3.0_Stype_F'
+    elif st_type == 'G':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_G/temp_s2n_sweep_planet_index_0000001_Nuniverse_460_Nstar_797_dist_12.8345_Rp_1.42795_Rs_0.909_Ts_5490_L_1.0_Stype_G/'
+    elif st_type == 'K':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_K/temp_s2n_sweep_planet_index_0000008_Nuniverse_199_Nstar_864_dist_12.783_Rp_1.03336_Rs_0.72_Ts_4700_L_0.4_Stype_K/'
+    elif st_type == 'M':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_M/temp_s2n_sweep_planet_index_0000000_Nuniverse_245_Nstar_273_dist_12.912_Rp_1.31511_Rs_0.46_Ts_3650_L_0.05_Stype_M/'
     output_dir = '/Users/eckhartspalding/Downloads/'
+    plot_save_string = 'type_'+st_type+'_star_'
+    iso_line = 1.0
 
+    # for informative titles on plots
+    source_string = os.path.basename(os.path.normpath(dir_sample_data))
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
     fits_files = sorted([f for f in os.listdir(dir_sample_data) if f.lower().endswith('.fits')])
 
@@ -351,7 +362,6 @@ def main():
     # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
     # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
     qe_choice = 0.8
-    iso = 5.0
     sl = s2n.sel(n_int=25920, qe=qe_choice, method="nearest")
     
     # Create the plot using xarray's plot method
@@ -363,14 +373,17 @@ def main():
     
     # Overplot a white contour at S/N=iso on the same axes
     X, Y = np.meshgrid(sl.wavel.values, sl.dc.values)
-    CS = ax.contour(X, Y, sl.values, levels=[iso], colors='white', linewidths=2)
+    CS = ax.contour(X, Y, sl.values, levels=[iso_line], colors='white', linewidths=2)
     #ax.clabel(CS, inline=True, fontsize=10)
     ax.set_xlabel('Wavelength (um)')
     ax.set_ylabel('Dark current (e-/s/pix)')
-    ax.set_title(f'K star, QE = {qe_choice:.2f}')
+    ax.set_title(f'QE = {qe_choice:.2f}')
     plt.tight_layout()  # Adjust layout to prevent label cutoff
-    plt.show()
-    #fig.show()
+    #plt.show()
+    file_name_plot = os.path.join(output_dir, plot_save_string + '2d_heat_map_dc_vs_wavel'+f'_iso_{iso_line:.1f}.png') 
+    plt.suptitle('Data from dir: ' + source_string, fontsize=6)
+    plt.savefig(file_name_plot)
+    print(f"Saved 2D heat map of S/N as function of wavelength and dark current to {file_name_plot}")
 
     # 3D plotting
     # pick one integration time
@@ -403,10 +416,12 @@ def main():
     # 3d projection
     _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
         da_filled,
-        iso=5.0,
+        iso=iso_line,
         camera=camera,
-        task='show',
+        task='save',
         axis_ranges=axis_ranges,
+        title = 'Data from dir: ' + source_string,
+        file_name=os.path.join(output_dir, plot_save_string + f's2n_3d_qe_dc_wavel_iso_{iso_line:.1f}.png')
     )
 
     '''
@@ -420,8 +435,8 @@ def main():
     )
     '''
 
-    ipdb.set_trace()
 
+    '''
     # 2d heat map projections
     plt.clf()
     _ = da_filled.plot(x="wavel", y="dc", col="qe")
@@ -429,8 +444,8 @@ def main():
     plt.ylabel('Dark current (e-/s/pix)')
     plt.suptitle('Data from dir: ' + dir_sample_data)
     plt.show()
+    '''
 
-    ipdb.set_trace()
     # Make a 2D plot of QE vs wavelength, averaging S/N over DC
     plt.clf()
     # Compute mean along 'dc' axis
@@ -443,17 +458,19 @@ def main():
     plt.pcolormesh(wavel_vals, qe_vals, s2n_mean, shading='auto')
     # Add white contour for s2n=5
     plt.colorbar(label='Mean S/N (across DC)')
-    CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[5], colors='white', linewidths=1.5)
-    plt.clabel(CS, inline=1, fontsize=10, fmt={5: 'S/N=5'}, colors='white')
+    CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[iso_line], colors='white', linewidths=1.5)
+    plt.clabel(CS, inline=1, fontsize=10, fmt={iso_line: f'S/N = {iso_line}'}, colors='white')
     plt.xlabel('Wavelength (um)')
     plt.ylabel('QE')
+    # Truncate directory string if too long for display
+    # Print only the string of the last directory in dir_display
+    plt.suptitle('Data from dir: ' + source_string, fontsize=6)
     plt.title(f'Mean S/N, across DC vals {np.min(da_filled.dc.values):.1f} to {np.max(da_filled.dc.values):.1f}')
-    file_name_plot = os.path.join(output_dir, 's2n_qe_vs_wavel_mean_across_dc.png')
+    file_name_plot = os.path.join(output_dir, plot_save_string + 's2n_qe_vs_wavel_mean_across_dc'+f'_iso_{iso_line:.1f}.png')
     plt.savefig(file_name_plot)
-    plt.show()
+    #plt.show()
     print(f"Saved 2D plot of mean S/N (across DC) as function of QE and wavelength to {file_name_plot}")
 
-    ipdb.set_trace()
     # too many subplots
     '''
     plt.clf()
