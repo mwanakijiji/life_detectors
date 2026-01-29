@@ -272,7 +272,9 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 def main():
 
     #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/parameter_sweep/20260121_K_star/'
-    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/test_planets_10/dist_3.49472_Rp_1.64709_Rs_1.64709_Ts_4070.0_L_0.4/'
+    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/temp_s2n_sweep_planet_index_0000000_Nuniverse_0_Nstar_0_dist_14.92631_Rp_0.99314_Rs_1.01_Ts_5720.0_L_1.0_Stype_G/'
+    #dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/temp_s2n_sweep_planet_index_0000003_Nuniverse_0_Nstar_4_dist_3.49717_Rp_1.88237_Rs_0.672_Ts_4330.0_L_0.4_Stype_K/'
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000000_Nuniverse_72_Nstar_142_dist_5.12952_Rp_1.63547_Rs_1.86_Ts_7800_L_15.0_Stype_A/'
     output_dir = '/Users/eckhartspalding/Downloads/'
 
     # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
@@ -374,17 +376,91 @@ def main():
     # pick one integration time
     da = s2n.sel(n_int=25920, method="nearest")  # dims: (qe, dc, wavel)
     # Ensure the axis order is exactly (qe, dc, wavel)
-    da = da.transpose("qe", "dc", "wavel")
+    da_plot = da.transpose("qe", "dc", "wavel")
+    # orient such that:
+    # - wavel increases to the right (x-axis)
+    # - DC increases going up (y-axis)
+    # - QE increases going away from the viewer (z-axis)
+    #da_plot = da.transpose("dc", "wavel", "qe")
+    # Reverse the wavel axis direction (highest to lowest)
+    #da_plot = da_plot.reindex(wavel=list(reversed(da_plot.wavel)))
     # If there are NaNs, marching cubes will choke; fill or mask
-    da_filled = da.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
+    da_filled = da_plot.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
     # Add zoom feature to camera: "zoom" scales the field of view (default=1)
     zoom = 1.5
+    #for factor in np.arange(0,1,0.1):
     camera = dict(
         up=dict(x=0, y=1, z=0),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=zoom*1.25, y=zoom*1.25, z=zoom*0.5)
+        eye=dict(x=-zoom*0.9, y=zoom*1.25, z=zoom*0.5)
     )
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(da_filled, iso=5.0, camera=camera, task='show')
+    axis_ranges = {
+        "x": [float(da_filled.qe.min()), float(da_filled.qe.max())],
+        "y": [float(da_filled.dc.min()), float(da_filled.dc.max())],
+        "z": [float(da_filled.wavel.min()), float(da_filled.wavel.max())],
+    }
+
+    # 3d projection
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
+        da_filled,
+        iso=5.0,
+        camera=camera,
+        task='show',
+        axis_ranges=axis_ranges,
+    )
+
+    '''
+    # 2d
+    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
+        da_filled,
+        iso=5.0,
+        view="overhead",
+        projection_type="orthographic",
+        task="show",
+    )
+    '''
+
+    ipdb.set_trace()
+
+    # 2d heat map projections
+    plt.clf()
+    _ = da_filled.plot(x="wavel", y="dc", col="qe")
+    plt.xlabel('Wavelength (um)')
+    plt.ylabel('Dark current (e-/s/pix)')
+    plt.suptitle('Data from dir: ' + dir_sample_data)
+    plt.show()
+
+    ipdb.set_trace()
+    # Make a 2D plot of QE vs wavelength, averaging S/N over DC
+    plt.clf()
+    # Compute mean along 'dc' axis
+    da_qe_wavel = da_filled.mean(dim='dc')
+    # da_qe_wavel is now dims: qe x wavel
+    qe_vals = da_qe_wavel.qe.values
+    wavel_vals = da_qe_wavel.wavel.values
+    s2n_mean = da_qe_wavel.values  # shape (Nqe, Nwavel)
+    # Use pcolormesh for a 2D image
+    plt.pcolormesh(wavel_vals, qe_vals, s2n_mean, shading='auto')
+    # Add white contour for s2n=5
+    plt.colorbar(label='Mean S/N (across DC)')
+    CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[5], colors='white', linewidths=1.5)
+    plt.clabel(CS, inline=1, fontsize=10, fmt={5: 'S/N=5'}, colors='white')
+    plt.xlabel('Wavelength (um)')
+    plt.ylabel('QE')
+    plt.title(f'Mean S/N, across DC vals {np.min(da_filled.dc.values):.1f} to {np.max(da_filled.dc.values):.1f}')
+    file_name_plot = os.path.join(output_dir, 's2n_qe_vs_wavel_mean_across_dc.png')
+    plt.savefig(file_name_plot)
+    plt.show()
+    print(f"Saved 2D plot of mean S/N (across DC) as function of QE and wavelength to {file_name_plot}")
+
+    ipdb.set_trace()
+    # too many subplots
+    '''
+    plt.clf()
+    _ = da_filled.plot(x="wavel", y="qe", col="dc")
+    plt.tight_layout()
+    plt.show()
+    '''
 
 
 if __name__ == '__main__':

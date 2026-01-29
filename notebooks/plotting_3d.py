@@ -38,7 +38,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
         eye=dict(x=1.25, y=1.25, z=1.25)
-    ), task='show'):
+    ), task='show', axis_ranges: dict = None, view: str = None, projection_type: str = None):
     """
     Plot 3D isosurface of S/N data.
     
@@ -140,14 +140,35 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         showlegend=True,
     ))
     
+    if view == "overhead_dc_wavel":
+        # Adjust camera so the x axis (qe) is "coming out of the screen", projecting onto (dc, wavel) plane
+        camera = dict(
+            up=dict(x=0, y=1, z=0),
+            center=dict(x=0, y=0, z=0),
+            eye=dict(x=2.5, y=0, z=0),  # eye along +x (qe), so projection is onto (dc, wavel)
+        )
+
+    camera_scene = dict(camera)
+    if projection_type:
+        camera_scene["projection"] = dict(type=projection_type)
+
+    scene = dict(
+        xaxis_title="qe",
+        yaxis_title="dc",
+        zaxis_title="wavel",
+        camera=camera_scene,
+        aspectmode='cube',  # Change to 'cube' if you want equal visual scaling
+    )
+    if axis_ranges:
+        if "x" in axis_ranges:
+            scene["xaxis_range"] = axis_ranges["x"]
+        if "y" in axis_ranges:
+            scene["yaxis_range"] = axis_ranges["y"]
+        if "z" in axis_ranges:
+            scene["zaxis_range"] = axis_ranges["z"]
+
     fig.update_layout(
-        scene=dict(
-            xaxis_title="qe",
-            yaxis_title="dc",
-            zaxis_title="wavel",
-            camera=camera,
-            aspectmode='cube',  # Change to 'cube' if you want equal visual scaling
-        ),
+        scene=scene,
         margin=dict(l=0, r=150, t=30, b=0),  # Add right margin for legend
         #title=f"Isosurface: s2n = {iso}",
         showlegend=True,  # Show legend to indicate iso values
