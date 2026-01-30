@@ -34,7 +34,7 @@ def _angles_to_camera_eye(azimuth_deg, elevation_deg, distance=2.0):
     
     return dict(x=x, y=y, z=z)
 
-def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
+def plot_s2n_3d_qe_dc_wavel(da_pass, iso=[5.0], camera = dict(
         up=dict(x=0, y=0, z=1),
         center=dict(x=0, y=0, z=0),
         eye=dict(x=1.25, y=1.25, z=1.25)
@@ -47,7 +47,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
     da_pass : xarray.DataArray
         DataArray with dimensions (qe, dc, wavel)
     iso : float
-        Isosurface level (default: 5.0)
+        Isosurface levels (default: [5.0])
     camera : dict
         Dictionary containing camera parameters for viewing orientation
     task : str
@@ -102,8 +102,19 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
     vol = np.ascontiguousarray(vol, dtype=vol.dtype.newbyteorder('='))
 
     # marching_cubes returns vertices in index coordinates (i,j,k)
-    verts, faces, normals, values = marching_cubes(vol, level=iso)
-    verts2, faces2, normals2, values2 = marching_cubes(vol, level=iso+1)
+    verts_list, faces_list, normals_list, values_list = [], [], [], []
+    for iso_level in iso:
+        try:
+            # Collect results for each iso_level in lists
+            verts, faces, normals, values = marching_cubes(vol, level=iso_level)
+            verts_list.append(verts)
+            faces_list.append(faces)
+            normals_list.append(normals)
+            values_list.append(values)
+        except ValueError as e:
+            print(f"Error marching cubes for iso_level {iso_level}: {e}")
+            continue
+
 
     # Map index coordinates -> physical coordinates using your xarray coords
     # Ensure coordinate arrays are also in native byte order
@@ -112,33 +123,26 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
     wv = np.ascontiguousarray(da_u.wavel.values, dtype=da_u.wavel.values.dtype.newbyteorder('='))
 
     # verts columns correspond to axis order in vol: (qe, dc, wavel) => (i, j, k)
-    x_qe = np.interp(verts[:, 0], np.arange(len(qe)), qe)
-    y_dc = np.interp(verts[:, 1], np.arange(len(dc)), dc)
-    z_wv = np.interp(verts[:, 2], np.arange(len(wv)), wv)
+    # Initialize the figure first (empty)
+    fig = go.Figure()
 
-    x_qe2 = np.interp(verts2[:, 0], np.arange(len(qe)), qe)
-    y_dc2 = np.interp(verts2[:, 1], np.arange(len(dc)), dc)
-    z_wv2 = np.interp(verts2[:, 2], np.arange(len(wv)), wv)
+    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown']  # Simple cycling color palette
+    for idx, (verts, faces, normals, values) in enumerate(zip(verts_list, faces_list, normals_list, values_list)):
+        x_qe = np.interp(verts[:, 0], np.arange(len(qe)), qe)
+        y_dc = np.interp(verts[:, 1], np.arange(len(dc)), dc)
+        z_wv = np.interp(verts[:, 2], np.arange(len(wv)), wv)
 
-    fig = go.Figure(data=[
-        go.Mesh3d(
-            x=x_qe, y=y_dc, z=z_wv,
-            i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-            opacity=0.6,
-            facecolor=['red'] * len(faces),  # Color for iso surface
-            name=f"s2n = {iso}",
-            showlegend=True,
+        color = colors[idx % len(colors)]
+        fig.add_trace(
+            go.Mesh3d(
+                x=x_qe, y=y_dc, z=z_wv,
+                i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+                opacity=0.6 if idx == 0 else 0.1,
+                facecolor=[color] * len(faces),
+                name=f"s2n = {iso[idx] if isinstance(iso, (list, np.ndarray)) else iso}",
+                showlegend=True,
+            )
         )
-    ])
-
-    fig.add_trace(go.Mesh3d(
-        x=x_qe2, y=y_dc2, z=z_wv2,
-        i=faces2[:, 0], j=faces2[:, 1], k=faces2[:, 2],
-        opacity=0.1,
-        facecolor=['blue'] * len(faces2),  # Color for iso+1 surface
-        name=f"s2n = {iso+1}",
-        showlegend=True,
-    ))
     
     if view == "overhead_dc_wavel":
         # Adjust camera so the x axis (qe) is "coming out of the screen", projecting onto (dc, wavel) plane
@@ -173,7 +177,7 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=5.0, camera = dict(
         #title=f"Isosurface: s2n = {iso}",
         showlegend=True,  # Show legend to indicate iso values
         legend=dict(
-            x=0.7,  # Position legend to the right
+            x=0.9,  # Position legend to the right
             y=0.7,
             bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent background
         ),

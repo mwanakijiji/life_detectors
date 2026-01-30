@@ -284,7 +284,7 @@ def main():
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_M/temp_s2n_sweep_planet_index_0000000_Nuniverse_245_Nstar_273_dist_12.912_Rp_1.31511_Rs_0.46_Ts_3650_L_0.05_Stype_M/'
     output_dir = '/Users/eckhartspalding/Downloads/'
     plot_save_string = 'type_'+st_type+'_star_'
-    iso_line = 1.0
+    iso_lines = [1.0, 2.0, 3.0, 4.0, 5.0]
 
     # for informative titles on plots
     source_string = os.path.basename(os.path.normpath(dir_sample_data))
@@ -373,14 +373,26 @@ def main():
     
     # Overplot a white contour at S/N=iso on the same axes
     X, Y = np.meshgrid(sl.wavel.values, sl.dc.values)
-    CS = ax.contour(X, Y, sl.values, levels=[iso_line], colors='white', linewidths=2)
+    CS = ax.contour(X, Y, sl.values, levels=iso_lines, colors='white', linewidths=2)
+    contours = []
+    for iso_line in iso_lines:
+        CS = ax.contour(X, Y, sl.values, levels=[iso_line], colors='white', linewidths=2)
+        # Add label for this contour line
+        plt.clabel(
+            CS,
+            inline=1,  # Setting inline=0 will break the contour line at the label, making the label more readable
+            fontsize=10,
+            fmt={iso_line: f'S/N = {iso_line}'},
+            colors='white'
+        )
+        contours.append(CS)
     #ax.clabel(CS, inline=True, fontsize=10)
     ax.set_xlabel('Wavelength (um)')
     ax.set_ylabel('Dark current (e-/s/pix)')
     ax.set_title(f'QE = {qe_choice:.2f}')
     plt.tight_layout()  # Adjust layout to prevent label cutoff
     #plt.show()
-    file_name_plot = os.path.join(output_dir, plot_save_string + '2d_heat_map_dc_vs_wavel'+f'_iso_{iso_line:.1f}.png') 
+    file_name_plot = os.path.join(output_dir, plot_save_string + '2d_heat_map_dc_vs_wavel.png') 
     plt.suptitle('Data from dir: ' + source_string, fontsize=6)
     plt.savefig(file_name_plot)
     print(f"Saved 2D heat map of S/N as function of wavelength and dark current to {file_name_plot}")
@@ -416,12 +428,12 @@ def main():
     # 3d projection
     _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
         da_filled,
-        iso=iso_line,
+        iso=iso_lines,
         camera=camera,
         task='save',
         axis_ranges=axis_ranges,
         title = 'Data from dir: ' + source_string,
-        file_name=os.path.join(output_dir, plot_save_string + f's2n_3d_qe_dc_wavel_iso_{iso_line:.1f}.png')
+        file_name=os.path.join(output_dir, plot_save_string + f's2n_3d_qe_dc_wavel.png')
     )
 
     '''
@@ -456,17 +468,22 @@ def main():
     s2n_mean = da_qe_wavel.values  # shape (Nqe, Nwavel)
     # Use pcolormesh for a 2D image
     plt.pcolormesh(wavel_vals, qe_vals, s2n_mean, shading='auto')
-    # Add white contour for s2n=5
     plt.colorbar(label='Mean S/N (across DC)')
-    CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[iso_line], colors='white', linewidths=1.5)
-    plt.clabel(CS, inline=1, fontsize=10, fmt={iso_line: f'S/N = {iso_line}'}, colors='white')
+
+    # Loop over isocontour lines and plot each
+    contours = []
+    for iso_line in iso_lines:
+        CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[iso_line], colors='white', linewidths=1.5)
+        plt.clabel(CS, inline=1, fontsize=10, fmt={iso_line: f'S/N = {iso_line}'}, colors='white')
+        contours.append(CS)
+
     plt.xlabel('Wavelength (um)')
     plt.ylabel('QE')
     # Truncate directory string if too long for display
     # Print only the string of the last directory in dir_display
     plt.suptitle('Data from dir: ' + source_string, fontsize=6)
     plt.title(f'Mean S/N, across DC vals {np.min(da_filled.dc.values):.1f} to {np.max(da_filled.dc.values):.1f}')
-    file_name_plot = os.path.join(output_dir, plot_save_string + 's2n_qe_vs_wavel_mean_across_dc'+f'_iso_{iso_line:.1f}.png')
+    file_name_plot = os.path.join(output_dir, plot_save_string + 's2n_qe_vs_wavel_mean_across_dc.png')
     plt.savefig(file_name_plot)
     #plt.show()
     print(f"Saved 2D plot of mean S/N (across DC) as function of QE and wavelength to {file_name_plot}")
