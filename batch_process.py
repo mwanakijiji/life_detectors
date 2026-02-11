@@ -65,7 +65,7 @@ def modify_config_file_sweep(config_path: str, n_int: int, qe: float) -> str:
 
 def modify_config_file_pl_system_params(config_path: str, base_filename: str, system_params: dict, lum_types: dict) -> str:
     """
-    Create a modified configuration file which overwrites new planetary system parameters.
+    Create a modified configuration file which takes a planet from a population model and overwrites planetary system parameters from a config file.
     
     Args:
         config_path: Path to the original configuration file, which will be modified here
@@ -89,8 +89,13 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
         config.set('target', 'pl_temp', str(system_params['Tp'])) # planet temp (K)
         config.set('target', 'rad_star', str(system_params['Rs'])) # stellar radius (solar radii)
         config.set('target', 't_star', str(system_params['Ts'])) # stellar temperature (K)
-        ## ## TO DO: make sure the modified luminosity is being used right, if it is being used at all
-        config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
+        config.set('target', 'z_exozodiacal', str(system_params['z'])) # stellar temperature (K)
+
+        config.set('observation', 'lambda_rel_lon_los', str(system_params['eclip_lon'])) # ecliptic latitude (rad)
+        config.set('observation', 'beta_lat_los', str(system_params['eclip_lat'])) # ecliptic longitude (rad)
+
+        # this is a kludge to map stellar-type/luminosity in case only the stellar type is input
+        # config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
         
         # for strings only
         config.set('target', 'Stype', str(system_params['Stype']))
@@ -107,6 +112,9 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
         rs_part = f"Rs_{config['target']['rad_star']}"
         ts_part = f"Ts_{config['target']['t_star']}"
         l_part = f"L_{config['target']['L_star']}"
+        z_part = f"z_{config['target']['z_exozodiacal']}"
+        eclip_lon_part = f"eclip_lon_{config['observation']['lambda_rel_lon_los']}"
+        eclip_lat_part = f"eclip_lat_{config['observation']['beta_lat_los']}"
         stype_part = f"Stype_{config['target']['Stype']}"
 
         # use this string to 
@@ -121,6 +129,9 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
             f"{rs_part}_"
             f"{ts_part}_"
             f"{l_part}_"
+            f"{z_part}_"
+            f"{eclip_lon_part}_"
+            f"{eclip_lat_part}_"
             f"{stype_part}"
         )
 
