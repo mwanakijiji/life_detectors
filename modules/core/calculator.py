@@ -113,6 +113,10 @@ class NoiseCalculator:
             exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                                 self.sources_all.prop_dict['exoplanet_model_10pc']['wavel'].value, 
                                                 self.sources_all.prop_dict['exoplanet_model_10pc']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
+        elif "exoplanet_psg" in self.sources_to_include:
+            exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
+                                                self.sources_all.prop_dict['exoplanet_psg']['wavel'].value, 
+                                                self.sources_all.prop_dict['exoplanet_psg']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
         else:
             logging.warning('No planet model being used')
 
@@ -387,10 +391,18 @@ class NoiseCalculator:
                 # Create a hierarchical keyword using HIERARCH for long names
                 # FITS keywords are limited to 8 characters, but HIERARCH allows arbitrary length
                 hierarch_key = f"HIERARCH {section_name}.{key}"
-                try:
-                    hdu.header[hierarch_key] = value
-                except Exception as e:
-                    logger.warning(f"Could not add {hierarch_key} to FITS header: {e}")
+
+                value_str = str(value)
+                if len(value_str) > 68:
+                    logger.warning(
+                        f"Skipping FITS header entry (value too long): {hierarch_key}={value_str!r}"
+                    )
+                    continue
+                # Validate keyword/value length before writing 
+                fits.Card(hierarch_key, value)
+                hdu.header[hierarch_key] = value
+            
+        ipdb.set_trace()
 
 
         # stuff for plots and FITS file too
@@ -425,7 +437,9 @@ class NoiseCalculator:
         s2n_dc[:,:] = np.tile(dark_current_values.value.reshape(-1, 1), (1, s2n.shape[1]))
         s2n_complete = np.stack((s2n, s2n_wavel_bin_centers, s2n_wavel_bin_widths, s2n_dc), axis=0)
         hdu.data = s2n_complete
+        ipdb.set_trace()
         hdu.writeto(file_name_fits_temp, overwrite=True)
+        ipdb.set_trace()
         logger.info(f"Wrote S/N, wavelength, and dark current data to overwriteable file {file_name_fits_temp}")
         hdu.writeto(file_name_fits_unique, overwrite=True)
         logger.info(f"Wrote S/N, wavelength, and dark current data to unique file {file_name_fits_unique}")

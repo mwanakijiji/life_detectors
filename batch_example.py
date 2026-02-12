@@ -112,14 +112,9 @@ def example_parameter_sweep(planet_population: bool = False):
         })
         # make a new column that just features the unique planet ID number
         df_psg_spectra_names['id'] = df_psg_spectra_names['abs_file_name_psg_spectrum'].apply(lambda x: int(x.split('psg_cfg_')[1].split('.')[0]))
-        #list_planet_unique_id_from_filename_psg_spectra = [int(file_name.split('psg_cfg_')[1].split('.')[0]) for file_name in file_name_psg_spectra]
-        ipdb.set_trace()
 
-        # put the absolute file name and the unique planet id number into a pandas dataframe
-        #df_psg_spectra = pd.DataFrame({'abs_file_name_psg_spectrum': file_name_psg_spectra, 'index_psg_spectra': list_planet_unique_id_from_filename_psg_spectra})
-        # use the index number to match with the index number of the planet in the population file
-        #df_planet_population['index_psg_spectra'] = df_planet_population.index
-        df_planet_population = df_planet_population.merge(df_psg_spectra_names, on='id', how='left')
+        # put the absolute file name and the unique planet id number into the planet population file
+        df_planet_population = df_planet_population.merge(df_psg_spectra_names, on='id', how='left') # missing PSG spectra will be indicated as a NaN
 
 
     else:
@@ -136,8 +131,6 @@ def example_parameter_sweep(planet_population: bool = False):
     #output_dir = "parameter_sweep/junk"
     #sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
     sources = ["star", "exoplanet_psg", "exozodiacal", "zodiacal"]
-
-    ipdb.set_trace()
     
     # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):

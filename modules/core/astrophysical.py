@@ -67,6 +67,54 @@ class AstrophysicalSources:
                     logger.warning(f"Did not load self-generated spectrum for {source_name}: {e}; either missing, or will need to read in from other file")
         else:
             logger.warning("No [astrophysical_sources] section found in config file.")
+
+    def _calculate_flux_from_spectrum(self, source_name: str, wavelength: u.Quantity, null: bool) -> u.Quantity:
+        """
+        Helper function to interpolate a stored spectrum and apply distance/nulling corrections.
+
+        Args:
+            source_name: Name of the source (star, exoplanet_bb, exozodiacal, zodiacal)
+            wavelength: Wavelength grid (with units)
+            null: Whether to apply nulling for the star
+
+        Returns:
+            Flux array with units ph / (um m^2 s)
+        """
+        spectrum = self.spectra[source_name]
+
+        # Interpolate to the requested wavelength grid
+        # (note this is not integrating over wavelength for each interpolated data point)
+        interpolated_spectrum = spectrum.interpolate(wavelength)
+
+        # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
+        if source_name != "zodiacal":
+            distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
+            distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
+        else:
+            distance_correction = 1.0
+
+        # Apply nulling factor for on-axis sources
+        nulling_factor = self.config["nulling"]["nulling_factor"]
+
+        # Convert flux_unit string to astropy unit object
+        flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
+
+        # treatment of units and nulling depending on the source
+        if source_name == "zodiacal":
+            # no distance correction and no nulling
+            flux_incident = interpolated_spectrum.flux * flux_unit_obj
+        elif null and (source_name == "star"):
+            # apply nulling to star only
+            flux_incident = (
+                interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
+            )
+            logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
+        else:
+            # no nulling
+            flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
+            logger.info(f"No nulling factor applied to {source_name}.")
+
+        return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     
 
     def calculate_incident_flux(self, source_name: str, plot: bool = False) -> np.ndarray:
@@ -93,38 +141,7 @@ class AstrophysicalSources:
 
         if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
 
-            ipdb.set_trace()
-            spectrum = self.spectra[source_name]
-            
-            # Interpolate to the requested wavelength grid
-            # (note this is not integrating over wavelength for each interpolated data point) 
-            interpolated_spectrum = spectrum.interpolate(wavelength)
-            
-            # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
-            if source_name != "zodiacal":
-                distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
-                distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
-            
-            # Apply nulling factor for on-axis sources
-            nulling_factor = self.config["nulling"]["nulling_factor"]
-
-            # Convert flux_unit string to astropy unit object
-            flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
-            
-            # treatment of units and nulling depending on the source
-            if source_name == "zodiacal":
-                # no distance correction and no nulling
-                flux_incident = interpolated_spectrum.flux * flux_unit_obj
-            elif null and (source_name == "star"):
-                # apply nulling to star only
-                flux_incident = interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
-                logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
-            else:
-                # no nulling
-                flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
-                logger.info(f"No nulling factor applied to {source_name}.")
-
-            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+            flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength, null)
 
         elif source_name == "exoplanet_model_10pc":
 
@@ -159,17 +176,46 @@ class AstrophysicalSources:
 
         elif source_name == "exoplanet_psg":
             
-            ipdb.set_trace()
             # read in the NASA PSG spectrum file name associated with the planets in the population
-            df_psg_spectrum = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep='\s+')
+            df = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep='\s+')
+
+            wavel = df['wavel'].values * u.micron
+
+            # note source is already at the desired distance; should not be rescaled as if it were at 10 pc
+            flux_nu = df['flux_planet'].values * u.erg / (u.second * u.Hz * u.m**2)
+            err_flux_nu = df['flux_noise'].values * u.erg / (u.second * u.Hz * u.m**2)
+
+            # convert to F_lambda
+            flux_lambda = flux_nu * (const.c / wavel**2)
+            flux_lambda = flux_lambda.to(u.W / (u.m**2 * u.micron))
+
+            flux_photons = flux_lambda * (wavel / (const.h * const.c)) * u.ph
+            flux_photons = flux_photons.to(u.ph / (u.micron * u.s * u.m**2))
+
+            # incident flux from PSG spectrum
+            flux_psg_incident = np.interp(x = wavelength, 
+                                            xp = wavel, 
+                                            fp = flux_photons)
+
+            print('!!!------- FLUX CONVERSION FROM PSG FILE BEING DONE INCORRECTLY; CORRECT LATER -------!!!') ## ## TODO
+
 
             ## ## TODO: MAKE SURE SCALING, UNITS ARE RIGHT
-            # get BB spectrum for rescaling the PSG spectrum
-            spectrum = self.spectra["exoplanet_bb"]
-            interpolated_spectrum = spectrum.interpolate(wavelength)
-            # Convert flux_unit string to astropy unit object
-            flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
-            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+            # get BB spectrum for making a rough rescaling of the PSG spectrum
+            
+            flux_bb_incident = self._calculate_flux_from_spectrum(source_name="exoplanet_bb", wavelength=wavelength, null=False)
+            #flux_incident_junk = self._calculate_flux_from_spectrum(source_name="exoplanet_model_10pc", wavelength=wavelength, null=False)
+
+            # integrate the BB spectrum over the wavelength grid
+            flux_incident_bb_integrated = np.trapz(y=flux_bb_incident, x=wavelength)
+
+            # integrate the PSG spectrum over the wavelength grid
+            flux_incident_psg_integrated = np.trapz(y=flux_psg_incident, x=wavelength)
+
+            # rescale the PSG spectrum to the BB spectrum
+            ratio_incident_psg_over_bb = (flux_incident_psg_integrated / flux_incident_bb_integrated).value
+
+            flux_incident = flux_psg_incident / ratio_incident_psg_over_bb
             
 
         else:
