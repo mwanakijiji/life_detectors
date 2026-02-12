@@ -96,6 +96,9 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
 
         # this is a kludge to map stellar-type/luminosity in case only the stellar type is input
         # config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
+
+        config.set('target', 'psg_spectrum_file_name', str(system_params['abs_file_name_psg_spectrum'])) # NASA PSG spectrum file name
+        logging.info(f"NASA PSG spectrum file name: {system_params['abs_file_name_psg_spectrum']}")
         
         # for strings only
         config.set('target', 'Stype', str(system_params['Stype']))
@@ -258,7 +261,7 @@ def run_single_calculation(config_path: str,
         # Calculate incident flux for each source
         sources_astroph = {}
         for source_name in sources_to_include:
-            if source_name in ["star", "exoplanet_bb", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]:
+            if source_name in ["star", "exoplanet_bb", "exoplanet_model_10pc", "exoplanet_psg", "exozodiacal", "zodiacal"]:
                 sources_astroph[source_name] = astrophysical_sources.calculate_incident_flux(
                     source_name=source_name, plot=plot
                 )
@@ -314,7 +317,7 @@ def batch_qe_nint_process(base_config_path: str,
                 system_params: Optional[dict] = None, 
                 lum_types: Optional[dict] = None) -> List[Tuple[int, str, bool]]:
     """
-    Run batch processing with multiple n_int values.
+    Run batch processing with multiple QE and n_int values.
     
     Args:
         base_config_path: Path to the base configuration file

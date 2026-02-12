@@ -39,8 +39,6 @@ def write_psg_template(path, df):
 # read in the planet population file
 df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
 
-df_planet_population['id_orig__'].unique()
-
 # read original template file
 data_template = read_psg_template(file_name_psg_template)
 
@@ -61,11 +59,15 @@ for i in range(len(df_planet_population)):
         "<GEOMETRY>": "MAVEN",
         "<OBJECT-PERIOD>": str(df_planet_population['Porb'].values[i]),  ## ## TODO: JUST ROTATIONAL PERIOD, OR ORBIT?
         "<GENERATOR-RADUNITS>": "ph", ## ## TODO: CORRECT THIS TO BE EQUIVALENT TO PH/SEC/MICRON/M2
-        "<OBJECT-SOLAR-LONGITUDE>": "107.1",  ## ## TODO: WHAT IS THIS?
+        "<OBJECT-SOLAR-LONGITUDE>": "107.1",  ## ## TODO: WHAT IS THIS? MIGHT BE IN REFLECTED REGIME
         "<OBJECT-SOLAR-LATITUDE>": "25.10",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-OBS-LONGITUDE>": "144.93",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-OBS-LATITUDE>": "16.36",  ## ## TODO: WHAT IS THIS?
-        "<OBJECT-POSITION-ANGLE>": "38.32"  ## ## TODO: WHAT IS THIS?
+        "<OBJECT-POSITION-ANGLE>": "38.32",  ## ## TODO: WHAT IS THIS?
+        "<GENERATOR-RANGE1>": "3",
+        "<GENERATOR-RANGE2>": "19",
+        "<GENERATOR-RANGEUNIT>": "um",
+        "<GENERATOR-RESOLUTION>": 50,
     }
     print('!! ----- NOTE FLUX UNITS NEED TO BE MODIFIED ----- !!')
 
@@ -116,6 +118,7 @@ for i in range(len(df_planet_population)):
         else:
             print(f"Missing key in template: {key}")
 
-    file_name_output = f"./sample_psg_config_files/output_psg_cfg_{i:08d}.txt"
+    planet_unique_id = df_planet_population['id'].values[i]
+    file_name_output = f"./sample_psg_config_files/output_psg_cfg_{planet_unique_id:08d}.txt"
     write_psg_template(file_name_output, data_template_this)
     print(f"Wrote {file_name_output}")

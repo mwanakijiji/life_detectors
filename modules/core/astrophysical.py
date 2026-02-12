@@ -74,7 +74,7 @@ class AstrophysicalSources:
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
         Args:
-            source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb, exoplanet_model_10pc)
+            source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb, exoplanet_model_10pc, exoplanet_psg)
             null: apply the nulling factor? (only applies to star target)
             
         Returns:
@@ -93,6 +93,7 @@ class AstrophysicalSources:
 
         if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
 
+            ipdb.set_trace()
             spectrum = self.spectra[source_name]
             
             # Interpolate to the requested wavelength grid
@@ -155,6 +156,21 @@ class AstrophysicalSources:
             flux_incident = np.interp(x = wavelength, 
                                             xp = wavel, 
                                             fp = flux_photons)
+
+        elif source_name == "exoplanet_psg":
+            
+            ipdb.set_trace()
+            # read in the NASA PSG spectrum file name associated with the planets in the population
+            df_psg_spectrum = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep='\s+')
+
+            ## ## TODO: MAKE SURE SCALING, UNITS ARE RIGHT
+            # get BB spectrum for rescaling the PSG spectrum
+            spectrum = self.spectra["exoplanet_bb"]
+            interpolated_spectrum = spectrum.interpolate(wavelength)
+            # Convert flux_unit string to astropy unit object
+            flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
+            flux_incident = flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
+            
 
         else:
             logger.warning(f"Spectrum not available for {source_name}")

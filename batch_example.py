@@ -13,6 +13,7 @@ from modules.config import loader
 import ipdb
 import numpy as np
 import pandas as pd
+import glob
 
 def example_simple_batch():
     """Example 1: Simple batch processing with a few n_int values."""
@@ -99,6 +100,28 @@ def example_parameter_sweep(planet_population: bool = False):
         lum_types = planet_population_params['lum_type'] # to map luminosities with stellar types
         # read in the planet population
         df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
+
+        # make the list of NASA PSG spectrum file names associated with the planets in the population
+        dir_name_psg_spectra = planet_population_params['dir_file_name_psg_spectra']['dir_name']
+        # read in all the absolute file names with suffix '.response' 
+        file_name_psg_spectra = glob.glob(os.path.join(dir_name_psg_spectra, '*.response'))
+        # parse each file name for a number; ex., the integer 15 in _00000015.
+        # Create a DataFrame to keep file names and planet IDs lined up
+        df_psg_spectra_names = pd.DataFrame({
+            'abs_file_name_psg_spectrum': file_name_psg_spectra,
+        })
+        # make a new column that just features the unique planet ID number
+        df_psg_spectra_names['id'] = df_psg_spectra_names['abs_file_name_psg_spectrum'].apply(lambda x: int(x.split('psg_cfg_')[1].split('.')[0]))
+        #list_planet_unique_id_from_filename_psg_spectra = [int(file_name.split('psg_cfg_')[1].split('.')[0]) for file_name in file_name_psg_spectra]
+        ipdb.set_trace()
+
+        # put the absolute file name and the unique planet id number into a pandas dataframe
+        #df_psg_spectra = pd.DataFrame({'abs_file_name_psg_spectrum': file_name_psg_spectra, 'index_psg_spectra': list_planet_unique_id_from_filename_psg_spectra})
+        # use the index number to match with the index number of the planet in the population file
+        #df_planet_population['index_psg_spectra'] = df_planet_population.index
+        df_planet_population = df_planet_population.merge(df_psg_spectra_names, on='id', how='left')
+
+
     else:
         logging.info("Applying parameter sweep to a single planetary system")
         df_planet_population = [None] # need to wrap in a list for length 1
@@ -111,8 +134,10 @@ def example_parameter_sweep(planet_population: bool = False):
     qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + 0.1*step_qe, step_qe))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     #output_dir = "parameter_sweep/junk"
-    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+    #sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+    sources = ["star", "exoplanet_psg", "exozodiacal", "zodiacal"]
 
+    ipdb.set_trace()
     
     # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):
