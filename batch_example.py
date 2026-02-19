@@ -10,10 +10,12 @@ from pathlib import Path
 from batch_process import batch_qe_nint_process, run_single_calculation
 import logging
 from modules.config import loader
-import ipdb
 import numpy as np
 import pandas as pd
 import glob
+import corner
+import copy
+import matplotlib.pyplot as plt
 
 def example_simple_batch():
     """Example 1: Simple batch processing with a few n_int values."""
@@ -99,7 +101,7 @@ def example_parameter_sweep(planet_population: bool = False):
         file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
         lum_types = planet_population_params['lum_type'] # to map luminosities with stellar types
         # read in the planet population
-        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
+        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep='\s+')
 
         # make the list of NASA PSG spectrum file names associated with the planets in the population
         dir_name_psg_spectra = planet_population_params['dir_file_name_psg_spectra']['dir_name']
@@ -116,6 +118,20 @@ def example_parameter_sweep(planet_population: bool = False):
         # put the absolute file name and the unique planet id number into the planet population file
         df_planet_population = df_planet_population.merge(df_psg_spectra_names, on='id', how='left') # missing PSG spectra will be indicated as a NaN
 
+        # if dataset is >10k planets, select 10k randomly
+        cols_to_plot = ['Rp','Porb','Mp','z','Tp','ap']
+        if len(df_planet_population) > 10000:
+            df_sample = copy.deepcopy(df_planet_population[cols_to_plot].sample(n=10000, replace=False))
+        else:
+            df_sample = copy.deepcopy(df_planet_population[cols_to_plot])
+        # make a plot of the planet population
+        title_string = f"Sample of {len(df_sample)} planets from population of {len(df_planet_population)}"
+        axes = pd.plotting.scatter_matrix(df_sample, figsize=(10, 8))
+        fig = axes[0, 0].figure  # scatter_matrix creates its own figure
+        fig.suptitle(title_string)
+        fig.savefig(planet_population_params['file_name_planet_population']['fyi_plot_name'])
+        plt.close(fig)
+        logging.info(f"FYI plot of planet population saved to {planet_population_params['file_name_planet_population']['fyi_plot_name']}")
 
     else:
         logging.info("Applying parameter sweep to a single planetary system")
