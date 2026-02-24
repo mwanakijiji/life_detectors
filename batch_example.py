@@ -17,6 +17,7 @@ import corner
 import copy
 import matplotlib.pyplot as plt
 
+
 def example_simple_batch():
     """Example 1: Simple batch processing with a few n_int values."""
     print("Example 1: Simple batch processing")
@@ -39,6 +40,7 @@ def example_simple_batch():
     
     print(f"Processed {len(results)} calculations")
     return results
+
 
 def example_single_calculation():
     """Example 2: Run a single calculation with custom parameters."""
@@ -68,6 +70,7 @@ def example_single_calculation():
         print(f"✗ Failed to create: {output_path}")
     
     return success
+
 
 def example_parameter_sweep(planet_population: bool = False):
     """
@@ -146,7 +149,7 @@ def example_parameter_sweep(planet_population: bool = False):
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     #output_dir = "parameter_sweep/junk"
     #sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
-    sources = ["star", "exoplanet_psg", "exozodiacal", "zodiacal"]
+    sources = ["star", "exoplanet_bb", "exozodiacal", "zodiacal"] # _psg suffix indicates that the object is meant to conform to a planet population
     
     # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):
@@ -180,6 +183,7 @@ def example_parameter_sweep(planet_population: bool = False):
 
     
     return
+
 
 def example_custom_sources():
     """Example 4: Batch processing with different source combinations."""
@@ -215,6 +219,7 @@ def example_custom_sources():
         all_results.extend(results)
     
     return all_results
+
 
 def main():
     """Run all examples."""

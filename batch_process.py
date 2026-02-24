@@ -261,9 +261,9 @@ def run_single_calculation(config_path: str,
         # Calculate incident flux for each source
         sources_astroph = {}
         for source_name in sources_to_include:
-            if source_name in ["star", "exoplanet_bb", "exoplanet_model_10pc", "exoplanet_psg", "exozodiacal", "zodiacal"]:
+            if source_name in ["star", "star_psg", "exoplanet_bb", "exoplanet_bb_psg", "exoplanet_model_10pc", "exoplanet_psg", "exozodiacal", "exozodiacal_psg", "zodiacal"]:
                 sources_astroph[source_name] = astrophysical_sources.calculate_incident_flux(
-                    source_name=source_name, plot=plot
+                    source_name=source_name, plot=plot, system_params=system_params
                 )
         
         # Pass through instrument

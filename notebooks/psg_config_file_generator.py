@@ -11,10 +11,9 @@ import matplotlib.pyplot as plt
 import copy
 import ipdb
 
-file_name_psg_template = "/Users/eckhartspalding/Documents/git.repos/life_detectors/notebooks/psg_cfg_template.txt"
-file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/trunc_20260206_sweep_diam_3_0_catalog.txt"
-#file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/20260206_sweep_diam_3_0_catalog.txt"
-
+file_name_psg_template = "/Users/eckhartspalding/Documents/git.repos/life_detectors/notebooks/psg_cfg_template.txt" # don't modify unless you know what you're doing
+#file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/trunc_20260206_sweep_diam_3_0_catalog.txt"
+file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/earth_only_catalog.txt"
 
 # read in the template file
 # returns a DataFrame with ordered tag/value rows
@@ -42,28 +41,37 @@ df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, deli
 # read original template file
 data_template = read_psg_template(file_name_psg_template)
 
+
 for i in range(len(df_planet_population)):
 
     data_template_this = data_template.copy(deep=True)
 
+    ipdb.set_trace()
     updates = {
-        "<OBJECT-NAME>": "Planet",
+        "<OBJECT-NAME>": "Exoplanet",
         "<OBJECT-DIAMETER>": str(int(6371) * 2 * df_planet_population['Rp'].values[i]),  # (km); df_planet_population['Rp'] is (R_Earth = 6371 km)
-        "<OBJECT-GRAVITY>": str(int(5.972e+24) * df_planet_population['Mp'].values[i]), # mass of planet (if units are set to kg below) (kg); (M_Earth = 5.972e+24 kg)
+        "<OBJECT-GRAVITY>": str(5.972e+24 * df_planet_population['Mp'].values[i]), # mass of planet (if units are set to kg below) (kg); (M_Earth = 5.972e+24 kg)
         "<OBJECT-GRAVITY-UNIT>": "kg",
         "<OBJECT-STAR-DISTANCE>": str(df_planet_population['ap'].values[i]), # semimajor axis (AU)
         "<OBJECT-STAR-TYPE>": str(df_planet_population['Stype'].values[i]),
         "<OBJECT-STAR-TEMPERATURE>": str(df_planet_population['Ts'].values[i]),
         "<OBJECT-STAR-RADIUS>": str(df_planet_population['Rs'].values[i]),
         "<OBJECT-INCLINATION>": str(df_planet_population['ip'].values[i]),
-        "<GEOMETRY>": "MAVEN",
+        "<GEOMETRY>": "Observatory", # direct imaging
+        #"<GEOMETRY-STAR-DISTANCE>": 1.0, # 0: the star is within the FOV # str(df_planet_population['Ds'].values[i]), # distance from Earth to system (pc)
+        "<GEOMETRY-OBS-ALTITUDE>": 20.0,
+        "<GEOMETRY-ALTITUDE-UNIT>": "parsec",
+        "<OBJECT-PHASE>": 90,
         "<OBJECT-PERIOD>": str(df_planet_population['Porb'].values[i]),  ## ## TODO: JUST ROTATIONAL PERIOD, OR ORBIT?
-        "<GENERATOR-RADUNITS>": "ph", ## ## TODO: CORRECT THIS TO BE EQUIVALENT TO PH/SEC/MICRON/M2
+        "<GENERATOR-RADUNITS>": "Wm2um", ## ## TODO: CORRECT THIS TO BE EQUIVALENT TO PH/SEC/MICRON/M2;'Wum':  W / μm	F = L ⋅ ATele ⋅ Ω
         "<OBJECT-SOLAR-LONGITUDE>": "107.1",  ## ## TODO: WHAT IS THIS? MIGHT BE IN REFLECTED REGIME
         "<OBJECT-SOLAR-LATITUDE>": "25.10",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-OBS-LONGITUDE>": "144.93",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-OBS-LATITUDE>": "16.36",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-POSITION-ANGLE>": "38.32",  ## ## TODO: WHAT IS THIS?
+        "<GENERATOR-TELESCOPE>": "SINGLE",
+        "<GENERATOR-BEAM>": "0.5",
+        "<GENERATOR-BEAM-UNIT>": "arcsec",
         "<GENERATOR-RANGE1>": "3",
         "<GENERATOR-RANGE2>": "19",
         "<GENERATOR-RANGEUNIT>": "um",
@@ -85,10 +93,6 @@ for i in range(len(df_planet_population)):
     <GEOMETRY-STELLAR-MAGNITUDE>0
     <GEOMETRY-SOLAR-ANGLE>36.453
     <GEOMETRY-OBS-ANGLE>3.413
-    <GEOMETRY-PLANET-FRACTION>6.045e-03
-    <GEOMETRY-STAR-DISTANCE>-1.000000e+00
-    <GEOMETRY-STAR-FRACTION>0.000000e+00
-    <GEOMETRY-REF>User
     <GEOMETRY-DISK-ANGLES>1
     <GEOMETRY-ROTATION>-0.00,0.01
     <GEOMETRY-BRDFSCALER>1.000

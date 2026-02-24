@@ -68,13 +68,14 @@ class AstrophysicalSources:
         else:
             logger.warning("No [astrophysical_sources] section found in config file.")
 
-    def _calculate_flux_from_spectrum(self, source_name: str, wavelength: u.Quantity, null: bool) -> u.Quantity:
+    def _calculate_flux_from_spectrum(self, source_name: str, wavelength: u.Quantity, distance_set: float = None, null: bool = False) -> u.Quantity:
         """
         Helper function to interpolate a stored spectrum and apply distance/nulling corrections.
 
         Args:
             source_name: Name of the source (star, exoplanet_bb, exozodiacal, zodiacal)
             wavelength: Wavelength grid (with units)
+            distance_set: Distance to the source (pc)
             null: Whether to apply nulling for the star
 
         Returns:
@@ -88,8 +89,9 @@ class AstrophysicalSources:
 
         # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
         if source_name != "zodiacal":
-            distance = float(self.config["target"]["distance"]) * u.pc  # parsecs
+            distance = distance_set * u.pc  # parsecs
             distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
+            logging.info(f"Distance of object set to: {distance_set} pc")
         else:
             distance_correction = 1.0
 
@@ -103,7 +105,7 @@ class AstrophysicalSources:
         if source_name == "zodiacal":
             # no distance correction and no nulling
             flux_incident = interpolated_spectrum.flux * flux_unit_obj
-        elif null and (source_name == "star"):
+        elif null and (source_name == "star" or source_name == "star_psg"):
             # apply nulling to star only
             flux_incident = (
                 interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
@@ -117,13 +119,14 @@ class AstrophysicalSources:
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     
 
-    def calculate_incident_flux(self, source_name: str, plot: bool = False) -> np.ndarray:
+    def calculate_incident_flux(self, source_name: str, plot: bool = False, system_params: dict = None) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
         
         Args:
             source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb, exoplanet_model_10pc, exoplanet_psg)
             null: apply the nulling factor? (only applies to star target)
+            system_params: system parameters dictionary (optional; use in case of planet population)
             
         Returns:
             Flux array, with units # in photons/sec/m^2/micron
@@ -141,7 +144,8 @@ class AstrophysicalSources:
 
         if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
 
-            flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength, null)
+            # note distance is being set by the config file; this is just one object
+            flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength, distance_set=float(self.config["target"]["distance"]), null=null)
 
         elif source_name == "exoplanet_model_10pc":
 
@@ -174,10 +178,14 @@ class AstrophysicalSources:
                                             xp = wavel, 
                                             fp = flux_photons)
 
-        elif source_name == "exoplanet_psg":
+        elif source_name in ["star_psg", "exoplanet_bb_psg", "exoplanet_psg","exozodiacal_psg"]:
             
             # read in the NASA PSG spectrum file name associated with the planets in the population
             df = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep='\s+')
+            
+            logger.info(f"!!! --- OVERWRITING PSG PLANET SPECTRUM FILE WITH A BLACKBODY; FIX LATER --- !!!")
+            flux_incident = self._calculate_flux_from_spectrum(source_name=source_name, wavelength=wavelength, distance_set=float(system_params['Ds']), null=False)
+
 
             wavel = df['wavel'].values * u.micron
 

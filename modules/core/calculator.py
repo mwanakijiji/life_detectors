@@ -402,8 +402,6 @@ class NoiseCalculator:
                 fits.Card(hierarch_key, value)
                 hdu.header[hierarch_key] = value
             
-        ipdb.set_trace()
-
 
         # stuff for plots and FITS file too
         # parse dark current values (can be comma-separated list)
@@ -437,9 +435,7 @@ class NoiseCalculator:
         s2n_dc[:,:] = np.tile(dark_current_values.value.reshape(-1, 1), (1, s2n.shape[1]))
         s2n_complete = np.stack((s2n, s2n_wavel_bin_centers, s2n_wavel_bin_widths, s2n_dc), axis=0)
         hdu.data = s2n_complete
-        ipdb.set_trace()
         hdu.writeto(file_name_fits_temp, overwrite=True)
-        ipdb.set_trace()
         logger.info(f"Wrote S/N, wavelength, and dark current data to overwriteable file {file_name_fits_temp}")
         hdu.writeto(file_name_fits_unique, overwrite=True)
         logger.info(f"Wrote S/N, wavelength, and dark current data to unique file {file_name_fits_unique}")

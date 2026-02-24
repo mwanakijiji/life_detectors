@@ -242,6 +242,20 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
 
 
 def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
+    '''
+    Generate a BB spectrum corresponding to the planet
+    
+    INPUTS:
+    config: configparser.ConfigParser object
+    wavelength_um: wavelength array in microns
+    rad_planet: planet radius (float input, in Earth radii)
+    temp_bb_planet: planet temperature (float input, in K)
+    plot: whether to plot the result
+    
+    OUTPUTS:
+    luminosity_photons_planet: planet luminosity in photons/s/um
+    luminosity_energy_planet: planet luminosity in W/um
+    '''
 
     # what should serve as the source of the planet spectrum? blackbody or file?
     planet_source = str(config['target']['planet_source'])
@@ -249,9 +263,11 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
 
     # planet radius
     rad_planet = float(config['target']['rad_planet']) * 0.637 * 1e9 * u.cm
+    #rad_planet = float(rad_planet) * 0.637 * 1e9 * u.cm
 
     # planet BB spectrum
     temp_bb_planet = float(config['target']['pl_temp'])
+    #temp_bb_planet = float(temp_bb_planet)
     bb_planet_lambda = BlackBody(temperature=temp_bb_planet*u.K,  scale=1.0*u.W/(u.m**2*u.micron*u.sr))
     # planet surface flux
     '''
@@ -349,7 +365,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
     return luminosity_photons_planet, luminosity_energy_planet
 
 
-def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, nulling_baseline: float, plot: bool = False) -> np.ndarray:
+def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:
 
     # Generates a zodiacal background
     # See Sec. 2.2.3 in Dannert+ 2022
@@ -690,7 +706,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     # notes on zodiacal units:
     # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
     # 2. the output units here include 1/m**2, because the quantity is a surface brightness seen from Earth (i.e., there is no downstream distance correction that brings in 1/m**2)
-    luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, nulling_baseline=12, plot=plot) # resolved
+    luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, plot=plot) # resolved
 
     # Sample data for different sources
     ## ## TODO: add zodiacal stuff
