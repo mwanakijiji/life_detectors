@@ -9,6 +9,7 @@ import ipdb
 import xarray as xr
 import pickle
 import plotting_3d
+import glob
 
 
 '''
@@ -272,229 +273,244 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 def main():
 
     st_type = 'M'
-    if st_type == 'A':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
-    elif st_type == 'F':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_F/temp_s2n_sweep_planet_index_0000006_Nuniverse_496_Nstar_157_dist_10.929_Rp_0.90768_Rs_1.18_Ts_6000_L_3.0_Stype_F'
+    #if st_type == 'A':
+    #    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
+    if st_type == 'F':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_F_type_only/'
     elif st_type == 'G':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_G/temp_s2n_sweep_planet_index_0000001_Nuniverse_460_Nstar_797_dist_12.8345_Rp_1.42795_Rs_0.909_Ts_5490_L_1.0_Stype_G/'
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_G_type_only/'
     elif st_type == 'K':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_K/temp_s2n_sweep_planet_index_0000008_Nuniverse_199_Nstar_864_dist_12.783_Rp_1.03336_Rs_0.72_Ts_4700_L_0.4_Stype_K/'
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_K_type_only/'
     elif st_type == 'M':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_M/temp_s2n_sweep_planet_index_0000000_Nuniverse_245_Nstar_273_dist_12.912_Rp_1.31511_Rs_0.46_Ts_3650_L_0.05_Stype_M/'
-    output_dir = '/Users/eckhartspalding/Downloads/'
-    plot_save_string = 'type_'+st_type+'_star_'
-    iso_lines = [1.0, 2.0, 3.0, 4.0, 5.0]
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_M_type_only/'
 
-    # for informative titles on plots
-    source_string = os.path.basename(os.path.normpath(dir_sample_data))
-    # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
-    fits_files = sorted([f for f in os.listdir(dir_sample_data) if f.lower().endswith('.fits')])
+    # glob all the subdirectories in dir_sample_data with string 'temp_'
+    temp_dir_array = [d for d in glob.glob(os.path.join(dir_sample_data, 'temp_*')) if os.path.isdir(d)]
 
-    # List to hold the data arrays
-    data_list = []
-    n_int_list = []
-    qe_list = []
+    # loop over each of the subdirectories (each of which corresponds to one planet)
+    for temp_dir in temp_dir_array:
 
-    # read in the data and sweeped parameters from the FITS files
-    for fname in fits_files:
-        fpath = os.path.join(dir_sample_data, fname)
-        with fits.open(fpath) as hdul:
-            print('Reading in data from file: ', fpath)
-            # hdul[0].data has shape (4, n_dc, n_wavel); the 4 slices are [0]: S/N values, [1]: wavelength bin centers, [2]: wavelength bin widths, [3]: dark current values
-            data = hdul[0].data[0, :, :]   
-            data_list.append(data)
+        #string_planet_index = 'planet_index_' + os.path.basename(temp_dir).split('_')[5] # trying to keep pathnames short
+        output_dir = temp_dir + '/products/' # put processed stuff in a subdirectory in the parent directory containing the raw data
+        #output_dir = '/Users/eckhartspalding/' + os.path.basename(temp_dir) + '/output_dir/'
+        #output_dir = '/Users/eckhartspalding/' + os.path.basename(temp_dir) + '/output_dir/'
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        #plot_save_string = os.path.basename(temp_dir) # just use the directory name as the string to append to the plot file names
+        iso_lines = [1.0, 2.0, 3.0, 4.0, 5.0]
 
-            # get sweeped parameters from FITS header
-            n_int = int(hdul[0].header['N_INT'])
-            qe = float(hdul[0].header['QE'])
+        # for informative titles on plots
+        source_string = temp_dir # os.path.basename(os.path.normpath(dir_sample_data))
+        # read in all the FITS files in the directory, sort them by filename, and put the data into a cube
+        fits_files = sorted([f for f in os.listdir(temp_dir) if f.lower().endswith('.fits')])
 
-            n_int_list.append(n_int)
-            qe_list.append(qe)
+        # List to hold the data arrays
+        data_list = []
+        n_int_list = []
+        qe_list = []
 
-            # for the final cube axes
-            dc_array = hdul[0].data[3, :, 0] 
-            wavel_array = hdul[0].data[1, 0, :]
+        # read in the data and sweeped parameters from the FITS files
+        for fname in fits_files:
+            fpath = os.path.join(temp_dir, fname)
+            with fits.open(fpath) as hdul:
+                print('Reading in data from file: ', fpath)
+                # hdul[0].data has shape (4, n_dc, n_wavel); the 4 slices are [0]: S/N values, [1]: wavelength bin centers, [2]: wavelength bin widths, [3]: dark current values
+                data = hdul[0].data[0, :, :]   
+                data_list.append(data)
+
+                # get sweeped parameters from FITS header
+                n_int = int(hdul[0].header['N_INT'])
+                qe = float(hdul[0].header['QE'])
+
+                n_int_list.append(n_int)
+                qe_list.append(qe)
+
+                # for the final cube axes
+                dc_array = hdul[0].data[3, :, 0] 
+                wavel_array = hdul[0].data[1, 0, :]
 
 
-    # build sorted unique coordinate arrays and index maps
-    n_int_vals = np.array(sorted(set(n_int_list)))
-    qe_vals    = np.array(sorted(set(qe_list)))
-    Nn = len(n_int_vals)
-    Nq = len(qe_vals)
-    
-    # maps: value -> index
-    n_int_index = {v: i for i, v in enumerate(n_int_vals)}
-    qe_index    = {v: j for j, v in enumerate(qe_vals)}
-    n_dc, n_wavel = data_list[0].shape
-    cube = np.zeros((Nn, Nq, n_dc, n_wavel), dtype=float)
+        # build sorted unique coordinate arrays and index maps
+        n_int_vals = np.array(sorted(set(n_int_list)))
+        qe_vals    = np.array(sorted(set(qe_list)))
+        Nn = len(n_int_vals)
+        Nq = len(qe_vals)
+        
+        # maps: value -> index
+        n_int_index = {v: i for i, v in enumerate(n_int_vals)}
+        qe_index    = {v: j for j, v in enumerate(qe_vals)}
+        n_dc, n_wavel = data_list[0].shape
+        cube = np.zeros((Nn, Nq, n_dc, n_wavel), dtype=float)
 
 
-    for data, n_int, qe in zip(data_list, n_int_list, qe_list):
-        i = n_int_index[n_int]
-        j = qe_index[qe]
-        cube[i, j, :, :] = data
+        for data, n_int, qe in zip(data_list, n_int_list, qe_list):
+            i = n_int_index[n_int]
+            j = qe_index[qe]
+            cube[i, j, :, :] = data
 
-    s2n = xr.DataArray(
-        cube,
-        dims=("n_int", "qe", "dc", "wavel"),
-        coords={
-            "n_int": n_int_vals,
-            "qe": qe_vals,
-            "dc": dc_array,
-            "wavel": wavel_array,
-        },
-        name="s2n"
-    )
-
-    # pickle the s2n xarray
-    output_pickle_path = os.path.join(output_dir, "s2n_cube.pkl")
-    with open(output_pickle_path, "wb") as f:
-        pickle.dump(s2n, f)
-
-    print(f"Pickled S/N cube to: {output_pickle_path}")
-
-    # simple plots, mostly FYI
-    # load the s2n xarray from the pickle file
-    with open(output_pickle_path, "rb") as f:
-        s2n = pickle.load(f)
-    # example plots
-    # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
-    # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
-    qe_choice = 0.8
-    sl = s2n.sel(n_int=25920, qe=qe_choice, method="nearest")
-    
-    # Create the plot using xarray's plot method
-    # This creates a figure and axes automatically
-    plot_handle = sl.plot(x="wavel", y="dc")
-    
-    # Get the current axes (the one created by xarray's plot)
-    ax = plt.gca()  # Get current axes - this is the one from xarray's plot
-    
-    # Overplot a white contour at S/N=iso on the same axes
-    X, Y = np.meshgrid(sl.wavel.values, sl.dc.values)
-    CS = ax.contour(X, Y, sl.values, levels=iso_lines, colors='white', linewidths=2)
-    contours = []
-    for iso_line in iso_lines:
-        CS = ax.contour(X, Y, sl.values, levels=[iso_line], colors='white', linewidths=2)
-        # Add label for this contour line
-        plt.clabel(
-            CS,
-            inline=1,  # Setting inline=0 will break the contour line at the label, making the label more readable
-            fontsize=10,
-            fmt={iso_line: f'S/N = {iso_line}'},
-            colors='white'
+        s2n = xr.DataArray(
+            cube,
+            dims=("n_int", "qe", "dc", "wavel"),
+            coords={
+                "n_int": n_int_vals,
+                "qe": qe_vals,
+                "dc": dc_array,
+                "wavel": wavel_array,
+            },
+            name="s2n"
         )
-        contours.append(CS)
-    #ax.clabel(CS, inline=True, fontsize=10)
-    ax.set_xlabel('Wavelength (um)')
-    ax.set_ylabel('Dark current (e-/s/pix)')
-    ax.set_title(f'QE = {qe_choice:.2f}')
-    plt.tight_layout()  # Adjust layout to prevent label cutoff
-    #plt.show()
-    file_name_plot = os.path.join(output_dir, plot_save_string + '2d_heat_map_dc_vs_wavel.png') 
-    plt.suptitle('Data from dir: ' + source_string, fontsize=6)
-    plt.savefig(file_name_plot)
-    print(f"Saved 2D heat map of S/N as function of wavelength and dark current to {file_name_plot}")
 
-    # 3D plotting
-    # pick one integration time
-    da = s2n.sel(n_int=25920, method="nearest")  # dims: (qe, dc, wavel)
-    # Ensure the axis order is exactly (qe, dc, wavel)
-    da_plot = da.transpose("qe", "dc", "wavel")
-    # orient such that:
-    # - wavel increases to the right (x-axis)
-    # - DC increases going up (y-axis)
-    # - QE increases going away from the viewer (z-axis)
-    #da_plot = da.transpose("dc", "wavel", "qe")
-    # Reverse the wavel axis direction (highest to lowest)
-    #da_plot = da_plot.reindex(wavel=list(reversed(da_plot.wavel)))
-    # If there are NaNs, marching cubes will choke; fill or mask
-    da_filled = da_plot.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
-    # Add zoom feature to camera: "zoom" scales the field of view (default=1)
-    zoom = 1.5
-    #for factor in np.arange(0,1,0.1):
-    camera = dict(
-        up=dict(x=0, y=1, z=0),
-        center=dict(x=0, y=0, z=0),
-        eye=dict(x=-zoom*0.9, y=zoom*1.25, z=zoom*0.5)
-    )
-    axis_ranges = {
-        "x": [float(da_filled.qe.min()), float(da_filled.qe.max())],
-        "y": [float(da_filled.dc.min()), float(da_filled.dc.max())],
-        "z": [float(da_filled.wavel.min()), float(da_filled.wavel.max())],
-    }
+        # pickle the s2n xarray
+        output_pickle_path = os.path.join(output_dir, "s2n_cube.pkl")
+        with open(output_pickle_path, "wb") as f:
+            pickle.dump(s2n, f)
 
-    # 3d projection
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
-        da_filled,
-        iso=iso_lines,
-        camera=camera,
-        task='save',
-        axis_ranges=axis_ranges,
-        title = 'Data from dir: ' + source_string,
-        file_name=os.path.join(output_dir, plot_save_string + f's2n_3d_qe_dc_wavel.png')
-    )
+        print(f"Pickled S/N cube to: {output_pickle_path}")
 
-    '''
-    # 2d
-    _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
-        da_filled,
-        iso=5.0,
-        view="overhead",
-        projection_type="orthographic",
-        task="show",
-    )
-    '''
+        # simple plots, mostly FYI
+        # load the s2n xarray from the pickle file
+        with open(output_pickle_path, "rb") as f:
+            s2n = pickle.load(f)
+        # example plots
+        # s2n.sel(n_int=25920, dc=5.0, qe=0.6, method="nearest").plot(x="wavel") # 1D
+        # s2n.sel(n_int=25920, dc=5.0, method="nearest").plot(x="wavel", y="qe") # 2D
+        qe_choice = 0.8
+        sl = s2n.sel(n_int=25920, qe=qe_choice, method="nearest")
+        
+        # Create the plot using xarray's plot method
+        # This creates a figure and axes automatically
+        plot_handle = sl.plot(x="wavel", y="dc")
+        
+        # Get the current axes (the one created by xarray's plot)
+        ax = plt.gca()  # Get current axes - this is the one from xarray's plot
+        
+        # Overplot a white contour at S/N=iso on the same axes
+        X, Y = np.meshgrid(sl.wavel.values, sl.dc.values)
+        CS = ax.contour(X, Y, sl.values, levels=iso_lines, colors='white', linewidths=2)
+        contours = []
+        for iso_line in iso_lines:
+            CS = ax.contour(X, Y, sl.values, levels=[iso_line], colors='white', linewidths=2)
+            # Add label for this contour line
+            plt.clabel(
+                CS,
+                inline=1,  # Setting inline=0 will break the contour line at the label, making the label more readable
+                fontsize=10,
+                fmt={iso_line: f'S/N = {iso_line}'},
+                colors='white'
+            )
+            contours.append(CS)
+        #ax.clabel(CS, inline=True, fontsize=10)
+        ax.set_xlabel('Wavelength (um)')
+        ax.set_ylabel('Dark current (e-/s/pix)')
+        ax.set_title(f'QE = {qe_choice:.2f}')
+        plt.tight_layout()  # Adjust layout to prevent label cutoff
+        #plt.show()
+        file_name_plot = os.path.join(output_dir, '2d_heat_map_dc_vs_wavel.png') 
+        plt.suptitle('Data from dir: ' + source_string, fontsize=6)
+        plt.savefig(file_name_plot)
+        print(f"Saved 2D heat map of S/N as function of wavelength and dark current to {file_name_plot}")
+
+        # 3D plotting
+        # pick one integration time
+        da = s2n.sel(n_int=25920, method="nearest")  # dims: (qe, dc, wavel)
+        # Ensure the axis order is exactly (qe, dc, wavel)
+        da_plot = da.transpose("qe", "dc", "wavel")
+        # orient such that:
+        # - wavel increases to the right (x-axis)
+        # - DC increases going up (y-axis)
+        # - QE increases going away from the viewer (z-axis)
+        #da_plot = da.transpose("dc", "wavel", "qe")
+        # Reverse the wavel axis direction (highest to lowest)
+        #da_plot = da_plot.reindex(wavel=list(reversed(da_plot.wavel)))
+        # If there are NaNs, marching cubes will choke; fill or mask
+        da_filled = da_plot.fillna(-np.inf)  # makes NaNs safely "below" any finite iso value
+        # Add zoom feature to camera: "zoom" scales the field of view (default=1)
+        zoom = 1.5
+        #for factor in np.arange(0,1,0.1):
+        camera = dict(
+            up=dict(x=0, y=1, z=0),
+            center=dict(x=0, y=0, z=0),
+            eye=dict(x=-zoom*0.9, y=zoom*1.25, z=zoom*0.5)
+        )
+        axis_ranges = {
+            "x": [float(da_filled.qe.min()), float(da_filled.qe.max())],
+            "y": [float(da_filled.dc.min()), float(da_filled.dc.max())],
+            "z": [float(da_filled.wavel.min()), float(da_filled.wavel.max())],
+        }
+
+        # 3d projection
+        file_name_3d_plot = os.path.join(output_dir, f's2n_3d_qe_dc_wavel.png')
+
+        _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
+            da_filled,
+            iso=iso_lines,
+            camera=camera,
+            task='save',
+            axis_ranges=axis_ranges,
+            title = 'Data from dir: ' + source_string,
+            file_name=file_name_3d_plot
+        )
+        print(f"Saved 3D plot of S/N as function of QE, dark current, and wavelength to {file_name_3d_plot}")
+
+        '''
+        # 2d
+        _ = plotting_3d.plot_s2n_3d_qe_dc_wavel(
+            da_filled,
+            iso=5.0,
+            view="overhead",
+            projection_type="orthographic",
+            task="show",
+        )
+        '''
 
 
-    '''
-    # 2d heat map projections
-    plt.clf()
-    _ = da_filled.plot(x="wavel", y="dc", col="qe")
-    plt.xlabel('Wavelength (um)')
-    plt.ylabel('Dark current (e-/s/pix)')
-    plt.suptitle('Data from dir: ' + dir_sample_data)
-    plt.show()
-    '''
+        '''
+        # 2d heat map projections
+        plt.clf()
+        _ = da_filled.plot(x="wavel", y="dc", col="qe")
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('Dark current (e-/s/pix)')
+        plt.suptitle('Data from dir: ' + temp_dir)
+        plt.show()
+        '''
 
-    # Make a 2D plot of QE vs wavelength, averaging S/N over DC
-    plt.clf()
-    # Compute mean along 'dc' axis
-    da_qe_wavel = da_filled.mean(dim='dc')
-    # da_qe_wavel is now dims: qe x wavel
-    qe_vals = da_qe_wavel.qe.values
-    wavel_vals = da_qe_wavel.wavel.values
-    s2n_mean = da_qe_wavel.values  # shape (Nqe, Nwavel)
-    # Use pcolormesh for a 2D image
-    plt.pcolormesh(wavel_vals, qe_vals, s2n_mean, shading='auto')
-    plt.colorbar(label='Mean S/N (across DC)')
+        # Make a 2D plot of QE vs wavelength, averaging S/N over DC
+        plt.clf()
+        # Compute mean along 'dc' axis
+        da_qe_wavel = da_filled.mean(dim='dc')
+        # da_qe_wavel is now dims: qe x wavel
+        qe_vals = da_qe_wavel.qe.values
+        wavel_vals = da_qe_wavel.wavel.values
+        s2n_mean = da_qe_wavel.values  # shape (Nqe, Nwavel)
+        # Use pcolormesh for a 2D image
+        plt.pcolormesh(wavel_vals, qe_vals, s2n_mean, shading='auto')
+        plt.colorbar(label='Mean S/N (across DC)')
 
-    # Loop over isocontour lines and plot each
-    contours = []
-    for iso_line in iso_lines:
-        CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[iso_line], colors='white', linewidths=1.5)
-        plt.clabel(CS, inline=1, fontsize=10, fmt={iso_line: f'S/N = {iso_line}'}, colors='white')
-        contours.append(CS)
+        # Loop over isocontour lines and plot each
+        contours = []
+        for iso_line in iso_lines:
+            CS = plt.contour(wavel_vals, qe_vals, s2n_mean, levels=[iso_line], colors='white', linewidths=1.5)
+            plt.clabel(CS, inline=1, fontsize=10, fmt={iso_line: f'S/N = {iso_line}'}, colors='white')
+            contours.append(CS)
 
-    plt.xlabel('Wavelength (um)')
-    plt.ylabel('QE')
-    # Truncate directory string if too long for display
-    # Print only the string of the last directory in dir_display
-    plt.suptitle('Data from dir: ' + source_string, fontsize=6)
-    plt.title(f'Mean S/N, across DC vals {np.min(da_filled.dc.values):.1f} to {np.max(da_filled.dc.values):.1f}')
-    file_name_plot = os.path.join(output_dir, plot_save_string + 's2n_qe_vs_wavel_mean_across_dc.png')
-    plt.savefig(file_name_plot)
-    #plt.show()
-    print(f"Saved 2D plot of mean S/N (across DC) as function of QE and wavelength to {file_name_plot}")
+        plt.xlabel('Wavelength (um)')
+        plt.ylabel('QE')
+        # Truncate directory string if too long for display
+        # Print only the string of the last directory in dir_display
+        plt.suptitle('Data from dir: ' + source_string, fontsize=6)
+        plt.title(f'Mean S/N, across DC vals {np.min(da_filled.dc.values):.1f} to {np.max(da_filled.dc.values):.1f}')
+        file_name_plot = os.path.join(output_dir, 's2n_qe_vs_wavel_mean_across_dc.png')
+        plt.savefig(file_name_plot)
+        #plt.show()
+        print(f"Saved 2D plot of mean S/N (across DC) as function of QE and wavelength to {file_name_plot}")
 
-    # too many subplots
-    '''
-    plt.clf()
-    _ = da_filled.plot(x="wavel", y="qe", col="dc")
-    plt.tight_layout()
-    plt.show()
-    '''
+        # too many subplots
+        '''
+        plt.clf()
+        _ = da_filled.plot(x="wavel", y="qe", col="dc")
+        plt.tight_layout()
+        plt.show()
+        '''
 
 
 if __name__ == '__main__':

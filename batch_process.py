@@ -95,7 +95,7 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
         config.set('observation', 'beta_lat_los', str(system_params['eclip_lat'])) # ecliptic longitude (rad)
 
         # this is a kludge to map stellar-type/luminosity in case only the stellar type is input
-        # config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
+        config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
 
         config.set('target', 'psg_spectrum_file_name', str(system_params['abs_file_name_psg_spectrum'])) # NASA PSG spectrum file name
         logging.info(f"NASA PSG spectrum file name: {system_params['abs_file_name_psg_spectrum']}")
@@ -225,6 +225,7 @@ def run_single_calculation(config_path: str,
             import configparser as _cp  # local import to avoid circulars
         except ImportError:
             _cp = None
+
 
         logger.info("------- Temp config contents -------")
 

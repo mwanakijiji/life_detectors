@@ -16,6 +16,7 @@ import glob
 import corner
 import copy
 import matplotlib.pyplot as plt
+import ipdb
 
 
 def example_simple_batch():
@@ -101,6 +102,7 @@ def example_parameter_sweep(planet_population: bool = False):
         logging.info("Applying parameter sweep to an entire planet population")
         # for planet population, we need to read in the planet population file name
         planet_population_params = loader.load_config(config_file=config_planet_population_path)
+        
         file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
         lum_types = planet_population_params['lum_type'] # to map luminosities with stellar types
         # read in the planet population
@@ -123,6 +125,7 @@ def example_parameter_sweep(planet_population: bool = False):
 
         # if dataset is >10k planets, select 10k randomly
         cols_to_plot = ['Rp','Porb','Mp','z','Tp','ap']
+
         if len(df_planet_population) > 10000:
             df_sample = copy.deepcopy(df_planet_population[cols_to_plot].sample(n=10000, replace=False))
         else:

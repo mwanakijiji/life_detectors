@@ -5,7 +5,18 @@ import xarray as xr
 from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 import plotly.io as pio
-import ipdb 
+import ipdb
+
+
+def _title_three_lines(text: str, n_lines: int = 3) -> str:
+    """Split title text into n_lines using <br> for Plotly."""
+    if not text or len(text) <= 60:
+        return text
+    chunk_len = max(1, len(text) // n_lines)
+    lines = [text[i * chunk_len : (i + 1) * chunk_len] for i in range(n_lines - 1)]
+    lines.append(text[(n_lines - 1) * chunk_len :])
+    return '<br>'.join(lines)
+
 
 def _angles_to_camera_eye(azimuth_deg, elevation_deg, distance=2.0):
     """
@@ -181,7 +192,10 @@ def plot_s2n_3d_qe_dc_wavel(da_pass, iso=[5.0], camera = dict(
             y=0.7,
             bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent background
         ),
-        title={'text': title, 'font': {'size': 6}},
+        #title={
+        #    'text': _title_three_lines(title) if title else '',
+        #    'font': {'size': 6},
+        #},
     )
 
     if task == 'show':
