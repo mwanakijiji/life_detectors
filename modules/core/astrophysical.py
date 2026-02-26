@@ -82,6 +82,7 @@ class AstrophysicalSources:
             Flux array with units ph / (um m^2 s)
         """
         spectrum = self.spectra[source_name]
+        ipdb.set_trace()
 
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point)
@@ -102,6 +103,7 @@ class AstrophysicalSources:
         flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
 
         # treatment of units and nulling depending on the source
+        ipdb.set_trace()
         if source_name == "zodiacal":
             # no distance correction and no nulling
             flux_incident = interpolated_spectrum.flux * flux_unit_obj
@@ -135,7 +137,7 @@ class AstrophysicalSources:
         incident_dict = {}
 
         # should star be nulled?
-        null = bool(self.config["nulling"]["null"])
+        null = self.config.getboolean("nulling", "null")
         logger.info(f"Nulling of star: {null}")
         
         wavelength = np.linspace(float(self.config['wavelength_range']['min']),

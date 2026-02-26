@@ -117,14 +117,15 @@ class InstrumentDepTerms:
             for source_name, source_val in self.prop_dict.items():
                 plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
             plt.legend()
-            plt.title(format_plot_title("Photoelectrons, pre-aperture", self.config), loc='left')
-            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.pdf"
+            plt.title(format_plot_title("Photoelectrons, pre-aperture (with applied null, if applicable)", self.config), loc='left')
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.png"
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
 
             # post-aperture fluxes
             plt.clf()
+            plt.figure(figsize=(8, 8))
             for source_name, source_val in self.prop_dict.items():
                 if source_name in self.sources_to_include:
                     plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
@@ -134,7 +135,7 @@ class InstrumentDepTerms:
             plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
             plt.ylabel(f"Flux (" + str(source_val['flux_post_aperture_ph_sec_um'].unit) + ")")
             plt.legend()
-            plt.title(format_plot_title("Photoelectrons, post-aperture", self.config))
+            plt.title(format_plot_title("Photoelectrons, post-aperture", self.config), loc='left')
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_post_aperture.png"
             plt.tight_layout()
             plt.savefig(file_name_plot)

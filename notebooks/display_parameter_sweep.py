@@ -272,7 +272,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    st_type = 'M'
+    st_type = 'earth_only'
     #if st_type == 'A':
     #    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
     if st_type == 'F':
@@ -283,7 +283,9 @@ def main():
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_K_type_only/'
     elif st_type == 'M':
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_M_type_only/'
-
+    elif st_type == 'earth_only':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only/'
+    
     # glob all the subdirectories in dir_sample_data with string 'temp_'
     temp_dir_array = [d for d in glob.glob(os.path.join(dir_sample_data, 'temp_*')) if os.path.isdir(d)]
 
