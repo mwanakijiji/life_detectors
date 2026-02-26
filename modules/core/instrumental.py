@@ -117,7 +117,7 @@ class InstrumentDepTerms:
             for source_name, source_val in self.prop_dict.items():
                 plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
             plt.legend()
-            plt.title(format_plot_title("Photoelectrons, pre-aperture (with applied null, if applicable)", self.config), loc='left')
+            plt.title(format_plot_title("Photoelectrons, pre-aperture (no nulling yet)", self.config), loc='left')
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.png"
             plt.tight_layout()
             plt.savefig(file_name_plot)

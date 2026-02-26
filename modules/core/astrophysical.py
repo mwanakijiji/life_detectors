@@ -252,6 +252,7 @@ class AstrophysicalSources:
                 )
             )
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"incident_{source_name}.png"
+            ipdb.set_trace()
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)

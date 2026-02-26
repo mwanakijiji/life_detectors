@@ -323,12 +323,13 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
     '''
     # bb_planet_lambda() units are W / (micron sr m2)
     # so total units of flux_planet are sr * (above) = W / (micron m2)
-    flux_planet = np.pi*u.sr * bb_planet_lambda(wavelength_um)
+    flux_planet = np.pi * u.sr * bb_planet_lambda(wavelength_um)
     # planet luminosity
     luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * flux_planet
     luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
     luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
     luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
+    ipdb.set_trace()
 
     if plot:
         plt.clf()
@@ -342,6 +343,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         #ax1.set_xscale('log')
         #ax1.set_xlim(4., 18.)
         #ax1.set_ylim(1e-4, 1e0)
+        ax1.set_xlim(4., 18.5)
         ax1.set_yscale('log')
         ax1.tick_params(axis='y', labelcolor=color1)
         
@@ -360,6 +362,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
 
         plt.savefig(file_name_plot)
         print(f"Wrote planet emission plot {file_name_plot}")
+        ipdb.set_trace()
 
 
     return luminosity_photons_planet, luminosity_energy_planet

@@ -152,8 +152,8 @@ def example_parameter_sweep(planet_population: bool = False):
     qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + 0.1*step_qe, step_qe))
     #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
     #output_dir = "parameter_sweep/junk"
-    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
-    #sources = ["star", "exoplanet_bb", "exozodiacal", "zodiacal"] # _psg suffix indicates that the object is meant to conform to a planet population
+    #sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+    sources = ["star", "exoplanet_bb", "exozodiacal", "zodiacal"] # _psg suffix indicates that the object is meant to conform to a planet population
     
     # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):

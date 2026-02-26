@@ -272,7 +272,7 @@ def n_int_from_dc_s2n_lambda(s2n_sample_slice, s2n_cube, n_int_array, dc_desired
 
 def main():
 
-    st_type = 'earth_only'
+    st_type = 'G'
     #if st_type == 'A':
     #    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
     if st_type == 'F':
@@ -283,8 +283,10 @@ def main():
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_K_type_only/'
     elif st_type == 'M':
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_M_type_only/'
-    elif st_type == 'earth_only':
-        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only/'
+    elif st_type == 'earth_only_model_spec':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only_model_spectrum/'
+    elif st_type == 'earth_only_bb':
+        dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only_bb/'
     
     # glob all the subdirectories in dir_sample_data with string 'temp_'
     temp_dir_array = [d for d in glob.glob(os.path.join(dir_sample_data, 'temp_*')) if os.path.isdir(d)]
@@ -318,6 +320,7 @@ def main():
             fpath = os.path.join(temp_dir, fname)
             with fits.open(fpath) as hdul:
                 print('Reading in data from file: ', fpath)
+                
                 # hdul[0].data has shape (4, n_dc, n_wavel); the 4 slices are [0]: S/N values, [1]: wavelength bin centers, [2]: wavelength bin widths, [3]: dark current values
                 data = hdul[0].data[0, :, :]   
                 data_list.append(data)
