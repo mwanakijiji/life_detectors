@@ -288,12 +288,14 @@ def main():
     
     # glob all the subdirectories in dir_sample_data with string 'temp_'
     temp_dir_array = [d for d in glob.glob(os.path.join(dir_sample_data, 'temp_*')) if os.path.isdir(d)]
+    print(f"Temp directory array: {temp_dir_array}")
 
     # loop over each of the subdirectories (each of which corresponds to one planet)
     for temp_dir in temp_dir_array:
 
         #string_planet_index = 'planet_index_' + os.path.basename(temp_dir).split('_')[5] # trying to keep pathnames short
         output_dir = temp_dir + '/products/' # put processed stuff in a subdirectory in the parent directory containing the raw data
+        print(f"Output directory: {output_dir}")
         #output_dir = '/Users/eckhartspalding/' + os.path.basename(temp_dir) + '/output_dir/'
         #output_dir = '/Users/eckhartspalding/' + os.path.basename(temp_dir) + '/output_dir/'
         if not os.path.exists(output_dir):

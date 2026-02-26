@@ -70,19 +70,18 @@ class AstrophysicalSources:
 
     def _calculate_flux_from_spectrum(self, source_name: str, wavelength: u.Quantity, distance_set: float = None, null: bool = False) -> u.Quantity:
         """
-        Helper function to interpolate a stored spectrum and apply distance/nulling corrections.
+        Helper function to interpolate a stored spectrum and apply distance corrections (but not nulling yet!)
 
         Args:
             source_name: Name of the source (star, exoplanet_bb, exozodiacal, zodiacal)
             wavelength: Wavelength grid (with units)
             distance_set: Distance to the source (pc)
-            null: Whether to apply nulling for the star
+            null: Whether to apply nulling for the star (vestigial; null is applied in the S/N calculator)
 
         Returns:
             Flux array with units ph / (um m^2 s)
         """
         spectrum = self.spectra[source_name]
-        ipdb.set_trace()
 
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point)
@@ -103,14 +102,13 @@ class AstrophysicalSources:
         flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
 
         # treatment of units and nulling depending on the source
-        ipdb.set_trace()
         if source_name == "zodiacal":
             # no distance correction and no nulling
             flux_incident = interpolated_spectrum.flux * flux_unit_obj
-        elif null and (source_name == "star" or source_name == "star_psg"):
+        elif (source_name == "star" or source_name == "star_psg"):
             # apply nulling to star only
             flux_incident = (
-                interpolated_spectrum.flux * float(nulling_factor) * distance_correction * flux_unit_obj
+                interpolated_spectrum.flux * distance_correction * flux_unit_obj
             )
             logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
