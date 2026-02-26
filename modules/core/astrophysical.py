@@ -90,7 +90,7 @@ class AstrophysicalSources:
         # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
         if source_name != "zodiacal":
             distance = distance_set * u.pc  # parsecs
-            distance_correction = 1.0 / (distance ** 2)  # 1/r^2 law
+            distance_correction = 1.0 / (4 * np.pi * distance ** 2)  # 1/r^2 law
             logging.info(f"Distance of object set to: {distance_set} pc")
         else:
             distance_correction = 1.0
@@ -110,11 +110,12 @@ class AstrophysicalSources:
             flux_incident = (
                 interpolated_spectrum.flux * distance_correction * flux_unit_obj
             )
-            logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
+            #logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
         else:
             # no nulling
             flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
-            logger.info(f"No nulling factor applied to {source_name}.")
+            #logger.info(f"No nulling factor applied to {source_name}.")
+        ipdb.set_trace()
 
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     

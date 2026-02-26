@@ -329,7 +329,6 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
     luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
     luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
     luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
-    ipdb.set_trace()
 
     if plot:
         plt.clf()
@@ -362,7 +361,6 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
 
         plt.savefig(file_name_plot)
         print(f"Wrote planet emission plot {file_name_plot}")
-        ipdb.set_trace()
 
 
     return luminosity_photons_planet, luminosity_energy_planet
