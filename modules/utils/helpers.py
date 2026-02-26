@@ -217,7 +217,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
         # Primary y-axis for luminosity_photons_star
         color1 = 'tab:blue'
         ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
-        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {luminosity_photons_star.unit})", color=color1)
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_star.unit})", color=color1)
         line1 = ax1.plot(wavelength_um, luminosity_photons_star, color=color1)
         ax1.set_xscale('log')
         ax1.set_yscale('log')
@@ -338,7 +338,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         # Primary y-axis for luminosity_photons_planet
         color1 = 'tab:blue'
         ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
-        ax1.set_ylabel(fr"$L_{{\lambda}}$ (ph * {luminosity_photons_planet.unit})", color=color1)
+        ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_planet.unit})", color=color1)
         line1 = ax1.plot(wavelength_um, luminosity_photons_planet, color=color1)
         #ax1.set_xscale('log')
         #ax1.set_xlim(4., 18.)
