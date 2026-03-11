@@ -75,7 +75,6 @@ def example_parameter_sweep(config_single_obs_path,
     n_int_values = helpers.get_sweep_range(obs, 'n_int')
     qe_values = helpers.get_sweep_range(obs, 'qe')
 
-    ipdb.set_trace()
     # get the astrophysical sources to include from the config file
     sources_to_include = [
         source

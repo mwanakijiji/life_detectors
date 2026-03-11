@@ -51,7 +51,7 @@ target-version = ['py38']
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "--cov=modules --cov-report=html --cov-report=term-missing"
+addopts = "--cov=batch_process --cov=modules --cov-report=html --cov-report=term-missing"
 
 [tool.mypy]
 python_version = "3.8"
