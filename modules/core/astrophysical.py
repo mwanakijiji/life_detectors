@@ -115,7 +115,6 @@ class AstrophysicalSources:
             # no nulling
             flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
             #logger.info(f"No nulling factor applied to {source_name}.")
-        ipdb.set_trace()
 
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     

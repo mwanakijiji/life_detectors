@@ -20,6 +20,9 @@ from scipy.interpolate import interp1d
 #from astropy import constants as const
 from astropy import constants as const
 from matplotlib.colors import LogNorm
+import glob
+import os
+import copy
 
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,61 @@ def format_plot_title(base_title: str, config) -> str:
 # end bunch of functions to get and set the plot title context
 ########################################################
 
+def merge_psg_spectra_to_planet_population(
+    df_planet_population: pd.DataFrame, planet_population_params: dict
+) -> pd.DataFrame:
+    """
+    Merge PSG spectrum file names into the planet population DataFrame.
+
+    Reads all *.response files from the configured directory, parses planet IDs
+    from filenames (e.g. psg_cfg_00000015.response), and left-joins with the
+    planet population. Missing PSG spectra are indicated as NaN.
+    """
+    dir_name_psg_spectra = planet_population_params['dir_file_name_psg_spectra']['dir_name']
+    file_name_psg_spectra = glob.glob(os.path.join(dir_name_psg_spectra, '*.response'))
+    df_psg_spectra_names = pd.DataFrame({
+        'abs_file_name_psg_spectrum': file_name_psg_spectra,
+    })
+    df_psg_spectra_names['id'] = df_psg_spectra_names['abs_file_name_psg_spectrum'].apply(
+        lambda x: int(x.split('psg_cfg_')[1].split('.')[0])
+    )
+    return df_planet_population.merge(df_psg_spectra_names, on='id', how='left')
+
+
+def plot_planet_population_sample(
+    df_planet_population: pd.DataFrame,
+    cols_to_plot: list[str],
+    output_path: str,
+    max_sample_size: int = 10000,
+) -> None:
+    """
+    Create and save a scatter matrix plot of the planet population.
+
+    If the population exceeds max_sample_size, a random sample is used for plotting.
+    """
+    if len(df_planet_population) > max_sample_size:
+        df_sample = copy.deepcopy(df_planet_population[cols_to_plot].sample(n=max_sample_size, replace=False))
+    else:
+        df_sample = copy.deepcopy(df_planet_population[cols_to_plot])
+    title_string = f"Sample of {len(df_sample)} planets from population of {len(df_planet_population)}"
+    axes = pd.plotting.scatter_matrix(df_sample, figsize=(10, 8))
+    fig = axes[0, 0].figure
+    fig.suptitle(title_string)
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def get_sweep_range(obs: dict, prefix: str) -> list[float]:
+    """
+    Build [start, start+step, ..., stop] from obs[prefix_start], obs[prefix_stop], obs[prefix_step].
+
+    The stop value is included by extending the range by one step.
+    """
+    start = float(obs[f'{prefix}_start'])
+    stop = float(obs[f'{prefix}_stop'])
+    step = float(obs[f'{prefix}_step'])
+    ipdb.set_trace()
+    return np.arange(start, stop + step, step).tolist()
 
 def format_number(value: float, precision: int = 2) -> str:
     """
