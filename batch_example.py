@@ -74,10 +74,76 @@ def example_single_calculation():
     return success
 '''
 
-def example_parameter_sweep(planet_population: bool = False):
+
+def merge_psg_spectra_to_planet_population(
+    df_planet_population: pd.DataFrame, planet_population_params: dict
+) -> pd.DataFrame:
+    """
+    Merge PSG spectrum file names into the planet population DataFrame.
+
+    Reads all *.response files from the configured directory, parses planet IDs
+    from filenames (e.g. psg_cfg_00000015.response), and left-joins with the
+    planet population. Missing PSG spectra are indicated as NaN.
+    """
+    dir_name_psg_spectra = planet_population_params['dir_file_name_psg_spectra']['dir_name']
+    file_name_psg_spectra = glob.glob(os.path.join(dir_name_psg_spectra, '*.response'))
+    df_psg_spectra_names = pd.DataFrame({
+        'abs_file_name_psg_spectrum': file_name_psg_spectra,
+    })
+    df_psg_spectra_names['id'] = df_psg_spectra_names['abs_file_name_psg_spectrum'].apply(
+        lambda x: int(x.split('psg_cfg_')[1].split('.')[0])
+    )
+    return df_planet_population.merge(df_psg_spectra_names, on='id', how='left')
+
+
+def plot_planet_population_sample(
+    df_planet_population: pd.DataFrame,
+    cols_to_plot: list[str],
+    output_path: str,
+    max_sample_size: int = 10000,
+) -> None:
+    """
+    Create and save a scatter matrix plot of the planet population.
+
+    If the population exceeds max_sample_size, a random sample is used for plotting.
+    """
+    if len(df_planet_population) > max_sample_size:
+        df_sample = copy.deepcopy(df_planet_population[cols_to_plot].sample(n=max_sample_size, replace=False))
+    else:
+        df_sample = copy.deepcopy(df_planet_population[cols_to_plot])
+    title_string = f"Sample of {len(df_sample)} planets from population of {len(df_planet_population)}"
+    axes = pd.plotting.scatter_matrix(df_sample, figsize=(10, 8))
+    fig = axes[0, 0].figure
+    fig.suptitle(title_string)
+    fig.savefig(output_path)
+    plt.close(fig)
+
+
+def get_sweep_range(obs: dict, prefix: str) -> list[float]:
+    """
+    Build [start, start+step, ..., stop] from obs[prefix_start], obs[prefix_stop], obs[prefix_step].
+
+    The stop value is included by extending the range by one step.
+    """
+    start = float(obs[f'{prefix}_start'])
+    stop = float(obs[f'{prefix}_stop'])
+    step = float(obs[f'{prefix}_step'])
+    return np.arange(start, stop + step, step).tolist()
+
+
+def example_parameter_sweep(config_single_obs_path, 
+                            config_sweep_path, 
+                            config_planet_population_path, 
+                            planet_population: bool = False):
     """
     Example 3: Parameter sweep with many n_int values.
 
+    config_single_obs_path: str
+        Path to the configuration file for a single observation.
+    config_sweep_path: str
+        Path to the configuration file for the parameter sweep.
+    config_planet_population_path: str
+        Path to the configuration file for the planet population.
     planet_population: bool = False
         If True, the parameter sweep will be applied to an entire planet population.
         If False, the parameter sweep will be applied to a single observation.
@@ -85,75 +151,50 @@ def example_parameter_sweep(planet_population: bool = False):
     print("\nExample 3: Parameter sweep")
     print("-" * 40)
 
-
-    
-    # starting config for a single observation
-    # (parameters being swept will be overwritten)
-    config_single_obs_path = "modules/config/demo_config.ini" 
-    # config file for making a parameter sweep; this effectively make a batch job
-    config_sweep_path = "modules/config/sweep_config.ini"
-    # if you want to apply the batch job with the above ini settings to an entire planet population, use this config file
-    config_planet_population_path = "modules/config/planet_population_config.ini"
-
-    # read in the sweeped parameters
-    sweeped_params = loader.load_config(config_file=config_sweep_path)
+    # load in all config files once, and don't load them again
+    config_single_obs = loader.load_config(config_file=config_single_obs_path) # parameters of the observation
+    config_sweep = loader.load_config(config_file=config_sweep_path) # parameters of the parameter sweep
+    config_planet_population = loader.load_config(config_file=config_planet_population_path) # parameters of the planet population
 
     # if applying a parameter sweep to every planet in a population
     if planet_population:
         logging.info("Applying parameter sweep to an entire planet population")
         # for planet population, we need to read in the planet population file name
-        planet_population_params = loader.load_config(config_file=config_planet_population_path)
+        config_planet_population = loader.load_config(config_file=config_planet_population_path)
         
-        file_name_planet_population = planet_population_params['file_name_planet_population']['file_name']
-        lum_types = planet_population_params['lum_type'] # to map luminosities with stellar types
-        # read in the planet population
+        # the file that contains the parameters of the planet population
+        file_name_planet_population = config_planet_population['file_name_planet_population']['file_name']
+        lum_types = config_planet_population['lum_type'] # to map luminosities with stellar types
+        # read in the planet population and merge PSG file names to it
         df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep='\s+')
+        df_planet_population = merge_psg_spectra_to_planet_population(
+            df_planet_population, config_planet_population
+        )
 
-        # make the list of NASA PSG spectrum file names associated with the planets in the population
-        dir_name_psg_spectra = planet_population_params['dir_file_name_psg_spectra']['dir_name']
-        # read in all the absolute file names with suffix '.response' 
-        file_name_psg_spectra = glob.glob(os.path.join(dir_name_psg_spectra, '*.response'))
-        # parse each file name for a number; ex., the integer 15 in _00000015.
-        # Create a DataFrame to keep file names and planet IDs lined up
-        df_psg_spectra_names = pd.DataFrame({
-            'abs_file_name_psg_spectrum': file_name_psg_spectra,
-        })
-        # make a new column that just features the unique planet ID number
-        df_psg_spectra_names['id'] = df_psg_spectra_names['abs_file_name_psg_spectrum'].apply(lambda x: int(x.split('psg_cfg_')[1].split('.')[0]))
-
-        # put the absolute file name and the unique planet id number into the planet population file
-        df_planet_population = df_planet_population.merge(df_psg_spectra_names, on='id', how='left') # missing PSG spectra will be indicated as a NaN
-
-        # if dataset is >10k planets, select 10k randomly
-        cols_to_plot = ['Rp','Porb','Mp','z','Tp','ap']
-
-        if len(df_planet_population) > 10000:
-            df_sample = copy.deepcopy(df_planet_population[cols_to_plot].sample(n=10000, replace=False))
-        else:
-            df_sample = copy.deepcopy(df_planet_population[cols_to_plot])
-        # make a plot of the planet population
-        title_string = f"Sample of {len(df_sample)} planets from population of {len(df_planet_population)}"
-        axes = pd.plotting.scatter_matrix(df_sample, figsize=(10, 8))
-        fig = axes[0, 0].figure  # scatter_matrix creates its own figure
-        fig.suptitle(title_string)
-        fig.savefig(planet_population_params['file_name_planet_population']['fyi_plot_name'])
-        plt.close(fig)
-        logging.info(f"FYI plot of planet population saved to {planet_population_params['file_name_planet_population']['fyi_plot_name']}")
+        cols_to_plot = ['Rp', 'Porb', 'Mp', 'z', 'Tp', 'ap']
+        fyi_plot_path = config_planet_population['file_name_planet_population']['fyi_plot_name']
+        plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
+        logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
     else:
         logging.info("Applying parameter sweep to a single planetary system")
         df_planet_population = [None] # need to wrap in a list for length 1
 
-    # parameter sweep: create a range of n_int values
+    # parameter sweep in n_int and QE: create ranges from config
     # for month-long integration of 100sec integrations, n_int = 2592000/100 = 25920
-    step_n_int = float(sweeped_params['observation']['n_int_step']) # is added to the range so as to include the stop value
-    n_int_values = list[float](np.arange(float(sweeped_params['observation']['n_int_start']), float(sweeped_params['observation']['n_int_stop']) + step_n_int, step_n_int))  # 1000, 2000, ..., 10000
-    step_qe = float(sweeped_params['observation']['qe_step'])
-    qe_values = list[float](np.arange(float(sweeped_params['observation']['qe_start']), float(sweeped_params['observation']['qe_stop']) + 0.1*step_qe, step_qe))
-    #output_dir = "parameter_sweep/20251105_R20_4pix_wide_footprint_2pt2pixperwavelelement_2month_observation"
-    #output_dir = "parameter_sweep/junk"
-    #sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
-    sources = ["star", "exoplanet_bb", "exozodiacal", "zodiacal"] # _psg suffix indicates that the object is meant to conform to a planet population
+    obs = config_sweep['observation']
+    n_int_values = get_sweep_range(obs, 'n_int')
+    qe_values = get_sweep_range(obs, 'qe')
+
+    ipdb.set_trace()
+    # get the astrophysical sources to include from the config file
+    sources_to_include = [
+        source
+        for source, include in config_single_obs['astrophysical_sources_to_use'].items()
+        if include in [True, "True", "true", 1, "1"]
+    ]
+
+    ipdb.set_trace()
     
     # loop over all the planetary systems
     for sys_num in range(len(df_planet_population)):
@@ -234,11 +275,25 @@ def main():
     logger.info("========================================")
     logger.info("Life Detectors - Batch Processing Examples")
     logger.info(f"Log file: {log_file}")
+
+    ###### BEGIN USER INPUTS
+    # starting config for a single observation
+    # (parameters being swept will be overwritten)
+    config_single_obs_path = "modules/config/demo_config.ini" 
+    # config file for making a parameter sweep; this effectively make a batch job
+    config_sweep_path = "modules/config/sweep_config.ini"
+    # if you want to apply the batch job with the above ini settings to an entire planet population, use this config file
+    # if not using a planet population, use a placeholder file
+    config_planet_population_path = "modules/config/planet_population_config.ini"
+    ###### END USER INPUTS
     
     # Run examples
     #example_simple_batch()
     #example_single_calculation()
-    example_parameter_sweep(planet_population = True)
+    example_parameter_sweep(config_single_obs_path = config_single_obs_path, 
+                            config_sweep_path = config_sweep_path, 
+                            config_planet_population_path = config_planet_population_path, 
+                            planet_population = True)
     #example_custom_sources()
     
     print("\n" + "=" * 50)
