@@ -3,7 +3,9 @@ Unit tests for modules.config.loader.
 """
 
 import configparser
+import logging
 import os
+import re
 import sys
 import types
 
@@ -13,7 +15,7 @@ import pytest
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.config.loader import load_config
+from modules.config.loader import load_config, setup_logging
 
 
 class TestLoadConfig:
@@ -84,3 +86,41 @@ class TestLoadConfig:
         config_path.write_text("")
         result = load_config(str(config_path), makedirs=False)
         assert result == {}
+
+
+class TestSetupLogging:
+    """Test cases for setup_logging."""
+
+    @pytest.fixture(autouse=True)
+    def reset_logging(self):
+        """Reset root logger handlers after each test to avoid cross-test pollution."""
+        yield
+        root = logging.getLogger()
+        root.handlers = []
+        root.setLevel(logging.WARNING)
+
+    def test_returns_log_file_path(self, tmp_path):
+        """Returns path to log file with detectorsim_YYYYMMDD_HHMMSS.log pattern."""
+        log_dir = tmp_path / "logs"
+        result = setup_logging(str(log_dir))
+        assert result.endswith(".log")
+        assert "detectorsim_" in result
+        assert re.match(r"detectorsim_\d{8}_\d{6}\.log$", os.path.basename(result))
+
+    def test_log_file_created_and_writable(self, tmp_path):
+        """Log file is created and messages can be written to it."""
+        log_dir = tmp_path / "logs"
+        log_path = setup_logging(str(log_dir))
+        assert os.path.isfile(log_path)
+        logging.getLogger().info("test message")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        with open(log_path) as f:
+            content = f.read()
+        assert "test message" in content
+
+    def test_uses_default_log_dir_when_no_arg(self):
+        """Uses 'logs' as default when log_dir not provided."""
+        result = setup_logging()
+        assert "logs" in result
+        assert result.endswith(".log")
