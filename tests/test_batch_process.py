@@ -23,13 +23,19 @@ class TestModifyConfigFileSweep:
 
     @pytest.fixture
     def minimal_config_path(self, tmp_path):
-        # Create a minimal config file with [observation] and [detector] sections.
+        """Create a minimal config file matching demo_config.ini [observation] and [detector]."""
         config_path = tmp_path / "test_config.ini"
         config = configparser.ConfigParser()
         config.add_section("observation")
+        config.set("observation", "integration_time", "100")
+        config.set("observation", "lambda_rel_lon_los", "135")
+        config.set("observation", "beta_lat_los", "45")
         config.set("observation", "n_int", "1000")
         config.add_section("detector")
         config.set("detector", "quantum_efficiency", "0.8")
+        config.set("detector", "read_noise", "6")
+        config.set("detector", "gain", "4.5")
+        config.set("detector", "spec_res", "20")
         with open(config_path, "w") as f:
             config.write(f)
         return str(config_path)
@@ -71,24 +77,27 @@ class TestModifyConfigFilePlSystemParams:
 
     @pytest.fixture
     def base_config_path(self, tmp_path):
-        """Create a config file with [dirs], [target], and [observation] sections."""
+        """Create a config file matching demo_config.ini [dirs], [target], [observation]."""
         config_path = tmp_path / "base_config.ini"
         config = configparser.ConfigParser()
         config.add_section("dirs")
-        config.set("dirs", "save_s2n_data_unique_dir", str(tmp_path / "output") + "/")
+        config.set("dirs", "data_dir", str(tmp_path / "data") + "/")
+        config.set("dirs", "save_s2n_data_unique_dir", str(tmp_path / "param_sweeps") + "/")
         config.add_section("target")
         config.set("target", "distance", "10.0")
-        config.set("target", "rad_planet", "1.0")
         config.set("target", "pl_temp", "200.0")
         config.set("target", "rad_star", "1.0")
-        config.set("target", "t_star", "5778")
-        config.set("target", "L_star", "1.0")
+        config.set("target", "T_star", "5778")
+        config.set("target", "L_star", "1")
+        config.set("target", "rad_planet", "1.0")
+        config.set("target", "A_albedo", "0.22")
         config.set("target", "z_exozodiacal", "1")
         config.set("target", "psg_spectrum_file_name", "/path/to/spectrum.response")
         config.set("target", "Stype", "G")
         config.set("target", "Nuniverse", "0")
         config.set("target", "Nstar", "0")
         config.add_section("observation")
+        config.set("observation", "integration_time", "100")
         config.set("observation", "lambda_rel_lon_los", "135")
         config.set("observation", "beta_lat_los", "45")
         with open(config_path, "w") as f:

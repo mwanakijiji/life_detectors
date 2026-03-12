@@ -169,21 +169,26 @@ class ConfigValidator:
 def validate_config(config: Dict[str, Any]) -> bool:
     """
     Validate a configuration dictionary.
-    
+
     Args:
         config: Configuration dictionary to validate
-        
+
     Returns:
         True if valid, False otherwise
-        
-    Raises:
-        ValueError: If configuration is invalid (with detailed error messages)
     """
     validator = ConfigValidator()
-    errors = validator.validate_config(config)
-    
-    #if errors:
-    #    error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
-    #     logging.warning(error_msg)
-    
-    return
+
+    # Capture validation errors via logging
+    errors: List[str] = []
+    handler = logging.Handler()
+    handler.emit = lambda record: errors.append(record.getMessage())
+    handler.setLevel(logging.ERROR)
+    logger = logging.getLogger()
+    logger.addHandler(handler)
+    try:
+        validator.validate_config(config)
+        return len(errors) == 0
+    except (ValueError, TypeError):
+        return False
+    finally:
+        logger.removeHandler(handler)

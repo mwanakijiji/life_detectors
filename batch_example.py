@@ -55,7 +55,7 @@ def example_parameter_sweep(config_single_obs_path,
         file_name_planet_population = config_planet_population['file_name_planet_population']['file_name']
         lum_types = config_planet_population['lum_type'] # to map luminosities with stellar types
         # read in the planet population and merge PSG file names to it
-        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep='\s+')
+        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep=r'\s+')
         df_planet_population = helpers.merge_psg_spectra_to_planet_population(
             df_planet_population, config_planet_population
         )

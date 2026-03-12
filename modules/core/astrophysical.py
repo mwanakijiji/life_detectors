@@ -61,6 +61,7 @@ class AstrophysicalSources:
                     # Get the source name from the section
                     spectrum_file_name = self.config[sources_section][source_name]
                     self.spectra[source_name] = load_spectrum_from_file(spectrum_file_name)
+                    #ipdb.set_trace()
                     logger.info(f"Loaded spectrum for {source_name}: {spectrum_file_name}")
 
                 except Exception as e:
@@ -75,18 +76,20 @@ class AstrophysicalSources:
         Args:
             source_name: Name of the source (star, exoplanet_bb, exozodiacal, zodiacal)
             wavelength: Wavelength grid (with units)
-            distance_set: Distance to the source (pc)
+            distance_set: Distance to the source (pc); ignored if source is zodiacal
             null: Whether to apply nulling for the star (vestigial; null is applied in the S/N calculator)
 
         Returns:
             Flux array with units ph / (um m^2 s)
         """
+        
         spectrum = self.spectra[source_name]
 
         # Interpolate to the requested wavelength grid
         # (note this is not integrating over wavelength for each interpolated data point)
         interpolated_spectrum = spectrum.interpolate(wavelength)
 
+        ipdb.set_trace()
         # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
         if source_name != "zodiacal":
             distance = distance_set * u.pc  # parsecs
@@ -95,26 +98,18 @@ class AstrophysicalSources:
         else:
             distance_correction = 1.0
 
-        # Apply nulling factor for on-axis sources
-        nulling_factor = self.config["nulling"]["nulling_factor"]
-
         # Convert flux_unit string to astropy unit object
         flux_unit_obj = u.Unit(interpolated_spectrum.flux_unit)
 
-        # treatment of units and nulling depending on the source
-        if source_name == "zodiacal":
-            # no distance correction and no nulling
-            flux_incident = interpolated_spectrum.flux * flux_unit_obj
-        elif (source_name == "star" or source_name == "star_psg"):
-            # apply nulling to star only
-            flux_incident = (
-                interpolated_spectrum.flux * distance_correction * flux_unit_obj
-            )
-            #logger.info(f"Applying nulling transmission of {nulling_factor} to {source_name}")
+        flux_incident = interpolated_spectrum.flux * flux_unit_obj
+        if source_name != "zodiacal":
+            flux_incident = flux_incident * distance_correction
+
+        if flux_incident.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s)):
+            logger.info(f'Flux units consistent for source: {source_name}')
         else:
-            # no nulling
-            flux_incident = interpolated_spectrum.flux * distance_correction * flux_unit_obj
-            #logger.info(f"No nulling factor applied to {source_name}.")
+            logger.warning(f'Flux units not consistent for source: {source_name}')
+            #ipdb.set_trace()
 
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     
@@ -181,7 +176,7 @@ class AstrophysicalSources:
         elif source_name in ["star_psg", "exoplanet_bb_psg", "exoplanet_psg","exozodiacal_psg"]:
             
             # read in the NASA PSG spectrum file name associated with the planets in the population
-            df = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep='\s+')
+            df = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep=r'\s+')
             
             logger.info(f"!!! --- OVERWRITING PSG PLANET SPECTRUM FILE WITH A BLACKBODY; FIX LATER --- !!!")
             flux_incident = self._calculate_flux_from_spectrum(source_name=source_name, wavelength=wavelength, distance_set=float(system_params['Ds']), null=False)
@@ -252,7 +247,7 @@ class AstrophysicalSources:
                 )
             )
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"incident_{source_name}.png"
-            ipdb.set_trace()
+            #ipdb.set_trace()
             plt.tight_layout()
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux to " + file_name_plot)

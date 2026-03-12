@@ -16,6 +16,7 @@ import ipdb
 
 logger = logging.getLogger(__name__)
 
+'''
 def save_config(config: Dict[str, Any], filepath: str) -> None:
     """
     Save configuration to a YAML file.
@@ -37,7 +38,7 @@ def save_config(config: Dict[str, Any], filepath: str) -> None:
         
     except Exception as e:
         raise IOError(f"Error saving configuration to {filepath}: {e}")
-
+'''
 
 def load_config(config_file: str, makedirs: bool = True) -> dict:
     """Load configuration from a file.
@@ -92,6 +93,7 @@ def setup_logging(log_dir='logs'):
         handlers=[
             logging.FileHandler(log_file),
             logging.StreamHandler()
-        ]
+        ],
+        force=True,
     )
     return log_file
