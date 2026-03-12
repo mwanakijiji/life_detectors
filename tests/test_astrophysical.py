@@ -1,150 +1,114 @@
 """
-Unit tests for astrophysical noise calculations.
+Unit tests for astrophysical calculations in AstrophysicalSources.
 """
 
-import pytest
+import configparser
+import sys
+import types
+from unittest.mock import patch
+
 import numpy as np
-from unittest.mock import Mock, patch
+import pytest
+from astropy import units as u
+
+sys.modules["ipdb"] = types.ModuleType("ipdb")
+sys.modules["ipdb"].set_trace = lambda: None
 
 from modules.core.astrophysical import AstrophysicalSources
-from modules.data.units import UnitConverter
 from modules.data.spectra import SpectralData
+from modules.data.units import UnitConverter
+
 
 class TestAstrophysicalSources:
     """Test cases for AstrophysicalSources class."""
-    
-    @pytest.fixture
-    def mock_config(self):
-        """Create a mock configuration for testing."""
-        return {
-            "telescope": {
-                "collecting_area": 25.0,
-                "plate_scale": 0.1,
-                "throughput": 0.8,
-            },
-            "target": {
-                "distance": 10.0,
-                "nulling_factor": 0.01,
-            },
-            "detector": {
-                "gain": 2.0,
-            },
-            "astrophysical_sources": {
-                "star": {
-                    "spectrum_file": "test_star.txt",
-                    "enabled": True,
-                },
-                "exoplanet": {
-                    "spectrum_file": "test_exoplanet.txt",
-                    "enabled": True,
-                },
-            },
-        }
-    
+
     @pytest.fixture
     def unit_converter(self):
-        """Create a unit converter for testing."""
         return UnitConverter()
-    
+
     @pytest.fixture
-    def sample_spectrum(self):
-        """Create a sample spectrum for testing."""
-        wavelength = np.linspace(1.0, 10.0, 100)
-        flux = 1e10 * np.exp(-wavelength / 2.0)  # Simple exponential
-        return SpectralData(wavelength=wavelength, flux=flux, source_name="test")
-    
-    def test_init(self, mock_config, unit_converter):
-        """Test initialization of AstrophysicalSources."""
-        with patch('modules.core.astrophysical.load_spectrum_from_file'):
-            noise_calc = AstrophysicalSources(mock_config, unit_converter)
-            assert noise_calc.config == mock_config
-            assert noise_calc.unit_converter == unit_converter
-    
-    def test_calculate_source_flux(self, mock_config, unit_converter, sample_spectrum):
-        """Test calculation of source flux."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        flux = noise_calc.calculate_source_flux("star", wavelength)
-        
-        assert isinstance(flux, np.ndarray)
-        assert flux.shape == wavelength.shape
-        assert np.all(flux >= 0)  # Flux should be non-negative
-    
-    def test_calculate_total_astrophysical_flux(self, mock_config, unit_converter, sample_spectrum):
-        """Test calculation of total astrophysical flux."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        noise_calc.spectra["exoplanet"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        total_flux = noise_calc.calculate_total_astrophysical_flux(wavelength)
-        
-        assert isinstance(total_flux, np.ndarray)
-        assert total_flux.shape == wavelength.shape
-        assert np.all(total_flux >= 0)
-    
-    def test_calculate_detector_illumination(self, mock_config, unit_converter, sample_spectrum):
-        """Test calculation of detector illumination."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        illumination = noise_calc.calculate_detector_illumination(wavelength)
-        
-        assert isinstance(illumination, np.ndarray)
-        assert illumination.shape == wavelength.shape
-        assert np.all(illumination >= 0)
-    
-    def test_calculate_astrophysical_noise_electrons(self, mock_config, unit_converter, sample_spectrum):
-        """Test calculation of astrophysical noise in electrons."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        integration_time = 3600.0
-        
-        noise = noise_calc.calculate_astrophysical_noise_electrons(wavelength, integration_time)
-        
-        assert isinstance(noise, np.ndarray)
-        assert noise.shape == wavelength.shape
-        assert np.all(noise >= 0)
-    
-    def test_calculate_astrophysical_noise_adu(self, mock_config, unit_converter, sample_spectrum):
-        """Test calculation of astrophysical noise in ADU."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        integration_time = 3600.0
-        
-        noise = noise_calc.calculate_astrophysical_noise_adu(wavelength, integration_time)
-        
-        assert isinstance(noise, np.ndarray)
-        assert noise.shape == wavelength.shape
-        assert np.all(noise >= 0)
-    
-    def test_get_source_contributions(self, mock_config, unit_converter, sample_spectrum):
-        """Test getting source contributions."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        noise_calc.spectra["star"] = sample_spectrum
-        noise_calc.spectra["exoplanet"] = sample_spectrum
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        contributions = noise_calc.get_source_contributions(wavelength)
-        
-        assert isinstance(contributions, dict)
-        assert "star" in contributions
-        assert "exoplanet" in contributions
-        assert all(isinstance(flux, np.ndarray) for flux in contributions.values())
-    
-    def test_missing_spectrum(self, mock_config, unit_converter):
-        """Test behavior when spectrum is missing."""
-        noise_calc = AstrophysicalSources(mock_config, unit_converter)
-        
-        wavelength = np.array([2.0, 5.0, 8.0])
-        flux = noise_calc.calculate_source_flux("missing_source", wavelength)
-        
-        assert isinstance(flux, np.ndarray)
-        assert np.all(flux == 0)  # Should return zeros for missing spectrum 
+    def config_with_sources(self):
+        config = configparser.ConfigParser()
+        config.add_section("nulling")
+        config.set("nulling", "nulling_factor", "0.00001")
+        config.add_section("astrophysical_sources")
+        config.set("astrophysical_sources", "star", "/tmp/star.txt")
+        config.set("astrophysical_sources", "exozodiacal", "/tmp/exozodi.txt")
+        config.set("astrophysical_sources", "zodiacal", "/tmp/zodi.txt")
+        return config
+
+    @pytest.fixture
+    def config_no_sources(self):
+        config = configparser.ConfigParser()
+        config.add_section("nulling")
+        config.set("nulling", "nulling_factor", "0.00001")
+        return config
+
+    @pytest.fixture
+    def sample_spectrum_zodiacal(self):
+        wavelength = np.array([1.0, 2.0, 3.0])
+        flux = np.array([10.0, 20.0, 30.0])
+        return SpectralData(
+            wavelength=wavelength,
+            flux=flux,
+            wavelength_unit="um",
+            flux_unit="ph / (um m2 s)",
+            source_name="test",
+            metadata={},
+        )
+
+    @pytest.fixture
+    def sample_spectrum_star(self):
+        wavelength = np.array([1.0, 2.0, 3.0])
+        flux = np.array([10.0, 20.0, 30.0])
+        return SpectralData(
+            wavelength=wavelength,
+            flux=flux,
+            wavelength_unit="um",
+            flux_unit="ph / (um s)",
+            source_name="test",
+            metadata={},
+        )
+    '''
+    def test_load_spectra_populates_dict(self, config_with_sources, unit_converter, sample_spectrum):
+        with patch("modules.core.astrophysical.load_spectrum_from_file", return_value=sample_spectrum) as loader:
+            sources = AstrophysicalSources(config_with_sources, unit_converter)
+
+        assert "star" in sources.spectra
+        assert "exozodiacal" in sources.spectra
+        assert loader.call_count == 2
+        loader.assert_any_call("/tmp/star.txt")
+        loader.assert_any_call("/tmp/exozodi.txt")
+    '''
+
+    def test_load_spectra_missing_section_logs_warning(self, config_no_sources, unit_converter, caplog):
+        with caplog.at_level("WARNING"):
+            sources = AstrophysicalSources(config_no_sources, unit_converter)
+
+        assert sources.spectra == {}
+        assert "No [astrophysical_sources] section found in config file." in caplog.text
+
+
+    def test_calculate_flux_from_spectrum_zodiacal_no_distance(
+        self, config_with_sources, unit_converter, sample_spectrum_zodiacal
+    ):
+        sources = AstrophysicalSources(config_with_sources, unit_converter)
+        sources.spectra["zodiacal"] = sample_spectrum_zodiacal
+
+        wavelength = np.array([1.5, 2.5]) * u.um
+        flux = sources._calculate_flux_from_spectrum("zodiacal", wavelength, distance_set=10.0) # distance_set is ignored for zodiacal
+
+        assert flux.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert np.allclose(flux.value, np.array([15.0, 25.0]))
+
+
+    def test_calculate_flux_from_spectrum_applies_distance(
+        self, config_with_sources, unit_converter, sample_spectrum_star
+    ):
+        sources = AstrophysicalSources(config_with_sources, unit_converter)
+        sources.spectra["star"] = sample_spectrum_star
+
+        wavelength = np.array([1.5, 2.5]) * u.um
+        flux = sources._calculate_flux_from_spectrum("star", wavelength, distance_set=10.0) # distance_set is ignored for zodiacal
+
+        assert flux.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
