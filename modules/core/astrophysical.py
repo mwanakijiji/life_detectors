@@ -231,7 +231,8 @@ class AstrophysicalSources:
 
         incident_dict['astro_flux_ph_sec_m2_um'] = flux_incident
 
-        if plot:
+        
+        if plot: # pragma: no cover
             plt.clf()
             plt.figure(figsize=(8, 8)) 
             plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
