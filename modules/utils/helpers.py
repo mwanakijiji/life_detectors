@@ -204,22 +204,6 @@ def get_sweep_range(obs: dict, prefix: str) -> list[float]:
     ipdb.set_trace()
     return np.arange(start, stop + step, step).tolist()
 
-def format_number(value: float, precision: int = 2) -> str:
-    """
-    Format a number with appropriate precision and scientific notation.
-    
-    Args:
-        value: Number to format
-        precision: Number of decimal places
-        
-    Returns:
-        Formatted string
-    """
-    if abs(value) < 1e-3 or abs(value) > 1e6:
-        return f"{value:.{precision}e}"
-    else:
-        return f"{value:.{precision}f}"
-
 def validate_file_path(filepath: Union[str, Path]) -> bool:
     """
     Validate that a file path exists and is readable.
@@ -268,28 +252,23 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
     luminosity_photons_star = luminosity_energy_star * u.ph / (const.h * const.c / wavelength_um)
     luminosity_photons_star = luminosity_photons_star.to(u.ph / (u.micron * u.s)) # consistent units
 
-    if plot:
+    if plot: # pragma: no cover
         plt.clf()
         fig, ax1 = plt.subplots()
-        
-        # Primary y-axis for luminosity_photons_star
         color1 = 'tab:blue'
         ax1.set_xlabel(fr"$\lambda$ ({wavelength_um.unit})")
         ax1.set_ylabel(fr"$L_{{\lambda}}$ ({luminosity_photons_star.unit})", color=color1)
-        line1 = ax1.plot(wavelength_um, luminosity_photons_star, color=color1)
+        line1 = ax1.plot(wavelength_um, luminosity_photons_star, color=color1) # Primary y-axis for luminosity_photons_star
         ax1.set_xscale('log')
         ax1.set_yscale('log')
         ax1.tick_params(axis='y', labelcolor=color1)
-        
-        # Secondary y-axis for flux_star
         ax2 = ax1.twinx()
         color2 = 'tab:red'
         ax2.set_ylabel(fr"$F(\lambda)$ ({flux_star.unit})", color=color2)
-        line2 = ax2.plot(wavelength_um, flux_star, color=color2)
+        line2 = ax2.plot(wavelength_um, flux_star, color=color2) # Secondary y-axis for flux_star
         ax2.set_xscale('log')
         ax2.set_yscale('log')
         ax2.tick_params(axis='y', labelcolor=color2)
-        
         plt.title("Star spectrum (no distance correction)")
         plt.tight_layout()
         file_name_plot = "star_spectrum.png"
@@ -388,7 +367,8 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
     luminosity_photons_planet = luminosity_energy_planet * u.ph / (const.h * const.c / wavelength_um)
     luminosity_photons_planet = luminosity_photons_planet.to(u.ph / u.micron / u.s) # consistent units
 
-    if plot:
+
+    if plot: # pragma: no cover
         plt.clf()
         fig, ax1 = plt.subplots()
         
@@ -521,7 +501,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     I_lambda_los_array_photons = I_lambda_los_array_photons.to(u.ph / (u.second * u.um * u.m**2 ))
     I_lambda_los_array_energy = I_lambda_los_array_energy.to(u.W / (u.um * u.m**2 ))
 
-    if plot:
+    if plot: # pragma: no cover
         plt.clf()
         # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each for a different wavelength
         fig, axes = plt.subplots(3, 1, figsize=(9, 15))
@@ -670,7 +650,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # (W / (micron sr m2)) comes from integrand
         # AU^2 units come from rdr in units of AU
         # final units here should be W / (micron m2)
-        I_lambda = 2 * np.pi * np.trapz(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU # u.au comes from dr
+        I_lambda = 2 * np.pi * np.trapezoid(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU # u.au comes from dr
         I_lambda = I_lambda.to(u.W / u.um)
 
         return I_lambda
@@ -706,7 +686,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
     luminosity_photons_exozodi_disk = luminosity_energy_disk_lambda * u.ph / (const.h * const.c / wavelength_um)
     luminosity_photons_exozodi_disk = luminosity_photons_exozodi_disk.to(u.ph / (u.micron * u.s))
 
-    if plot:
+    if plot: # pragma: no cover
         plt.clf()
         fig, ax1 = plt.subplots()
         
@@ -828,8 +808,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         df.to_csv(filepath, mode='a', index=False)
         
         logger.info(f"Created sample data: {filepath}")
-
-        '''
+        r'''
         if plot:
             # individual plot
             plt.plot(data['wavelength_um'], data['luminosity_photons'])
