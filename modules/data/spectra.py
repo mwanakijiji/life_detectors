@@ -14,7 +14,7 @@ import warnings
 import logging
 import ipdb
 from scipy.interpolate import interp1d
-
+from scipy import constants
 
 
 class SpectralData:
@@ -49,16 +49,16 @@ class SpectralData:
         if self.wavelength.shape != self.flux.shape:
             raise ValueError("Wavelength and flux arrays must have the same shape")
         
-        # Sort by wavelength if not already sorted
+        # Sort by wavelength if not already sorted (redundant with a check upstream, but just in case)
         if not np.all(np.diff(self.wavelength) >= 0):
             sort_idx = np.argsort(self.wavelength)
             self.wavelength = self.wavelength[sort_idx]
             self.flux = self.flux[sort_idx]
 
-        object.__setattr__(self, 'flux', np.asarray(flux))
-        object.__setattr__(self, 'wavelength', np.asarray(wavelength))
-        object.__setattr__(self, 'flux_unit', str(flux_unit))
-        object.__setattr__(self, 'source_name', str(source_name))
+        object.__setattr__(self, 'flux', np.asarray(self.flux))
+        object.__setattr__(self, 'wavelength', np.asarray(self.wavelength))
+        object.__setattr__(self, 'flux_unit', str(self.flux_unit))
+        object.__setattr__(self, 'source_name', str(self.source_name))
         object.__setattr__(self, 'metadata', self.metadata)
 
 
@@ -115,7 +115,7 @@ class SpectralData:
         wavelength_subset = self.wavelength[mask]
         flux_subset = self.flux[mask]
         
-        return np.trapz(flux_subset, wavelength_subset)
+        return np.trapezoid(flux_subset, wavelength_subset)
     
     def get_flux_at_wavelength(self, wavelength: float) -> float:
         """
@@ -127,7 +127,6 @@ class SpectralData:
         Returns:
             Flux value at the specified wavelength
         """
-        from scipy.interpolate import interp1d
         
         interp_func = interp1d(
             self.wavelength, 
@@ -185,6 +184,10 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
             df = pd.read_csv(filepath, sep=',', header=2)
             wavelength = df['wavel'].values
             flux = df['luminosity_photons'].values
+            # sort by wavelength if not already sorted
+            sort_idx = np.argsort(wavelength)
+            wavelength = wavelength[sort_idx]
+            flux = flux[sort_idx]
         except:
             pass  # Use defaults if header parsing fails
         
@@ -216,7 +219,6 @@ def create_blackbody_spectrum(
     Returns:
         SpectralData object with blackbody spectrum
     """
-    from scipy import constants
     
     wavelength_min, wavelength_max = wavelength_range
     wavelength = np.logspace(np.log10(wavelength_min), np.log10(wavelength_max), n_points)

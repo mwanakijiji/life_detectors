@@ -102,8 +102,7 @@ class InstrumentDepTerms:
                 self.prop_dict.update(dict_this)
 
         # overplot all the sources
-        if plot:
-
+        if plot: # pragma: no cover
             # pre-aperture fluxes
             plt.clf()
             plt.figure(figsize=(8, 8))
@@ -158,6 +157,7 @@ class InstrumentDepTerms:
         return
 
 
+    '''
     def e_to_adu(self):
 
         for source_name, source_val in self.prop_dict.items():
@@ -167,6 +167,7 @@ class InstrumentDepTerms:
         logging.info(f'Converted e-s to ADUs...')
 
         return
+    '''
 
 
 class Detector:
@@ -248,7 +249,7 @@ class Detector:
 
         logging.info(f"Total detector footprint is {footprint_sum.sum()} pixels")
 
-        if plot:
+        if plot: # pragma: no cover
             plt.clf()
             plt.title(format_plot_title("Detector spectral footprint (True)", self.config))
             plt.imshow(footprint_sum, origin='lower', cmap='gray')
