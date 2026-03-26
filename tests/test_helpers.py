@@ -8,6 +8,7 @@ import modules.utils.helpers as helpers
 import numpy as np
 from astropy import units as u
 import pandas as pd
+import astropy.constants as const
 
 from modules.utils.helpers import (
     _config_get,
@@ -256,26 +257,51 @@ class TestGenerateZodiacalSpectrum:
         cfg = self._make_config(tau_opt=4e-8)
         wavelength_um = np.array([5.0, 10.0, 20.0]) * u.um
 
-        photons, energy = generate_zodiacal_spectrum(
+        photons_um_s_m2, energy_W_um_m2, energy_MJy_sr = generate_zodiacal_spectrum(
             config=cfg, wavelength_um=wavelength_um, plot=False
         )
 
-        assert photons.shape == wavelength_um.shape
-        assert energy.shape == wavelength_um.shape
-        assert photons.unit.is_equivalent(u.ph / (u.s * u.um * u.m**2))
-        assert energy.unit.is_equivalent(u.W / (u.um * u.m**2))
-        assert np.all(np.isfinite(photons.value))
-        assert np.all(np.isfinite(energy.value))
-        assert np.all(photons.value >= 0)
-        assert np.all(energy.value >= 0)
+        assert photons_um_s_m2.shape == wavelength_um.shape
+        assert energy_W_um_m2.shape == wavelength_um.shape
+        assert photons_um_s_m2.unit.is_equivalent(u.ph / (u.s * u.um * u.m**2))
+        assert energy_W_um_m2.unit.is_equivalent(u.W / (u.um * u.m**2))
+        assert np.all(np.isfinite(photons_um_s_m2.value))
+        assert np.all(np.isfinite(energy_W_um_m2.value))
+        assert np.all(photons_um_s_m2.value >= 0)
+        assert np.all(energy_W_um_m2.value >= 0)
+
+        # be within physical limits (see Dannert+ 2022, Fig. C1)
+        background_05um = energy_MJy_sr[0].to(u.MJy / u.sr).value
+        background_10um = energy_MJy_sr[1].to(u.MJy / u.sr).value
+        background_20um = energy_MJy_sr[2].to(u.MJy / u.sr).value
+        assert 0.3 < background_05um < 0.6
+        assert 10 < background_10um < 16
+        assert 10 < background_20um < 50
+
+        # photons should match energy via E_photon = hc/lambda
+        photons_from_energy = (
+            energy_W_um_m2 * (wavelength_um / (const.h * const.c)) * u.ph
+        ).to(u.ph / (u.s * u.um * u.m**2))
+        assert np.allclose(photons_um_s_m2.value, photons_from_energy.value, rtol=1e-3)
+
+        # third output is pre-FOV MJy/sr, so remove FOV from energy first
+        single_mirror_diameter = float(cfg["telescope"]["single_mirror_diameter"]) * u.m
+        hfov = (wavelength_um.to(u.m) / (2.0 * single_mirror_diameter)) * u.rad
+        threshold_ampl = 1e-2
+        radius_fov_effective = (4.0 / np.pi) * hfov * np.sqrt(-np.log(threshold_ampl))
+        fov_effective = (np.pi * radius_fov_effective**2).to(u.sr)
+        energy_surface = (energy_W_um_m2 / fov_effective).to(u.W / (u.um * u.m**2 * u.sr))
+        energy_mjy_from_energy = ((energy_surface * wavelength_um**2) / const.c).to(u.MJy / u.sr)
+        assert np.allclose(energy_MJy_sr.value, energy_mjy_from_energy.value, rtol=1e-3)
+
 
     def test_generate_zodiacal_spectrum_scales_linearly_with_tau_opt(self):
         wavelength_um = np.array([6.0, 12.0, 18.0]) * u.um
         cfg_lo = self._make_config(tau_opt=4e-8)
         cfg_hi = self._make_config(tau_opt=8e-8)
 
-        ph_lo, en_lo = generate_zodiacal_spectrum(cfg_lo, wavelength_um, plot=False)
-        ph_hi, en_hi = generate_zodiacal_spectrum(cfg_hi, wavelength_um, plot=False)
+        ph_lo, en_lo, en_MJy_sr_lo = generate_zodiacal_spectrum(cfg_lo, wavelength_um, plot=False)
+        ph_hi, en_hi, en_MJy_sr_hi = generate_zodiacal_spectrum(cfg_hi, wavelength_um, plot=False)
 
         # Model is linear in tau_opt, so doubling tau_opt doubles outputs.
         assert np.allclose((ph_hi / ph_lo).value, 2.0)
