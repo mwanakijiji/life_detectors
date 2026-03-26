@@ -270,7 +270,7 @@ def generate_star_spectrum(config: configparser.ConfigParser, wavelength_um: np.
         ax2.tick_params(axis='y', labelcolor=color2)
         plt.title("Star spectrum (no distance correction)")
         plt.tight_layout()
-        file_name_plot = "star_spectrum.png"
+        file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/star_spectrum.png"
         plt.savefig(file_name_plot)
         print(f"Wrote stellar emission plot {file_name_plot}")
 
@@ -394,7 +394,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         
         plt.title("Planet spectrum (no distance correction)")
         plt.tight_layout()
-        file_name_plot = "planet_spectrum.png"
+        file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/planet_spectrum.png"
 
         plt.savefig(file_name_plot)
         print(f"Wrote planet emission plot {file_name_plot}")
@@ -533,7 +533,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
             cbar = plt.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)
             cbar.set_label(str(I_nu_2d_energy[str(wl)].unit))
         plt.tight_layout()
-        file_name = 'zodiacal_emission_2d.png'
+        file_name = config['dirs']['save_s2n_data_unique_dir'] + "/zodiacal_emission_2d.png"
         plt.savefig(file_name)
         print(f"Wrote zodiacal emission 2D plot {file_name}")
 
@@ -562,7 +562,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         plt.title(f"Zodiacal spectrum (no distance correction)\n"
                   fr"$\lambda_{{\rm rel}}$={lambda_rel_lon_los}, $\beta$={beta_lat_los}")
         plt.tight_layout()
-        file_name_plot = "zodiacal_spectrum_los.png"
+        file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/zodiacal_spectrum_los.png"
         plt.savefig(file_name_plot)
         print(f"Wrote zodiacal emission spectrum plot {file_name_plot}")
 
@@ -706,7 +706,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         ax2.tick_params(axis='y', labelcolor=color2)
         
         plt.title("Exozodiacal disk spectrum (no distance correction)")
-        file_name_plot = "exozodiacal_spectrum.png"
+        file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/exozodiacal_spectrum.png"
         plt.savefig(file_name_plot)
         print(f"Wrote exozodiacal emission plot {file_name_plot}")
 
@@ -754,8 +754,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_energy": luminosity_energy_star,
             "luminosity_energy_units": str(luminosity_energy_star.unit),
             "luminosity_photons": luminosity_photons_star,
-            "luminosity_photons_units": str(luminosity_photons_star.unit),
-            "plot_name": "star_BB_spectrum.png"
+            "luminosity_photons_units": str(luminosity_photons_star.unit)
         },
         "exoplanet_bb_spectrum.txt": {
             "description": "Blackbody exoplanet spectrum",
@@ -763,8 +762,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_energy": luminosity_energy_planet,
             "luminosity_energy_units": str(luminosity_energy_planet.unit),
             "luminosity_photons": luminosity_photons_planet,
-            "luminosity_photons_units": str(luminosity_photons_planet.unit),
-            "plot_name": "exoplanet_bb_spectrum.png"
+            "luminosity_photons_units": str(luminosity_photons_planet.unit)
         },
             "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
@@ -772,8 +770,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_energy": luminosity_energy_exozodi,
             "luminosity_energy_units": str(luminosity_energy_exozodi.unit),
             "luminosity_photons": luminosity_photons_exozodi,
-            "luminosity_photons_units": str(luminosity_photons_exozodi.unit),
-            "plot_name": "exozodiacal_spectrum.png"
+            "luminosity_photons_units": str(luminosity_photons_exozodi.unit)
         },
         "zodiacal_spectrum.txt": {
             "description": "Zodiacal dust spectrum",
@@ -781,8 +778,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_energy": luminosity_energy_zodiacal,
             "luminosity_energy_units": str(luminosity_energy_zodiacal.unit),
             "luminosity_photons": luminosity_photons_zodiacal,
-            "luminosity_photons_units": str(luminosity_photons_zodiacal.unit),
-            "plot_name": "zodiacal_spectrum.png"
+            "luminosity_photons_units": str(luminosity_photons_zodiacal.unit)
         }
     }
 

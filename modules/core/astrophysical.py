@@ -53,7 +53,7 @@ class AstrophysicalSources:
         """Load spectral data for all astrophysical sources."""
         #sources_config = self.config.get("astrophysical_sources", {})
         
-        sources_section = "astrophysical_sources"
+        sources_section = "astrophysical_sources_library"
         if self.config.has_section(sources_section):
             for source_name in self.config.options(sources_section):
 
@@ -66,7 +66,7 @@ class AstrophysicalSources:
                 except Exception as e:
                     logger.warning(f"Did not load self-generated spectrum for {source_name}: {e}; either missing, or will need to read in from other file")
         else:
-            logger.warning("No [astrophysical_sources] section found in config file.")
+            logger.warning("No [astrophysical_sources_library] section found in config file.")
 
     def _calculate_flux_from_spectrum(self, source_name: str, wavelength: u.Quantity, distance_set: float = None, null: bool = False) -> u.Quantity:
         """
@@ -146,7 +146,7 @@ class AstrophysicalSources:
                 logger.info(f"Distance {float(self.config['target']['distance'])} pc is not 10 pc; rescaling planet spectrum with true distance.")
 
             # this is a model spectrum from a file with different units, formatting
-            file_name_exoplanet_model_10pc = self.config['astrophysical_sources']['exoplanet_model_10pc']
+            file_name_exoplanet_model_10pc = self.config['astrophysical_sources_library']['exoplanet_model_10pc']
             df = pd.read_csv(file_name_exoplanet_model_10pc, delim_whitespace=True, names=['wavelength', 'flux', 'err_flux'])
             logger.info(f"Loaded model exoplanetspectrum for {source_name}: {file_name_exoplanet_model_10pc}")
 
@@ -272,7 +272,7 @@ class AstrophysicalSources:
         """
         total_flux = np.zeros_like(wavelength)
         
-        sources_config = self.config.get("astrophysical_sources", {})
+        sources_config = self.config.get("astrophysical_sources_library", {})
         
         for source_name in sources_config.keys():
             if sources_config[source_name].get("enabled", True):
@@ -322,7 +322,7 @@ class AstrophysicalSources:
         """
         contributions = {}
         
-        sources_config = self.config.get("astrophysical_sources", {})
+        sources_config = self.config.get("astrophysical_sources_library", {})
         
         for source_name in sources_config.keys():
             if sources_config[source_name].get("enabled", True):

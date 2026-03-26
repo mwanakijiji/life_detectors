@@ -36,7 +36,7 @@ class TestNoiseCalculator:
                 "t_int_obs_total": 3600,
                 "t_int_frame": 10,
             },
-            "astrophysical_sources": {
+            "astrophysical_sources_library": {
                 "star": {
                     "spectrum_file": "test_star.txt",
                     "enabled": True,

@@ -6,6 +6,7 @@ import configparser
 import sys
 import types
 from unittest.mock import patch
+from modules.utils.helpers import generate_star_spectrum
 
 import numpy as np
 import pandas as pd
@@ -34,10 +35,10 @@ class TestAstrophysicalSources:
         config = configparser.ConfigParser()
         config.add_section("nulling")
         config.set("nulling", "nulling_factor", "0.00001")
-        config.add_section("astrophysical_sources")
-        config.set("astrophysical_sources", "star", "/tmp/star.txt")
-        config.set("astrophysical_sources", "exozodiacal", "/tmp/exozodi.txt")
-        config.set("astrophysical_sources", "zodiacal", "/tmp/zodi.txt")
+        config.add_section("astrophysical_sources_library")
+        config.set("astrophysical_sources_library", "star", "/tmp/star.txt")
+        config.set("astrophysical_sources_library", "exozodiacal", "/tmp/exozodi.txt")
+        config.set("astrophysical_sources_library", "zodiacal", "/tmp/zodi.txt")
         return config
 
     @pytest.fixture
@@ -74,6 +75,22 @@ class TestAstrophysicalSources:
         )
 
     @pytest.fixture
+    def sample_spectrum_star_bb_spectrum(self):
+        cfg = configparser.ConfigParser()
+        cfg["target"] = {"rad_star": "1.0", "T_star": "5778"}
+        cfg["dirs"] = {"save_s2n_data_unique_dir": "/tmp"}  # only needed if plot=True
+        wavelength_um = np.logspace(0, np.log10(20), 100) * u.um
+        luminosity_photons_star, _ = generate_star_spectrum(cfg, wavelength_um, plot=False)
+        return SpectralData(
+            wavelength=wavelength_um.value,
+            flux=luminosity_photons_star.value,
+            wavelength_unit="um",
+            flux_unit=str(luminosity_photons_star.unit),  # "ph / (s um)"
+            source_name="star_bb_test",
+            metadata={"generator": "generate_star_spectrum"},
+        )
+
+    @pytest.fixture
     def sample_spectrum_bad_units(self):
         wavelength = np.array([1.0, 2.0, 3.0])
         flux = np.array([10.0, 20.0, 30.0])
@@ -102,7 +119,7 @@ class TestAstrophysicalSources:
             sources = AstrophysicalSources(config_no_sources, unit_converter)
 
         assert sources.spectra == {}
-        assert "No [astrophysical_sources] section found in config file." in caplog.text
+        assert "No [astrophysical_sources_library] section found in config file." in caplog.text
 
 
     def test_calculate_flux_from_spectrum_zodiacal_no_distance(
@@ -118,9 +135,10 @@ class TestAstrophysicalSources:
         assert np.allclose(flux.value, np.array([15.0, 25.0]))
 
 
-    def test_calculate_flux_from_spectrum_applies_distance(
+    def test_calculate_flux_from_ad_hoc_spectrum_applies_distance(
         self, config_with_sources, unit_converter, sample_spectrum_star
     ):
+        # checks if the distance correction is applied correctly (emitted spectrum is completely ad hoc)
         
         
         sources = AstrophysicalSources(config_with_sources, unit_converter)
@@ -144,6 +162,82 @@ class TestAstrophysicalSources:
             assert flux_incident_predicted.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
             assert flux_incident_expected.unit.is_equivalent(flux_incident_predicted.unit)
             assert np.allclose(flux_incident_predicted.value, flux_incident_expected.value)
+
+
+    def test_calculate_flux_from_bb_spectrum_applies_distance(
+        self, config_with_sources, unit_converter, sample_spectrum_star
+    ):
+        # checks if the distance correction is applied correctly (emitted spectrum is BB)
+
+        # config with star like Sun
+        cfg_ersatz = configparser.ConfigParser()
+        cfg_ersatz["target"] = {"rad_star": "1.0", "T_star": "5778"}
+        cfg_ersatz["dirs"] = {"save_s2n_data_unique_dir": "/tmp"}  # only needed if plot=True
+        sources = AstrophysicalSources(cfg_ersatz, unit_converter)
+
+        wavelength_grid = np.array([1.0, 5.0]) * u.um
+        lum_phot_star, _ = generate_star_spectrum(cfg_ersatz, wavelength_grid, plot=False)
+        sources.spectra["star"] = SpectralData(
+            wavelength=wavelength_grid.value,
+            flux=lum_phot_star.value,
+            wavelength_unit="um",
+            flux_unit=str(lum_phot_star.unit),  # ph / (s um)
+            source_name="star_bb_test",
+            metadata={},
+        )
+
+        
+        dist_1 = 5.7 # pc
+        dist_2 = 21.6 # pc
+        incident_predicted_0 = sources._calculate_flux_from_spectrum("star", wavelength_grid, distance_set=dist_1)
+        incident_predicted_1 = sources._calculate_flux_from_spectrum("star", wavelength_grid, distance_set=dist_2)
+
+        # expected vals from Google Gemini at 10 pc
+        incident_expected_dist_10 = np.array([8.66e8, 2.37e7]) # units (u.ph / (u.um * u.m**2 * u.s))
+        incident_expected_dist_5pt7 = incident_expected_dist_10 * (10.0/ dist_1) ** 2 # rescale for distance
+        incident_expected_dist_21pt6 = incident_expected_dist_10 * (10.0/ dist_2) ** 2 # rescale for distance
+
+        assert incident_predicted_0.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert incident_predicted_1.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert np.allclose(incident_predicted_0.value, incident_expected_dist_5pt7, rtol=1e-2) # 1% tolerance
+        assert np.allclose(incident_predicted_1.value, incident_expected_dist_21pt6, rtol=1e-2) # 1% tolerance
+
+
+
+    def test_calculate_flux_from_spectrum_star_bb_spectrum_at_source(
+        self, unit_converter, sample_spectrum_star_bb_spectrum
+    ):
+        # check if the emitted stellar flux makes physical sense (note this is not the incident flux at Earth)
+
+        # config with star like Sun
+        cfg_ersatz = configparser.ConfigParser()
+        cfg_ersatz["target"] = {"rad_star": "1.0", "T_star": "5778"}
+        cfg_ersatz["dirs"] = {"save_s2n_data_unique_dir": "/tmp"}  # only needed if plot=True
+
+        #sources = AstrophysicalSources(cfg_ersatz, unit_converter)
+        #sources.spectra["star_bb_test"] = sample_spectrum_star_bb_spectrum
+        wavelength = np.array([1.00, 5.00]) * u.um
+
+        lum_phot_star, lum_energy_star = generate_star_spectrum(cfg_ersatz, wavelength, plot=False)
+
+        assert lum_phot_star.unit.is_equivalent(u.ph / (u.um * u.s))
+        assert lum_energy_star.unit.is_equivalent(u.W / u.um)
+
+        l_phot_mine = np.array([float(f"{x:.2e}") for x in lum_phot_star.value])
+        l_energy_mine = np.array([float(f"{x:.2e}") for x in lum_energy_star.value])
+        l_phot_expected = np.array([1.04e45, 2.84e43]) # expected vals from Google Gemini
+        l_energy_expected = np.array([2.06e26, 1.13e24])
+
+        assert np.allclose(np.round(l_phot_mine, 2), l_phot_expected, rtol=1e-2) # 1% tolerance
+        assert np.allclose(np.round(l_energy_mine, 2), l_energy_expected, rtol=1e-2)
+
+        #assert np.allclose(lum_phot_star.value, np.array([6.59e14, 1.31e-4]))
+        #assert np.allclose(lum_energy_star.value, np.array([2.31e11, 9.19e-9]))
+
+        #flux = sources._calculate_flux_from_spectrum("star_bb_test", wavelength, distance_set=10.0)
+        #assert flux.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        #assert np.allclose(flux.value, np.array([15.0, 25.0]))
+
 
     def test_calculate_flux_from_spectrum_logs_warning_for_inconsistent_units(
         self, config_with_sources, unit_converter, sample_spectrum_bad_units, caplog
@@ -173,10 +267,10 @@ class TestAstrophysicalSources:
         config.set("wavelength_range", "n_points", "3")
         config.add_section("target")
         config.set("target", "distance", "10.0")
-        config.add_section("astrophysical_sources")
-        config.set("astrophysical_sources", "star", "/tmp/star.txt")
-        config.set("astrophysical_sources", "exoplanet_bb", "/tmp/exoplanet_bb.txt")
-        config.set("astrophysical_sources", "exozodiacal", "/tmp/exozodiacal.txt")
+        config.add_section("astrophysical_sources_library")
+        config.set("astrophysical_sources_library", "star", "/tmp/star.txt")
+        config.set("astrophysical_sources_library", "exoplanet_bb", "/tmp/exoplanet_bb.txt")
+        config.set("astrophysical_sources_library", "exozodiacal", "/tmp/exozodiacal.txt")
         return config
 
     @pytest.mark.parametrize("source_name", ["star", "exoplanet_bb", "exozodiacal"])
@@ -219,8 +313,8 @@ class TestAstrophysicalSources:
         config.set("wavelength_range", "n_points", "3")
         config.add_section("target")
         config.set("target", "distance", "20.0")
-        config.add_section("astrophysical_sources")
-        config.set("astrophysical_sources", "exoplanet_model_10pc", "/tmp/model_10pc.txt")
+        config.add_section("astrophysical_sources_library")
+        config.set("astrophysical_sources_library", "exoplanet_model_10pc", "/tmp/model_10pc.txt")
 
         df_model = pd.DataFrame(
             {

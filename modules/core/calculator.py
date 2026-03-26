@@ -102,7 +102,11 @@ class NoiseCalculator:
 
         # reinterpolate the fluxes onto the binned wavelength grid
         # either a BB planet or a model spectrum
-        if ("exoplanet_bb" in self.sources_to_include) and ("exoplanet_model_10pc" in self.sources_to_include):
+        if (
+            ("exoplanet_bb" in self.sources_to_include and "exoplanet_model_10pc" in self.sources_to_include) or
+            ("exoplanet_bb" in self.sources_to_include and "exoplanet_psg" in self.sources_to_include) or
+            ("exoplanet_model_10pc" in self.sources_to_include and "exoplanet_psg" in self.sources_to_include)
+        ):
             logging.error('!! ----- Two different planet models being used ----- !!')
             exit()
         elif "exoplanet_bb" in self.sources_to_include:
