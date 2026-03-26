@@ -201,7 +201,6 @@ def get_sweep_range(obs: dict, prefix: str) -> list[float]:
     start = float(obs[f'{prefix}_start'])
     stop = float(obs[f'{prefix}_stop'])
     step = float(obs[f'{prefix}_step'])
-    ipdb.set_trace()
     return np.arange(start, stop + step, step).tolist()
 
 def validate_file_path(filepath: Union[str, Path]) -> bool:
@@ -748,7 +747,6 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     luminosity_photons_zodiacal, luminosity_energy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, plot=plot) # resolved
 
     # Sample data for different sources
-    ## ## TODO: add zodiacal stuff
     sample_data = {
         "star_spectrum.txt": {
             "description": "Blackbody spectrum for star",

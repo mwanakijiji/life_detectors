@@ -139,8 +139,9 @@ class NoiseCalculator:
         
         # Convert all inputs to numpy arrays to enable broadcasting
         # This ensures consistent shapes for vectorized operations
-        n_int = np.asarray(int(self.config['observation']['n_int']))
-        t_int = np.asarray(float(self.config['observation']['integration_time'])) * u.second
+        n_int = int(np.floor( float(self.config["observation"]["t_int_obs_total"]) / float(self.config["observation"]["t_int_frame"]) )) 
+        logging.info(f'Number of frames: {n_int:d}')
+        t_int = np.asarray(float(self.config['observation']['t_int_obs_total'])) * u.second
         n_pix_array = np.asarray(n_pix_array) * u.pix
         del_Np_prime_del_t = np.asarray(del_Np_prime_del_t) * u.electron / u.second
         del_Ns_prime_del_t = np.asarray(del_Ns_prime_del_t) * u.electron / u.second
@@ -340,8 +341,9 @@ class NoiseCalculator:
         footprint_spec_cube = detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
 
         # integration time for 1 frame
-        #t_int = float(self.config["observation"]["integration_time"]) * u.second
-        n_int = float(self.config["observation"]["n_int"])
+        #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
+        n_int = int(np.floor( float(self.config["observation"]["t_int_obs_total"]) / float(self.config["observation"]["t_int_frame"]) )) # number of frames
+        logging.info(f'Number of frames: {n_int:d}')
 
         # the number of pixels for each wavelength bin
         # (in practice the number of pixels is the same for all wavelength bins, but this can be updated later if the dispersion is not constant)
@@ -439,7 +441,6 @@ class NoiseCalculator:
         hdu.writeto(file_name_fits_unique, overwrite=True)
         logger.info(f"Wrote S/N, wavelength, and dark current data to unique file {file_name_fits_unique}")
 
-
         # pragma: no cover
         # Prepare two left-aligned columns for figure metadata
         instrumental_lines = [
@@ -454,7 +455,8 @@ class NoiseCalculator:
             f"read noise = {read_noise_display} e- rms",
             f"gain = {float(self.config['detector']['gain']):.2f} e-/ADU",
             f"pix per wavel bin = {float(self.config['detector']['pix_per_wavel_bin']):.2f}",
-            f"integration time per readout = {float(self.config['observation']['integration_time']):.2f} sec",
+            f"integration time, total for obs. = {float(self.config['observation']['t_int_obs_total']):.2f} sec",
+            f"integration time per readout = {float(self.config['observation']['t_int_frame']):.2f} sec",
             f"number of readouts = {int(self.config['observation']['n_int'])}"
         ]
         astrophysical_lines = [

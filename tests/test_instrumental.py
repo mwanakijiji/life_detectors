@@ -61,7 +61,7 @@ class TestInstrumentDepTerms:
                 "dark_current": "0.0, 0.2, 0.1",  # start, stop, step -> [0.0, 0.1]
                 "gain": "4.5",
             },
-            "observation": {"integration_time": "100"},
+            "observation": {"t_int_obs_total": "100", "t_int_frame": "10"},
         }
         noise_calc = InstrumentDepTerms(
             config,
@@ -96,7 +96,7 @@ class TestInstrumentDepTerms:
                 "dark_current": "0.05",
                 "gain": "4.5",
             },
-            "observation": {"integration_time": "200"},
+            "observation": {"t_int_obs_total": "200", "t_int_frame": "20"},
         }
         noise_calc = InstrumentDepTerms(
             config,

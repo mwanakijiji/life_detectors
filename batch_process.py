@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import argparse
 import ipdb
+import pandas as pd
 
 
 
@@ -26,6 +27,7 @@ from modules.core import calculator, astrophysical, instrumental
 from modules.config import loader, validator
 from modules.utils.helpers import create_sample_data, ensure_plot_title_context
 from modules.data.units import UnitConverter
+from modules.utils import helpers
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
@@ -376,6 +378,178 @@ def batch_qe_nint_process(base_config_path: str,
             success_all = success_all and bool(success) # was this calculation successful too?
     
     return success_all
+
+'''
+def example_custom_sources():
+    """Example 4: Batch processing with different source combinations."""
+    print("\nExample 4: Different source combinations")
+    print("-" * 40)
+    
+    config_path = "modules/config/demo_config.ini"
+    n_int_values = [3000, 6000]
+    
+    # Different source combinations
+    source_combinations = [
+        (["star", "exoplanet_model_10pc"], "planet_only"),
+        (["star", "exozodiacal", "zodiacal"], "background_only"),
+        (["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"], "all_sources")
+    ]
+    
+    all_results = []
+    
+    for sources, name_suffix in source_combinations:
+        print(f"\nProcessing sources: {sources}")
+        output_dir = f"source_combinations/{name_suffix}"
+        
+        results = batch_qe_nint_process(
+            config_path=config_path,
+            n_int_values=n_int_values,
+            output_dir=output_dir,
+            sources_to_include=sources,
+            base_filename=f"s2n_{name_suffix}",
+            overwrite=True,
+            plot=True
+        )
+        
+        all_results.extend(results)
+    
+    return all_results
+'''
+'''
+def example_simple_batch():
+    """Example 1: Simple batch processing with a few n_int values."""
+    print("Example 1: Simple batch processing")
+    print("-" * 40)
+    
+    config_path = "modules/config/demo_config.ini"
+    n_int_values = [1000, 3000, 6000, 9000]
+    output_dir = "batch_output"
+    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+    
+    results = batch_qe_nint_process(
+        config_path=config_path,
+        n_int_values=n_int_values,
+        output_dir=output_dir,
+        sources_to_include=sources,
+        base_filename="s2n_simple",
+        overwrite=True,
+        plot=True
+    )
+    
+    print(f"Processed {len(results)} calculations")
+    return results
+'''
+'''
+def example_single_calculation():
+    """Example 2: Run a single calculation with custom parameters."""
+    print("\nExample 2: Single calculation")
+    print("-" * 40)
+    
+    config_path = "modules/config/demo_config.ini"
+    n_int = 5000
+    output_path = "single_output/s2n_n5000.fits"
+    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
+    
+    # Create output directory
+    os.makedirs("single_output", exist_ok=True)
+    
+    success = run_single_calculation(
+        config_path=config_path,
+        sources_to_include=sources,
+        n_int=n_int,
+        output_path=output_path,
+        overwrite=True,
+        plot=True
+    )
+    
+    if success:
+        print(f"✓ Successfully created: {output_path}")
+    else:
+        print(f"✗ Failed to create: {output_path}")
+    
+    return success
+'''
+''' # command line option
+    print("\nTo run the batch processor from command line:")
+    print("python batch_qe_nint_process.py --config modules/config/demo_config.ini \\")
+    print("                       --n-int 1000 3000 6000 9000 \\")
+    print("                       --output-dir my_batch_output \\")
+    print("                       --sources star exoplanet_model_10pc exozodiacal zodiacal")
+'''
+
+def parameter_sweep(
+    config_single_obs_path: str,
+    config_sweep_path: str,
+    config_planet_population_path: str,
+    planet_population: bool = False,
+) -> None:
+    """
+    Run a QE/n_int parameter sweep for one system or a planet population.
+    """
+    print("\nExample 3: Parameter sweep")
+    print("-" * 40)
+
+    # load in all config files once, and don't load them again
+    config_single_obs = loader.load_config(config_file=config_single_obs_path)
+    config_sweep = loader.load_config(config_file=config_sweep_path)
+    config_planet_population = loader.load_config(config_file=config_planet_population_path)
+    lum_types = None
+
+    # if applying a parameter sweep to every planet in a population
+    if planet_population:
+        logging.info("Applying parameter sweep to an entire planet population")
+
+        file_name_planet_population = config_planet_population["file_name_planet_population"]["file_name"]
+        lum_types = config_planet_population["lum_type"]  # map luminosities with stellar types
+        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep=r"\s+")
+        df_planet_population = helpers.merge_psg_spectra_to_planet_population(
+            df_planet_population, config_planet_population
+        )
+
+        cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
+        fyi_plot_path = config_planet_population["file_name_planet_population"]["fyi_plot_name"]
+        helpers.plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
+        logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
+
+    else:
+        logging.info("Applying parameter sweep to a single planetary system")
+        df_planet_population = [None]  # wrap in list for length 1
+
+    # parameter sweep in n_int and QE
+    obs = config_sweep["observation"]
+    n_int_values = helpers.get_sweep_range(obs, "n_int")
+    qe_values = helpers.get_sweep_range(obs, "qe")
+
+    # get the astrophysical sources to include from the config file
+    sources_to_include = [
+        source
+        for source, include in config_single_obs["astrophysical_sources_to_use"].items()
+        if include in [True, "True", "true", 1, "1"]
+    ]
+
+    # loop over all the planetary systems
+    for sys_num in range(len(df_planet_population)):
+        if isinstance(df_planet_population, pd.DataFrame):
+            system_params = df_planet_population.iloc[sys_num]
+            logging.info(f"Processing system {sys_num} with parameters: {system_params}")
+            base_filename = f"s2n_sweep_planet_index_{sys_num:07d}"
+        else:
+            system_params = None
+            logging.info("No planet population; doing parameter sweep for a single system")
+            base_filename = "s2n_sweep"
+
+        success_all = batch_qe_nint_process(
+            base_config_path=config_single_obs_path,
+            n_int_values=n_int_values,
+            qe_values=qe_values,
+            sources_to_include=sources_to_include,
+            base_filename=base_filename,
+            overwrite=True,
+            plot=True,
+            system_params=system_params,
+            lum_types=lum_types,
+        )
+        logging.info(f"Parameter sweep completed: all calculations successful = {success_all}")
 
 
 def main():

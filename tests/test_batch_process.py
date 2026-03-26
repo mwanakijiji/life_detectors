@@ -27,7 +27,8 @@ class TestModifyConfigFileSweep:
         config_path = tmp_path / "test_config.ini"
         config = configparser.ConfigParser()
         config.add_section("observation")
-        config.set("observation", "integration_time", "100")
+        config.set("observation", "t_int_obs_total", "100")
+        config.set("observation", "t_int_frame", "10")
         config.set("observation", "lambda_rel_lon_los", "135")
         config.set("observation", "beta_lat_los", "45")
         config.set("observation", "n_int", "1000")
@@ -97,7 +98,8 @@ class TestModifyConfigFilePlSystemParams:
         config.set("target", "Nuniverse", "0")
         config.set("target", "Nstar", "0")
         config.add_section("observation")
-        config.set("observation", "integration_time", "100")
+        config.set("observation", "t_int_obs_total", "100")
+        config.set("observation", "t_int_frame", "10")
         config.set("observation", "lambda_rel_lon_los", "135")
         config.set("observation", "beta_lat_los", "45")
         with open(config_path, "w") as f:

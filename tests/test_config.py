@@ -49,7 +49,8 @@ class TestLoadConfig:
         config.add_section("detector")
         config.set("detector", "quantum_efficiency", "0.8")
         config.add_section("observation")
-        config.set("observation", "integration_time", "100")
+        config.set("observation", "t_int_obs_total", "100")
+        config.set("observation", "t_int_frame", "10")
         config.set("observation", "lambda_rel_lon_los", "135")
         config.set("observation", "beta_lat_los", "45")
         config.add_section("wavelength_range")
@@ -189,8 +190,8 @@ class TestConfigValidator:
         """ConfigValidator has expected required_observation_fields."""
         validator = ConfigValidator()
         assert validator.required_observation_fields == [
-            "integration_time",
-            "n_int",
+            "t_int_obs_total",
+            "t_int_frame",
         ]
 
     def test_init_sets_required_wavelength_fields(self):
@@ -216,7 +217,7 @@ class TestConfigValidator:
                 "quantum_efficiency": 0.8,
                 "spec_res": 20,
             },
-            "observation": {"integration_time": 100, "n_int": 3000},
+            "observation": {"t_int_obs_total": 100, "t_int_frame": 10},
             "wavelength_range": {"min": 1.0, "max": 20.0, "n_points": 30},
         }
 

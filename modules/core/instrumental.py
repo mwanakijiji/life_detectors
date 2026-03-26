@@ -78,7 +78,7 @@ class InstrumentDepTerms:
 
         # total dark current in e-, based on integration time
         # e/pix/sec -> e/pix
-        integration_time = float(self.config["observation"]["integration_time"]) * u.second  # seconds
+        integration_time = float(self.config["observation"]["t_int_obs_total"]) * u.second  # seconds
         self.sources_instrum['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
         self.sources_instrum['dark_current_e_pix-1'] = dark_current_rate_e_pix_sec * integration_time
 

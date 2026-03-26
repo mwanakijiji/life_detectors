@@ -61,7 +61,6 @@ class AstrophysicalSources:
                     # Get the source name from the section
                     spectrum_file_name = self.config[sources_section][source_name]
                     self.spectra[source_name] = load_spectrum_from_file(spectrum_file_name)
-                    #ipdb.set_trace()
                     logger.info(f"Loaded spectrum for {source_name}: {spectrum_file_name}")
 
                 except Exception as e:
@@ -89,7 +88,6 @@ class AstrophysicalSources:
         # (note this is not integrating over wavelength for each interpolated data point)
         interpolated_spectrum = spectrum.interpolate(wavelength)
 
-        ipdb.set_trace()
         # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
         if source_name != "zodiacal":
             distance = distance_set * u.pc  # parsecs
@@ -109,7 +107,6 @@ class AstrophysicalSources:
             logger.info(f'Flux units consistent for source: {source_name}')
         else:
             logger.warning(f'Flux units not consistent for source: {source_name}')
-            #ipdb.set_trace()
 
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     

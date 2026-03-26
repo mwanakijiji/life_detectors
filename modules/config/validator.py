@@ -51,8 +51,8 @@ class ConfigValidator:
         ]
 
         self.required_observation_fields = [
-            "integration_time",
-            "n_int"
+            "t_int_obs_total",
+            "t_int_frame"
         ]
         
         self.required_wavelength_fields = [

@@ -31,7 +31,10 @@ class TestNoiseCalculator:
                 "read_noise": 5.0,
                 "dark_current": 0.1,
                 "gain": 2.0,
-                "integration_time": 3600,
+            },
+            "observation": {
+                "t_int_obs_total": 3600,
+                "t_int_frame": 10,
             },
             "astrophysical_sources": {
                 "star": {
@@ -86,7 +89,7 @@ class TestNoiseCalculator:
     def _build_minimal_s2n_inputs(self):
         """Shared minimal config/sources for s2n_val tests."""
         config = {
-            "observation": {"n_int": "10", "integration_time": "100"},
+            "observation": {"n_int": "10", "t_int_obs_total": "100", "t_int_frame": "10"},
             "nulling": {"nulling_factor": "1e-5"},
             "detector": {"quantum_efficiency": "0.8"},
             "telescope": {"eta_t": "0.05"},
@@ -193,7 +196,8 @@ class TestNoiseCalculator:
         }
         config["observation"] = {
             "n_int": "10",
-            "integration_time": "100",
+            "t_int_obs_total": "100",
+            "t_int_frame": "10",
             "lambda_rel_lon_los": "135",
             "beta_lat_los": "45",
         }
