@@ -472,7 +472,7 @@ class NoiseCalculator:
             f"planet temperature = {float(self.config['target']['pl_temp']):.2f} K",
             f"planet radius = {float(self.config['target']['rad_planet']):.2f} Earth radii",
             f"planet albedo = {float(self.config['target']['A_albedo']):.2f}",
-            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['observation']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['observation']['beta_lat_los']):.2f} deg",
+            fr"galactic $\lambda_{{\rm rel}}$ = {float(self.config['target']['lambda_rel_lon_los']):.2f} deg, $\beta$ = {float(self.config['target']['beta_lat_los']):.2f} deg",
         ]
 
 

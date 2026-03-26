@@ -198,8 +198,6 @@ class TestNoiseCalculator:
             "n_int": "10",
             "t_int_obs_total": "100",
             "t_int_frame": "10",
-            "lambda_rel_lon_los": "135",
-            "beta_lat_los": "45",
         }
         config["wavelength_range"] = {"min": "1.0", "max": "4.0"}
         config["nulling"] = {"null": "True", "nulling_factor": "1e-5"}
@@ -211,6 +209,8 @@ class TestNoiseCalculator:
             "pl_temp": "300.0",
             "rad_planet": "1.0",
             "A_albedo": "0.3",
+            "lambda_rel_lon_los": "135",
+            "beta_lat_los": "45",
         }
 
         sources_all = SimpleNamespace(sources_astroph={"star": {"wavel": np.array([1.0, 2.0, 3.0])}})

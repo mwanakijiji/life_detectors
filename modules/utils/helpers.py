@@ -81,8 +81,8 @@ def build_system_params_title(config) -> str:
             f"stellar nulling = {bool(nulling)}, nulling transmission = {float(nulling_factor):.1e}"
         )
 
-    lambda_rel = _config_get(config, "observation", "lambda_rel_lon_los")
-    beta = _config_get(config, "observation", "beta_lat_los")
+    lambda_rel = _config_get(config, "target", "lambda_rel_lon_los")
+    beta = _config_get(config, "target", "beta_lat_los")
     if lambda_rel is not None and beta is not None:
         lines.append(
             fr"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = {float(beta):.2f} deg"
@@ -408,10 +408,14 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # Generates a zodiacal background
     # See Sec. 2.2.3 in Dannert+ 2022
 
-    # Inputs:
+    # INPUTS:
     # wavelength_um: wavelength in microns
     # nulling_baseline (m): baseline nulling distance 
     # plot: whether to plot the result and FYI plot of the whole background
+
+    # RETURNS:
+    # luminosity_photons_zodiacal: zodiacal luminosity in photons/s/um/m**2
+    # luminosity_energy_zodiacal: zodiacal luminosity in W/um/m**2
 
     # set some parameters
     tau_opt = float(config['target']['tau_opt_zodiacal'])
@@ -422,8 +426,8 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     rad_sol = float(rad_sol) * 69.6340 * 1e9 * (1./1.496e13) # radius of Sun in AU (keep unitless for this function to work)
     single_mirror_diameter = float(config['telescope']['single_mirror_diameter']) * u.m
 
-    lambda_rel_lon_los = float(config["observation"]["lambda_rel_lon_los"]) 
-    beta_lat_los = float(config["observation"]["beta_lat_los"])
+    lambda_rel_lon_los = float(config["target"]["lambda_rel_lon_los"]) 
+    beta_lat_los = float(config["target"]["beta_lat_los"])
 
     # Inputs:
     # wavel: wavelength in microns (unitless for parts of this function to work)
@@ -571,7 +575,11 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
     # ~10 um: ~10 MJy/sr
     # ~20 um: ~10s to 100 MJy/sr
 
-    return I_lambda_los_array_photons, I_lambda_los_array_energy
+    # units 
+    # I_lambda_los_array_photons: ph / (s um m2)
+    # I_lambda_los_array_energy: W / (um m2)
+    # I_nu_los_array_energy_MJy: MJy / sr
+    return I_lambda_los_array_photons, I_lambda_los_array_energy, I_nu_los_array_energy_MJy
 
 
 def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False) -> np.ndarray:

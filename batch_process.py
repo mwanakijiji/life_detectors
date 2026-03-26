@@ -100,9 +100,8 @@ def modify_config_file_pl_system_params(
         config.set('target', 'rad_star', str(system_params['Rs'])) # stellar radius (solar radii)
         config.set('target', 't_star', str(system_params['Ts'])) # stellar temperature (K)
         config.set('target', 'z_exozodiacal', str(system_params['z'])) # stellar temperature (K)
-
-        config.set('observation', 'lambda_rel_lon_los', str(system_params['eclip_lon'])) # ecliptic latitude (rad)
-        config.set('observation', 'beta_lat_los', str(system_params['eclip_lat'])) # ecliptic longitude (rad)
+        config.set('target', 'lambda_rel_lon_los', str(system_params['eclip_lon'])) # ecliptic latitude (rad)
+        config.set('target', 'beta_lat_los', str(system_params['eclip_lat'])) # ecliptic longitude (rad)
 
         # this is a kludge to map stellar-type/luminosity in case only the stellar type is input
         config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
@@ -126,8 +125,8 @@ def modify_config_file_pl_system_params(
         ts_part = f"Ts_{config['target']['t_star']}"
         l_part = f"L_{config['target']['L_star']}"
         z_part = f"z_{config['target']['z_exozodiacal']}"
-        eclip_lon_part = f"eclip_lon_{config['observation']['lambda_rel_lon_los']}"
-        eclip_lat_part = f"eclip_lat_{config['observation']['beta_lat_los']}"
+        eclip_lon_part = f"eclip_lon_{config['target']['lambda_rel_lon_los']}"
+        eclip_lat_part = f"eclip_lat_{config['target']['beta_lat_los']}"
         stype_part = f"Stype_{config['target']['Stype']}"
 
         # use this string to 

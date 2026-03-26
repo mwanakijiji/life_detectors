@@ -29,14 +29,15 @@ class TestModifyConfigFileSweep:
         config.add_section("observation")
         config.set("observation", "t_int_obs_total", "100")
         config.set("observation", "t_int_frame", "10")
-        config.set("observation", "lambda_rel_lon_los", "135")
-        config.set("observation", "beta_lat_los", "45")
         config.set("observation", "n_int", "1000")
         config.add_section("detector")
         config.set("detector", "quantum_efficiency", "0.8")
         config.set("detector", "read_noise", "6")
         config.set("detector", "gain", "4.5")
         config.set("detector", "spec_res", "20")
+        config.add_section("target")
+        config.set("target", "lambda_rel_lon_los", "135")
+        config.set("target", "beta_lat_los", "45")
         with open(config_path, "w") as f:
             config.write(f)
         return str(config_path)
@@ -103,8 +104,8 @@ class TestModifyConfigFilePlSystemParams:
         config.add_section("observation")
         config.set("observation", "t_int_obs_total", "100")
         config.set("observation", "t_int_frame", "10")
-        config.set("observation", "lambda_rel_lon_los", "135")
-        config.set("observation", "beta_lat_los", "45")
+        config.set("target", "lambda_rel_lon_los", "135")
+        config.set("target", "beta_lat_los", "45")
         with open(config_path, "w") as f:
             config.write(f)
         return str(config_path)
@@ -188,8 +189,8 @@ class TestModifyConfigFilePlSystemParams:
         )
         config = configparser.ConfigParser()
         config.read(result)
-        assert config.get("observation", "lambda_rel_lon_los") == "0.5"
-        assert config.get("observation", "beta_lat_los") == "0.3"
+        assert config.get("target", "lambda_rel_lon_los") == "0.5"
+        assert config.get("target", "beta_lat_los") == "0.3"
 
     def test_lum_types_lookup_uses_lowercase(self, base_config_path, lum_types):
         """L_star is set from lum_types using Stype.lower()."""

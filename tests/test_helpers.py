@@ -73,7 +73,6 @@ class TestTitleBuilders:
         cfg = {
             "telescope": {"collecting_area": "25.0", "eta_t": "0.05"},
             "nulling": {"null": True, "nulling_factor": "1e-5"},
-            "observation": {"lambda_rel_lon_los": "135", "beta_lat_los": "45"},
             "target": {
                 "z_exozodiacal": "1",
                 "A_albedo": "0.22",
@@ -83,6 +82,8 @@ class TestTitleBuilders:
                 "rad_planet": "1",
                 "pl_temp": "288",
                 "distance": "10",
+                "lambda_rel_lon_los": "135", 
+                "beta_lat_los": "45",
             },
         }
         out = build_system_params_title(cfg)
@@ -249,8 +250,8 @@ class TestGenerateZodiacalSpectrum:
         cfg.add_section("telescope")
         cfg.set("telescope", "single_mirror_diameter", "2.0")
         cfg.add_section("observation")
-        cfg.set("observation", "lambda_rel_lon_los", "135")
-        cfg.set("observation", "beta_lat_los", "45")
+        cfg.set("target", "lambda_rel_lon_los", "135")
+        cfg.set("target", "beta_lat_los", "45")
         return cfg
 
     def test_generate_zodiacal_spectrum_units_shape_and_finite(self):
