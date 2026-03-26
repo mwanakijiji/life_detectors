@@ -16,6 +16,7 @@ from typing import List, Tuple, Optional
 import argparse
 import ipdb
 import pandas as pd
+import numpy as np
 
 
 
@@ -32,13 +33,12 @@ from modules.utils import helpers
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
-def modify_config_file_sweep(config_path: str, n_int: int, qe: float) -> str:
+def modify_config_file_sweep(config_path: str, qe: float) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
     
     Args:
         config_path: Path to the original configuration file
-        n_int: New value for n_int
         
     Returns:
         Path to the temporary modified configuration file
@@ -49,14 +49,13 @@ def modify_config_file_sweep(config_path: str, n_int: int, qe: float) -> str:
     
 
     # Modify the values
-    config.set('observation', 'n_int', str(n_int))
     config.set('detector', 'quantum_efficiency', str(qe))
     #config.set('saving', 'save_s2n_data', output_path)
     
     # Create a temporary config file
     temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
     qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_n{n_int}_qe{qe_str}.ini')
+    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_qe{qe_str}.ini')
     if not os.path.exists(temp_config_dir):
         os.makedirs(temp_config_dir, exist_ok=True)
     with open(temp_config_path, 'w') as f:
@@ -168,7 +167,6 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
 def run_single_calculation(config_path: str, 
                             base_filename: str,
                             sources_to_include: List[str], 
-                          n_int: int, 
                           qe: float,
                           overwrite: bool = True, 
                           plot: bool = False, 
@@ -195,7 +193,7 @@ def run_single_calculation(config_path: str,
     if True:
         # Create temporary config file with modified values: use new n_int, QE values
         ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
-        temp_config_path_nint_qe = modify_config_file_sweep(config_path, n_int, qe)
+        temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe)
         # modify again, for a given planetary system 
         if system_params is not None:
             temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, base_filename = base_filename, system_params = system_params, lum_types = lum_types)
@@ -220,7 +218,7 @@ def run_single_calculation(config_path: str,
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits
         fname_base = temp_config_path.replace('.ini', '')
-        output_fits_file_abs_path = f"{fname_base}_nint_{n_int}_qe_{qe:.4f}.fits"
+        output_fits_file_abs_path = f"{fname_base}_qe_{qe:.4f}.fits"
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
         try:
@@ -251,7 +249,7 @@ def run_single_calculation(config_path: str,
             # Fallback: just log the raw object
             logger.info(f"(Unrecognized config type {type(config)}; raw repr follows)")
             logger.info(repr(config))
-        logger.info(f"Running calculation with n_int={n_int}, output={output_fits_file_abs_path}")
+        logger.info(f"Running calculation with output file name = {output_fits_file_abs_path}")
         
         # Generate sample spectral data
         logger.info("Creating sample spectral data...")
@@ -311,7 +309,6 @@ def run_single_calculation(config_path: str,
    #     return False
 
 def batch_qe_nint_process(base_config_path: str, 
-                n_int_values: List[float], 
                 qe_values: List[float],
                   sources_to_include: List[str],
                   base_filename: str = "s2n", 
@@ -345,37 +342,33 @@ def batch_qe_nint_process(base_config_path: str,
     success_all = True
     
     for qe in qe_values:
-        for n_int in n_int_values:
-            # Create output filename
-            n_int = int(n_int)
-            qe_pct = int(round(qe * 100))  # e.g. 0.87 -> 87
-            #output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
-            #output_path = os.path.join(output_dir, output_filename)
-            
-            logging.info(f"--------------------------------")
-            logging.info(f"--------------------------------")
-            logging.info(f"Processing single calculation:")
-            logging.info(f"Parameter n_int = {n_int}")
-            logging.info(f"Parameter qe = {qe}")
+        # Create output filename
+        qe_pct = int(round(qe * 100))  # e.g. 0.87 -> 87
+        #output_filename = f"{base_filename}_n{n_int:08d}_qe{qe_pct:03d}.fits"
+        #output_path = os.path.join(output_dir, output_filename)
+        
+        logging.info(f"--------------------------------")
+        logging.info(f"--------------------------------")
+        logging.info(f"Processing single calculation:")
+        logging.info(f"Parameter qe = {qe}")
 
-            success = run_single_calculation(
-                config_path=base_config_path,
-                base_filename = base_filename,
-                sources_to_include=sources_to_include,
-                n_int=n_int,
-                qe=qe,
-                overwrite=overwrite,
-                plot=plot,
-                system_params=system_params, 
-                lum_types=lum_types
-            )
-                        
-            if success:
-                logging.info(f"  ✓ Success for n_int={n_int}, qe={qe} and the following planetary system parameters:")
-                logging.info(system_params)
-            else:
-                logging.info(f"  ✗ Failed for n_int={n_int}, qe={qe}")
-            success_all = success_all and bool(success) # was this calculation successful too?
+        success = run_single_calculation(
+            config_path=base_config_path,
+            base_filename = base_filename,
+            sources_to_include=sources_to_include,
+            qe=qe,
+            overwrite=overwrite,
+            plot=plot,
+            system_params=system_params, 
+            lum_types=lum_types
+        )
+                    
+        if success:
+            logging.info(f"  ✓ Success for the following planetary system parameters:")
+            logging.info(system_params)
+        else:
+            logging.info(f"  ✗ Failed for qe={qe}")
+        success_all = success_all and bool(success) # was this calculation successful too?
     
     return success_all
 
@@ -515,9 +508,8 @@ def parameter_sweep(
         logging.info("Applying parameter sweep to a single planetary system")
         df_planet_population = [None]  # wrap in list for length 1
 
-    # parameter sweep in n_int and QE
+    # parameter sweep
     obs = config_sweep["observation"]
-    n_int_values = helpers.get_sweep_range(obs, "n_int")
     qe_values = helpers.get_sweep_range(obs, "qe")
 
     # get the astrophysical sources to include from the config file
@@ -540,7 +532,6 @@ def parameter_sweep(
 
         success_all = batch_qe_nint_process(
             base_config_path=config_single_obs_path,
-            n_int_values=n_int_values,
             qe_values=qe_values,
             sources_to_include=sources_to_include,
             base_filename=base_filename,
