@@ -6,7 +6,7 @@ import configparser
 import sys
 import types
 from unittest.mock import patch
-from modules.utils.helpers import generate_star_spectrum
+from modules.utils.helpers import generate_star_spectrum, generate_planet_bb_spectrum
 
 import numpy as np
 import pandas as pd
@@ -192,7 +192,7 @@ class TestAstrophysicalSources:
         incident_predicted_0 = sources._calculate_flux_from_spectrum("star", wavelength_grid, distance_set=dist_1)
         incident_predicted_1 = sources._calculate_flux_from_spectrum("star", wavelength_grid, distance_set=dist_2)
 
-        # expected vals from Google Gemini at 10 pc
+        # expected vals from Google Gemini, for 10 pc
         incident_expected_dist_10 = np.array([8.66e8, 2.37e7]) # units (u.ph / (u.um * u.m**2 * u.s))
         incident_expected_dist_5pt7 = incident_expected_dist_10 * (10.0/ dist_1) ** 2 # rescale for distance
         incident_expected_dist_21pt6 = incident_expected_dist_10 * (10.0/ dist_2) ** 2 # rescale for distance
@@ -201,6 +201,44 @@ class TestAstrophysicalSources:
         assert incident_predicted_1.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
         assert np.allclose(incident_predicted_0.value, incident_expected_dist_5pt7, rtol=1e-2) # 1% tolerance
         assert np.allclose(incident_predicted_1.value, incident_expected_dist_21pt6, rtol=1e-2) # 1% tolerance
+
+
+    def test_calculate_flux_from_planet_bb_spectrum_at_10pc(
+        self, unit_converter
+    ):
+        # checks BB exoplanet incident flux for R_earth, T=283K at 10 pc
+        cfg_ersatz = configparser.ConfigParser()
+        cfg_ersatz["target"] = {
+            "rad_planet": "1.0",
+            "pl_temp": "283.0",
+            "planet_source": "BB",
+        }
+        cfg_ersatz["dirs"] = {"save_s2n_data_unique_dir": "/tmp"}  # only needed if plot=True
+        sources = AstrophysicalSources(cfg_ersatz, unit_converter)
+
+        wavelength_grid = np.array([1.0, 5.0]) * u.um
+        lum_phot_planet, _ = generate_planet_bb_spectrum(cfg_ersatz, wavelength_grid, plot=False)
+        sources.spectra["exoplanet_bb"] = SpectralData(
+            wavelength=wavelength_grid.value,
+            flux=lum_phot_planet.value,
+            wavelength_unit="um",
+            flux_unit=str(lum_phot_planet.unit),  # ph / (s um)
+            source_name="planet_bb_test",
+            metadata={},
+        )
+
+        dist_pc = 10.0
+        incident_predicted = sources._calculate_flux_from_spectrum(
+            "exoplanet_bb", wavelength_grid, distance_set=dist_pc
+        )
+
+        # expected vals from Google Gemini, for 10 pc
+        incident_expected_dist_10 = np.array([6.7e-17, 4.9e-2]) # units (u.ph / (u.um * u.m**2 * u.s))
+
+        assert incident_predicted.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert np.all(np.isfinite(incident_predicted.value))
+        assert np.all(incident_predicted.value >= 0.0)
+        assert np.allclose(incident_predicted.value, incident_expected_dist_10, rtol=1e-2)
 
 
 
