@@ -43,33 +43,36 @@ class TestModifyConfigFileSweep:
 
     def test_returns_temp_config_path(self, minimal_config_path):
         # Temp config file is created and path is returned.
-        result = modify_config_file_sweep(minimal_config_path, n_int=5000, qe=0.87)
+        result = modify_config_file_sweep(minimal_config_path, qe=0.87)
         assert os.path.isfile(result)
         assert result.endswith(".ini")
 
     def test_temp_path_format(self, minimal_config_path):
         # Temp path has expected format: .../parameter_sweeps/{basename}_temp_n{n_int}_qe{qe_str}.ini.
-        result = modify_config_file_sweep(minimal_config_path, n_int=5000, qe=0.87)
+        result = modify_config_file_sweep(minimal_config_path, qe=0.87)
         assert "parameter_sweeps" in result
-        assert "_temp_n5000_qe0p87.ini" in result
+        assert "_temp_qe0p87.ini" in result
 
     def test_n_int_updated_in_output(self, minimal_config_path):
         # Output config has updated n_int value.
-        result = modify_config_file_sweep(minimal_config_path, n_int=25920, qe=0.8)
+        result = modify_config_file_sweep(minimal_config_path, qe=0.8)
         config = configparser.ConfigParser()
         config.read(result)
-        assert config.get("observation", "n_int") == "25920"
+        t_int_obs_total = float(config.get("observation", "t_int_obs_total"))
+        t_int_frame = float(config.get("observation", "t_int_frame"))
+        n_int = int(t_int_obs_total // t_int_frame)
+        assert n_int == 10
 
     def test_qe_updated_in_output(self, minimal_config_path):
         # Output config has updated quantum_efficiency value.
-        result = modify_config_file_sweep(minimal_config_path, n_int=1000, qe=0.65)
+        result = modify_config_file_sweep(minimal_config_path, qe=0.65)
         config = configparser.ConfigParser()
         config.read(result)
         assert config.get("detector", "quantum_efficiency") == "0.65"
 
     def test_qe_string_format_in_filename(self, minimal_config_path):
         # QE decimal is converted to 'p' in filename (e.g. 0.87 -> 0p87).
-        result = modify_config_file_sweep(minimal_config_path, n_int=1000, qe=0.1)
+        result = modify_config_file_sweep(minimal_config_path, qe=0.1)
         assert "qe0p10.ini" in result
 
 
