@@ -17,6 +17,8 @@ import argparse
 import ipdb
 import pandas as pd
 import numpy as np
+import uuid
+from datetime import datetime
 
 
 
@@ -33,7 +35,7 @@ from modules.utils import helpers
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
-def modify_config_file_sweep(config_path: str, qe: float) -> str:
+def modify_config_file_sweep(config_path: str, qe: float, run_id: Optional[str] = None) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
     
@@ -55,7 +57,8 @@ def modify_config_file_sweep(config_path: str, qe: float) -> str:
     # Create a temporary config file
     temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
     qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_qe{qe_str}.ini')
+    run_suffix = f"_{run_id}" if run_id else ""
+    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_qe{qe_str}{run_suffix}.ini')
     if not os.path.exists(temp_config_dir):
         os.makedirs(temp_config_dir, exist_ok=True)
     with open(temp_config_path, 'w') as f:
@@ -64,7 +67,13 @@ def modify_config_file_sweep(config_path: str, qe: float) -> str:
     return temp_config_path
 
 
-def modify_config_file_pl_system_params(config_path: str, base_filename: str, system_params: dict, lum_types: dict) -> str:
+def modify_config_file_pl_system_params(
+    config_path: str,
+    base_filename: str,
+    system_params: dict,
+    lum_types: dict,
+    run_id: Optional[str] = None,
+) -> str:
     """
     Create a modified configuration file which takes a planet from a population model and overwrites planetary system parameters from a config file.
     
@@ -148,7 +157,8 @@ def modify_config_file_pl_system_params(config_path: str, base_filename: str, sy
         config.set('dirs', 'save_s2n_data_unique_dir', config['dirs']['save_s2n_data_unique_dir'] + file_basename_string + '/')
 
         #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-        temp_config_path = str(config['dirs']['save_s2n_data_unique_dir']) + file_basename_string + '.ini'
+        run_suffix = f"_{run_id}" if run_id else ""
+        temp_config_path = str(config['dirs']['save_s2n_data_unique_dir']) + file_basename_string + f'{run_suffix}.ini'
 
         # Ensure the directory exists before writing the temporary config file
         temp_config_dir = os.path.dirname(temp_config_path)
@@ -191,12 +201,21 @@ def run_single_calculation(config_path: str,
     """
 
     if True:
+        # Build a per-run token so parallel jobs do not clobber temp files.
+        run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
+
         # Create temporary config file with modified values: use new n_int, QE values
         ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
-        temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe)
+        temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe, run_id=run_id)
         # modify again, for a given planetary system 
         if system_params is not None:
-            temp_config_path = modify_config_file_pl_system_params(config_path = temp_config_path_nint_qe, base_filename = base_filename, system_params = system_params, lum_types = lum_types)
+            temp_config_path = modify_config_file_pl_system_params(
+                config_path=temp_config_path_nint_qe,
+                base_filename=base_filename,
+                system_params=system_params,
+                lum_types=lum_types,
+                run_id=run_id,
+            )
         else:
             temp_config_path = temp_config_path_nint_qe
 
@@ -215,10 +234,16 @@ def run_single_calculation(config_path: str,
         config.read(temp_config_path)
         ensure_plot_title_context(config)
 
+        # Make the overwriteable scratch FITS file unique per run.
+        if config.has_section("saving") and config.has_option("saving", "save_s2n_data_temp"):
+            temp_fits_path = config.get("saving", "save_s2n_data_temp")
+            temp_root, temp_ext = os.path.splitext(temp_fits_path)
+            config.set("saving", "save_s2n_data_temp", f"{temp_root}_{run_id}{temp_ext}")
+
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits
         fname_base = temp_config_path.replace('.ini', '')
-        output_fits_file_abs_path = f"{fname_base}_qe_{qe:.4f}.fits"
+        output_fits_file_abs_path = f"{fname_base}_qe_{qe:.4f}_{run_id}.fits"
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
         try:

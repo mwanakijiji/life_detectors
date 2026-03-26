@@ -8,7 +8,7 @@ import time
 import ipdb
 import xarray as xr
 import pickle
-import plotting_3d
+from modules.display_results import plotting_3d
 import glob
 
 
@@ -275,6 +275,7 @@ def main():
     st_type = 'G'
     #if st_type == 'A':
     #    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/stellar_type_A/temp_s2n_sweep_planet_index_0000003_Nuniverse_83_Nstar_144_dist_15.0376_Rp_0.72647_Rs_1.81_Ts_7500_L_15.0_Stype_A/'
+    '''
     if st_type == 'F':
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_F_type_only/'
     elif st_type == 'G':
@@ -287,6 +288,9 @@ def main():
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only_model_spectrum/'
     elif st_type == 'earth_only_bb':
         dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260224_test_population_earth_only_bb/'
+    '''
+
+    dir_sample_data = '/Users/eckhartspalding/Documents/git.repos/life_detectors/param_sweeps/20260326_collect_40/'
     
     # glob all the subdirectories in dir_sample_data with string 'temp_'
     temp_dir_array = [d for d in glob.glob(os.path.join(dir_sample_data, 'temp_*')) if os.path.isdir(d)]
