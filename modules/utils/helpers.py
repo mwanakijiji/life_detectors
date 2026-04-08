@@ -399,7 +399,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         plt.savefig(file_name_plot)
         print(f"Wrote planet emission plot {file_name_plot}")
 
-
+    # luminosity without regard to distance
     return luminosity_photons_planet, luminosity_energy_planet
 
 
@@ -736,7 +736,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         None (writes to file)
     """
 
-    output_dir = Path(config['dirs']['data_dir']).resolve()
+    output_dir = Path(config['dirs']['save_s2n_data_unique_dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create wavelength grid
@@ -752,7 +752,6 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
     # notes on zodiacal units:
     # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
     # 2. the output units here include 1/m**2, because the quantity is a surface brightness seen from Earth (i.e., there is no downstream distance correction that brings in 1/m**2)
-    ipdb.set_trace()
     luminosity_photons_zodiacal, luminosity_energy_zodiacal, luminosity_MJy_zodiacal = generate_zodiacal_spectrum(config, wavelength_um, plot=plot) # resolved
 
     # Sample data for different sources

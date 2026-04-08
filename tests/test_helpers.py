@@ -365,7 +365,7 @@ class TestCreateSampleData:
     def _make_config(self, data_dir: str):
         cfg = configparser.ConfigParser()
         cfg.add_section("dirs")
-        cfg.set("dirs", "data_dir", data_dir)
+        cfg.set("dirs", "save_s2n_data_unique_dir", data_dir)
         return cfg
 
     def test_create_sample_data_writes_expected_files(self, tmp_path, monkeypatch):
@@ -395,7 +395,11 @@ class TestCreateSampleData:
         monkeypatch.setattr(
             helpers,
             "generate_zodiacal_spectrum",
-            lambda config, wavelength_um, plot=False: (photons_um_s_m2, energy_w_um_m2),
+            lambda config, wavelength_um, plot=False: (
+                photons_um_s_m2,
+                energy_w_um_m2,
+                np.ones(n) * u.MJy / u.sr,
+            ),
         )
 
         create_sample_data(cfg, overwrite=True, plot=False)
