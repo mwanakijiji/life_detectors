@@ -239,6 +239,20 @@ class TestGeneratePlanetBBSpectrum:
         assert np.allclose((lph_r2 / lph_r1).value, 4.0)
         assert np.allclose((len_r2 / len_r1).value, 4.0)
 
+    def test_generate_planet_bb_spectrum_physical_sense_10pc(self):
+        cfg = self._make_config(rad_planet=1.0, pl_temp=300.0)
+        wavelength_um = np.array([5.0, 10.0, 15.0]) * u.um
+        # photons/s/um; W/um
+        lph_5_um, len_5_um = generate_planet_bb_spectrum(cfg, wavelength_um=5.0 * u.um, plot=False)
+        lph_10_um, len_10_um = generate_planet_bb_spectrum(cfg, wavelength_um=10.0 * u.um, plot=False)
+        lph_15_um, len_15_um = generate_planet_bb_spectrum(cfg, wavelength_um=15.0 * u.um, plot=False)
+        assert np.allclose(float(f"{lph_5_um.value:.2e}"), float(1.05e35), rtol=1e-2)
+        assert np.allclose(float(f"{len_5_um.value:.2e}"), float(4.17e15), rtol=1e-2)
+        assert np.allclose(float(f"{lph_10_um.value:.2e}"), float(8.01e35), rtol=1e-2)
+        assert np.allclose(float(f"{len_10_um.value:.2e}"), float(1.59e16), rtol=1e-2)
+        assert np.allclose(float(f"{lph_15_um.value:.2e}"), float(8.09e35), rtol=1e-2)
+        assert np.allclose(float(f"{len_15_um.value:.2e}"), float(1.07e16), rtol=1e-2)
+
 
 class TestGenerateZodiacalSpectrum:
     def _make_config(self, tau_opt: float = 4e-8):

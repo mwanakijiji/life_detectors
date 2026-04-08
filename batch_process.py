@@ -250,9 +250,12 @@ def run_single_calculation(config_path: str,
         except ImportError:
             _cp = None
 
+        ipdb.set_trace()
+
 
         logger.info("------- Temp config contents -------")
 
+        # log stuff from the config file
         if _cp is not None and isinstance(config, _cp.ConfigParser):
             # Config is a ConfigParser: iterate its sections and items
             for section_name in config.sections():
@@ -279,7 +282,7 @@ def run_single_calculation(config_path: str,
         logger.info("Creating sample spectral data...")
         create_sample_data(config, overwrite=overwrite, plot=plot, read_sample_file=False)
         
-        # Calculate astrophysical flux
+        # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
         astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
         
@@ -290,6 +293,8 @@ def run_single_calculation(config_path: str,
                 sources_astroph[source_name] = astrophysical_sources.calculate_incident_flux(
                     source_name=source_name, plot=plot, system_params=system_params
                 )
+
+        ipdb.set_trace()
         
         # Pass through instrument
         logger.info("Passing astrophysical flux through telescope aperture...")
@@ -554,6 +559,7 @@ def parameter_sweep(
             logging.info("No planet population; doing parameter sweep for a single system")
             base_filename = "s2n_sweep"
 
+        # wraps around calculations for a single set of detector parameters
         success_all = batch_qe_nint_process(
             base_config_path=config_single_obs_path,
             qe_values=qe_values,
