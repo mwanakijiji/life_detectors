@@ -606,6 +606,7 @@ def main():
     print(f"Base filename: {args.base_filename}")
     print()
     
+    ipdb.set_trace()
     # Run batch processing
     results = batch_process(
         config_path=args.config,

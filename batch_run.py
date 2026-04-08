@@ -16,7 +16,7 @@ def main():
     log_file = loader.setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("========================================")
-    logger.info("Life Detectors - Batch Processing Examples")
+    logger.info("Life Detectors - Batch Processing")
     logger.info(f"Log file: {log_file}")
 
     #########################################################
@@ -32,6 +32,7 @@ def main():
     ###### END USER INPUTS
     #########################################################
 
+    # parameter sweep over QE, dark current
     parameter_sweep(config_single_obs_path = config_single_obs_path, 
                             config_sweep_path = config_sweep_path, 
                             config_planet_population_path = config_planet_population_path, 
