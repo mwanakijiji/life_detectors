@@ -12,6 +12,7 @@ import logging
 import configparser
 import os
 from datetime import datetime
+import uuid
 import ipdb
 
 logger = logging.getLogger(__name__)
@@ -82,11 +83,12 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
     return config_dict
 
 
-def setup_logging(log_dir='logs'):
+def setup_logging(log_dir='logs', tag: Optional[str] = None):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(log_dir, f'detectorsim_{timestamp}.log')
+    log_tag = tag or f"pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    log_file = os.path.join(log_dir, f'detectorsim_{timestamp}_{log_tag}.log')
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',

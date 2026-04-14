@@ -3,14 +3,40 @@
 Parameter sweep for LIFE detectors
 """
 
-import os
-from pathlib import Path
+import argparse
 from batch_process import parameter_sweep
 import logging
 from modules.config import loader
-import ipdb
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run a LIFE detector parameter sweep with explicit config paths."
+    )
+    parser.add_argument(
+        "--config-single-obs",
+        default="modules/config/demo_config.ini",
+        help="Base single-observation config file.",
+    )
+    parser.add_argument(
+        "--config-sweep",
+        default="modules/config/sweep_config.ini",
+        help="Sweep config file.",
+    )
+    parser.add_argument(
+        "--config-planet-population",
+        default="modules/config/planet_population_10_M_stars.ini",
+        help="Planet population config file.",
+    )
+    parser.add_argument(
+        "--output-root",
+        default=None,
+        help="Optional run-specific output root to keep simultaneous runs isolated.",
+    )
+    return parser.parse_args()
 
 def main():
+    args = parse_args()
 
     # set up logging
     log_file = loader.setup_logging()
@@ -23,20 +49,21 @@ def main():
     ###### BEGIN USER INPUTS
     # starting config for a single observation
     # (parameters being swept will be overwritten)
-    config_single_obs_path = "modules/config/demo_config.ini" 
+    config_single_obs_path = args.config_single_obs
     # config file for making a parameter sweep; this effectively make a batch job
-    config_sweep_path = "modules/config/sweep_config.ini"
+    config_sweep_path = args.config_sweep
     # if you want to apply the batch job with the above ini settings to an entire planet population, use this config file
     # if not using a planet population, use a placeholder file
-    config_planet_population_path = "modules/config/planet_population_config.ini"
+    config_planet_population_path = args.config_planet_population
+    output_root = args.output_root
     ###### END USER INPUTS
     #########################################################
 
     # parameter sweep over QE, dark current
     parameter_sweep(config_single_obs_path = config_single_obs_path, 
                             config_sweep_path = config_sweep_path, 
-                            config_planet_population_path = config_planet_population_path, 
-                            planet_population = True)
+                            config_planet_population_path = config_planet_population_path,
+                            output_root = output_root)
     
     logger.info("Complete.")
 

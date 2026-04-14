@@ -35,6 +35,38 @@ from modules.utils import helpers
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
+
+def _normalize_output_root(output_root: str) -> str:
+    """Return an absolute output directory with a trailing separator."""
+    normalized = str(Path(output_root).expanduser().resolve())
+    return normalized if normalized.endswith(os.sep) else normalized + os.sep
+
+
+def apply_output_root_override(config_path: str, output_root: Optional[str]) -> str:
+    """
+    Override the batch output root in a config file.
+
+    The file is updated in place so downstream temporary config generation
+    inherits the run-specific root directory.
+    """
+    if not output_root:
+        return config_path
+
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    if not config.has_section("dirs"):
+        config.add_section("dirs")
+
+    normalized_root = _normalize_output_root(output_root)
+    os.makedirs(normalized_root, exist_ok=True)
+    config.set("dirs", "save_s2n_data_unique_dir", normalized_root)
+
+    with open(config_path, "w") as f:
+        config.write(f)
+
+    logger.info(f"Using overridden output root: {normalized_root}")
+    return config_path
+
 def modify_config_file_sweep(config_path: str, qe: float, run_id: Optional[str] = None) -> str:
     """
     Create a modified configuration file with new n_int and output path values.
@@ -180,7 +212,8 @@ def run_single_calculation(config_path: str,
                           overwrite: bool = True, 
                           plot: bool = False, 
                           system_params: Optional[dict] = None, 
-                          lum_types: Optional[dict] = None) -> bool:
+                          lum_types: Optional[dict] = None,
+                          output_root: Optional[str] = None) -> bool:
     """
     Run a single calculation with specified parameters.
     
@@ -206,6 +239,7 @@ def run_single_calculation(config_path: str,
         # Create temporary config file with modified values: use new n_int, QE values
         ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
         temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe, run_id=run_id)
+        temp_config_path_nint_qe = apply_output_root_override(temp_config_path_nint_qe, output_root)
         # modify again, for a given planetary system 
         if system_params is not None:
             temp_config_path = modify_config_file_pl_system_params(
@@ -250,8 +284,6 @@ def run_single_calculation(config_path: str,
         except ImportError:
             _cp = None
 
-        ipdb.set_trace()
-
 
         logger.info("------- Temp config contents -------")
 
@@ -294,9 +326,7 @@ def run_single_calculation(config_path: str,
                     source_name=source_name, plot=plot, system_params=system_params
                 )
 
-        ipdb.set_trace()
-        
-        # Pass through instrument
+        # instantiate instrument effects
         logger.info("Passing astrophysical flux through telescope aperture...")
         instrument_dep_terms = instrumental.InstrumentDepTerms(
             config, 
@@ -305,9 +335,15 @@ def run_single_calculation(config_path: str,
             sources_to_include=sources_to_include
         )
         
-        # Convert photons to electrons
+        # Pass through transmission screen
+        logger.info("Passing astrophysical flux through transmission screen...")
+        instrument_dep_terms.pass_through_transmission_screen(plot=plot)
+        
+        # Pass through telescope aperture
         logger.info("Converting photons to photo-electrons...")
         instrument_dep_terms.pass_through_aperture(plot=plot)
+
+        # Convert photons to electrons
         instrument_dep_terms.photons_to_e()
         instrument_dep_terms.calculate_instrinsic_instrumental_noise()
         
@@ -344,7 +380,8 @@ def batch_qe_nint_process(base_config_path: str,
                   overwrite: bool = True, 
                   plot: bool = False, 
                 system_params: Optional[dict] = None, 
-                lum_types: Optional[dict] = None) -> List[Tuple[int, str, bool]]:
+                lum_types: Optional[dict] = None,
+                output_root: Optional[str] = None) -> List[Tuple[int, str, bool]]:
     """
     Run batch processing with multiple QE and n_int values.
     
@@ -389,7 +426,8 @@ def batch_qe_nint_process(base_config_path: str,
             overwrite=overwrite,
             plot=plot,
             system_params=system_params, 
-            lum_types=lum_types
+            lum_types=lum_types,
+            output_root=output_root,
         )
                     
         if success:
@@ -503,7 +541,7 @@ def parameter_sweep(
     config_single_obs_path: str,
     config_sweep_path: str,
     config_planet_population_path: str,
-    planet_population: bool = False,
+    output_root: Optional[str] = None,
 ) -> None:
     """
     Run a QE/n_int parameter sweep for one system or a planet population.
@@ -517,11 +555,25 @@ def parameter_sweep(
     config_planet_population = loader.load_config(config_file=config_planet_population_path)
     lum_types = None
 
+    if output_root:
+        logging.info(f"Top-level batch output root override: {_normalize_output_root(output_root)}")
+
+    # does the user want to look at a single planet or a planet population?
+    systems_2_look_at = config_single_obs["system_options"]["systems_2_look_at"]
+    if systems_2_look_at == "planet_population":
+        logging.info("Applying parameter sweep to an entire planet population")
+    elif systems_2_look_at == "single_system":
+        logging.info("Applying parameter sweep to a single system")
+    else:
+        logging.error(f"Invalid system option: {systems_2_look_at}")
+        return
+
     # if applying a parameter sweep to every planet in a population
-    if planet_population:
+    if systems_2_look_at == "planet_population":
         logging.info("Applying parameter sweep to an entire planet population")
 
         file_name_planet_population = config_planet_population["file_name_planet_population"]["file_name"]
+        logging.info(f"Reading planet population from {file_name_planet_population}")
         lum_types = config_planet_population["lum_type"]  # map luminosities with stellar types
         df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep=r"\s+")
         df_planet_population = helpers.merge_psg_spectra_to_planet_population(
@@ -533,9 +585,13 @@ def parameter_sweep(
         helpers.plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
         logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
-    else:
+    elif systems_2_look_at == "single_system":
         logging.info("Applying parameter sweep to a single planetary system")
         df_planet_population = [None]  # wrap in list for length 1
+
+    else:
+        logging.error(f"Invalid system option (must be 'planet_population' or 'single_system'): {systems_2_look_at}")
+        return
 
     # parameter sweep
     obs = config_sweep["observation"]
@@ -548,12 +604,12 @@ def parameter_sweep(
         if include in [True, "True", "true", 1, "1"]
     ]
 
-    # loop over all the planetary systems
-    for sys_num in range(len(df_planet_population)):
+    # loop over all the planets (note there can be multiple planets in a system)
+    for pl_num in range(len(df_planet_population)):
         if isinstance(df_planet_population, pd.DataFrame):
-            system_params = df_planet_population.iloc[sys_num]
-            logging.info(f"Processing system {sys_num} with parameters: {system_params}")
-            base_filename = f"s2n_sweep_planet_index_{sys_num:07d}"
+            system_params = df_planet_population.iloc[pl_num]
+            logging.info(f"Processing system {pl_num} with parameters: {system_params}")
+            base_filename = f"s2n_sweep_planet_index_{pl_num:07d}"
         else:
             system_params = None
             logging.info("No planet population; doing parameter sweep for a single system")
@@ -569,5 +625,6 @@ def parameter_sweep(
             plot=True,
             system_params=system_params,
             lum_types=lum_types,
+            output_root=output_root,
         )
         logging.info(f"Parameter sweep completed: all calculations successful = {success_all}")

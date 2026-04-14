@@ -88,6 +88,60 @@ class InstrumentDepTerms:
 
         return 
 
+    def pass_through_transmission_screen(self, plot: bool = False):
+        # pass each astrophysical source through the transmission screen, and update prop_dict with the propagated terms
+        # photons/sec/m^2 -> photons/sec/m^2
+
+        # Make a 1001 x 1001 array of pixels 10 mas on a side, centered at 0
+        n_pix = 1001
+        pix_size_mas = 10  # milliarcseconds
+        pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
+        axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
+        xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
+
+        # ersatz 2D scene contributions
+        ersatz_star_2D = np.zeros((n_pix, n_pix), dtype=float)
+        ersatz_planet_2D = np.zeros((n_pix, n_pix), dtype=float)
+
+        # build star
+        radius_arcsec_scene = 0.1
+        center_x_arcsec = 0.0
+        center_y_arcsec = 0.0
+        r2 = (xx_arcsec - center_x_arcsec)**2 + (yy_arcsec - center_y_arcsec)**2
+        ersatz_star_2D[r2 <= radius_arcsec_scene**2] = 1.0
+
+        # build planet
+        center_x_arcsec = 3.0
+        center_y_arcsec = 3.0
+        radius_arcsec_balloon = 1.0
+        r2 = (xx_arcsec - center_x_arcsec)**2 + (yy_arcsec - center_y_arcsec)**2
+        ersatz_planet_2D[r2 <= radius_arcsec_balloon**2] = 0.2
+
+        sources = {'star': ersatz_star_2D}
+        sources.update({'planet': ersatz_planet_2D})
+
+        # make a scene, with a circle of radius 0.1" at the center
+
+
+
+
+        scene = ersatz_star_2D + ersatz_planet_2D
+ 
+        # make a sin**2 screen
+        screen_ersatz_transmission = 0.5 * np.sin(xx_arcsec)**2
+
+        for source_name, source_val in self.sources_astroph.items():
+            # if name is right and units are right
+            if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
+                dict_this = {source_name: {'wavel': source_val['wavel'], 
+                'flux_post_screen_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] ),
+                'flux_pre_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']}}
+                self.prop_dict.update(dict_this)
+
+        ipdb.set_trace()
+
+        return
+
 
     def pass_through_aperture(self, plot: bool = False):
         # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
@@ -98,7 +152,7 @@ class InstrumentDepTerms:
             if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
                 dict_this = {source_name: {'wavel': source_val['wavel'], 
                 'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] ),
-                'flux_pre_aperture_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']}}
+                'flux_pre_aperture_ph_sec_m2_um': source_val['flux_post_screen_ph_sec_um']}}
                 self.prop_dict.update(dict_this)
 
         # overplot all the sources
