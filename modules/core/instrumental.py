@@ -92,8 +92,8 @@ class InstrumentDepTerms:
         # pass each astrophysical source through the transmission screen, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec/m^2
 
-        # Make a 1001 x 1001 array of pixels 10 mas on a side, centered at 0
-        n_pix = 1001
+        # make array of pixels 10 mas on a side, centered at 0
+        n_pix = 1001 # odd number to simplify centering
         pix_size_mas = 10  # milliarcseconds
         pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
         axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
@@ -117,26 +117,107 @@ class InstrumentDepTerms:
         r2 = (xx_arcsec - center_x_arcsec)**2 + (yy_arcsec - center_y_arcsec)**2
         ersatz_planet_2D[r2 <= radius_arcsec_balloon**2] = 0.2
 
-        sources = {'star': ersatz_star_2D}
-        sources.update({'planet': ersatz_planet_2D})
-
-        # make a scene, with a circle of radius 0.1" at the center
-
-
-
-
-        scene = ersatz_star_2D + ersatz_planet_2D
+        # cobble together a scene, with a circle of radius 0.1" at the center
+        scene_no_screen = ersatz_star_2D + ersatz_planet_2D
  
         # make a sin**2 screen
-        screen_ersatz_transmission = 0.5 * np.sin(xx_arcsec)**2
+        screen_transmission_ersatz = np.sin(xx_arcsec)**2
 
+        # full scene, with screen
+        scene_with_screen = scene_no_screen * screen_transmission_ersatz
+
+        ipdb.set_trace()
         for source_name, source_val in self.sources_astroph.items():
+
+            # pass scene elements separately through the screen 
+            # kludge; remove later
+            if source_name == 'star':
+                #source_2D_no_screen = ersatz_star_2D * source_val['astro_flux_ph_sec_m2_um'] / ersatz_star_2D.sum()
+                #source_2D_with_screen = source_2D_no_screen * screen_transmission_ersatz
+
+                kernel_star = ersatz_star_2D / ersatz_star_2D.sum()  # (ny, nx), normalized, unitless
+                flux = source_val['astro_flux_ph_sec_m2_um']         # (n_lambda,), Quantity
+                # (n_lambda, ny, nx): one 2D image per wavelength bin
+                source_cube_no_screen = flux[:, None, None] * kernel_star[None, :, :]
+                # apply screen to each wavelength plane
+                source_cube_with_screen = source_cube_no_screen * screen_transmission_ersatz[None, :, :]
+            elif source_name == 'exoplanet_bb':
+                kernel_planet = ersatz_planet_2D / ersatz_planet_2D.sum()  # (ny, nx), normalized, unitless
+                flux = source_val['astro_flux_ph_sec_m2_um']         # (n_lambda,), Quantity
+                # (n_lambda, ny, nx): one 2D image per wavelength bin
+                source_cube_no_screen = flux[:, None, None] * kernel_planet[None, :, :]
+                # apply screen to each wavelength plane
+                source_cube_with_screen = source_cube_no_screen * screen_transmission_ersatz[None, :, :]
+            else:
+
+                kernel_other = np.ones_like(ersatz_star_2D) / np.ones_like(ersatz_star_2D).sum()  # (ny, nx), normalized, unitless
+                flux = source_val['astro_flux_ph_sec_m2_um']         # (n_lambda,), Quantity
+                # (n_lambda, ny, nx): one 2D image per wavelength bin
+                source_cube_no_screen = flux[:, None, None] * kernel_other[None, :, :]
+                # apply screen to each wavelength plane
+                source_cube_with_screen = source_cube_no_screen * screen_transmission_ersatz[None, :, :]
+                #source_2D_no_screen = np.ones_like(ersatz_star_2D) * source_val['astro_flux_ph_sec_m2_um'] / np.ones_like(ersatz_star_2D).sum()
+                #source_2D_with_screen = source_2D_no_screen * screen_transmission_ersatz
+
+            ipdb.set_trace()
+            # sanity check: sum the pre-screen flux over the scene, and compare to the input
+            ## ## TODO: PUT THIS INTO UNIT TEST
+            flux_pre_screen_integrated = source_cube_no_screen.sum(axis=(1,2)) # 1D vector of pre-screen flux, per wavelength bin
+            if not np.allclose(flux_pre_screen_integrated.value, source_val['astro_flux_ph_sec_m2_um'].value):
+                logging.error(f"Pre-screen flux integrated over scene does not match input flux for {source_name}")
+                exit()
+
+            flux_transmitted_integrated = source_cube_with_screen.sum(axis=(1,2)) # 1D vector of transmitted flux, per wavelength bin
+
+            ipdb.set_trace()
+
             # if name is right and units are right
             if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-                dict_this = {source_name: {'wavel': source_val['wavel'], 
-                'flux_post_screen_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] ),
-                'flux_pre_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']}}
+                dict_this = {source_name: {
+                    'wavel': source_val['wavel'], 
+                    'scene_2D_no_screen': scene_no_screen, 
+                    'scene_2D_with_screen': scene_with_screen,
+                    'source_cube_no_screen': source_cube_no_screen,
+                    'source_cube_with_screen': source_cube_with_screen,
+                    'transmission_screen_2D': screen_transmission_ersatz,
+                    'flux_pre_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um'],
+                    'flux_post_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']
+                    }}
                 self.prop_dict.update(dict_this)
+
+            if plot:
+                idx = 15 # wavelength slice index
+                source_img = source_cube_no_screen[idx, :, :].value
+                source_units = source_cube_no_screen[idx, :, :].unit.to_string()
+                transmission_img = screen_transmission_ersatz
+                source_times_transmission_img = source_cube_with_screen[idx, :, :].value
+                source_times_transmission_units = source_cube_with_screen[idx, :, :].unit.to_string()
+
+                fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
+                im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
+                axs[0].set_title(f"Source ({source_name})")
+                axs[0].set_xlabel(f"x (pixel)")
+                axs[0].set_ylabel(f"y (pixel)")
+                fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_units}") ## ## TODO: MAY NEED TO ADD /ARCSEC**2 TO UNITS, ONCE ARCSEC ARE FULLY INCORPORATED HERE
+
+                im1 = axs[1].imshow(transmission_img, origin='lower', cmap='gray')
+                axs[1].set_title("Transmission")
+                axs[1].set_xlabel(f"x (pixel)")
+                axs[1].set_ylabel(f"y (pixel)")
+                fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
+
+                im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
+                axs[2].set_title("Source * Transmission")
+                axs[2].set_xlabel(f"x (pixel)")
+                axs[2].set_ylabel(f"y (pixel)")
+                fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
+
+                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_{source_name}_triptych.png"
+                fig.savefig(file_name_plot) ## ## TODO: PEG THE FILE NAMES TO CONFIG
+                plt.close(fig)
+                logging.info(f"Saved plot of source {source_name} transmission triptych to {file_name_plot}")
+
+            ipdb.set_trace()
 
         ipdb.set_trace()
 
