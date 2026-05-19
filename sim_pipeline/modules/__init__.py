@@ -8,7 +8,7 @@ __version__ = "0.1.0"
 __author__ = "Life Team"
 
 from .core.calculator import NoiseCalculator
-from .config.loader import load_config
+from .utils.loader import load_config
 from astropy import units as u
 
 __all__ = ["NoiseCalculator", "load_config"] 

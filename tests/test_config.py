@@ -1,5 +1,5 @@
 """
-Unit tests for modules.config.loader.
+Unit tests for modules.utils.loader.
 """
 
 import configparser
@@ -15,8 +15,8 @@ import pytest
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.config.loader import load_config, setup_logging
-from modules.config.validator import ConfigValidator, validate_config
+from modules.utils.loader import load_config, setup_logging
+from modules.utils.validator import ConfigValidator, validate_config
 
 
 class TestLoadConfig:
