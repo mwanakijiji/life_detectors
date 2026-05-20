@@ -18,6 +18,7 @@ from astropy.visualization import ZScaleInterval, ImageNormalize
 
 from ..data.units import UnitConverter
 from ..utils.helpers import format_plot_title
+from ..utils.loader import config_getboolean
 
 
 class InstrumentDepTerms:
@@ -89,6 +90,20 @@ class InstrumentDepTerms:
         #self.sources_instrum['dark_current_adu_pix-1'] = self.sources_instrum['dark_current_e_pix-1'] / gain
 
         return 
+
+    def generate_transmission_screen(self):
+
+        logging.info(f'Generating ersatz transmission screen...')
+
+        # make array of pixels 10 mas on a side, centered at 0
+        n_pix = 1001 # odd number to simplify centering
+        pix_size_mas = 10  # milliarcseconds
+        pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
+        axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
+        xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
+        self.screen_xx_arcsec = xx_arcsec
+        self.screen_yy_arcsec = yy_arcsec
+        return self.transmission_screen_2d
 
     '''
     def pass_through_transmission_screen(self, plot: bool = False):
@@ -342,23 +357,20 @@ class Detector:
         # assume wavelengths are the same for the star and planet
         #self.prop_dict['wavel'] = self.star_flux['wavel']
 
-        # load 2D systematics
-        if self.config['detector_systematics']['enable_read_noise_2d']:
-            read_noise_map = fits.getdata(self.config['detector_systematics']['read_noise_2d_file'])
-        else:
-            read_noise_map = None
-        if self.config['detector_systematics']['enable_dc_2d']:
-            bias_map = fits.getdata(self.config['detector_systematics']['dc_2d_file'])
-        else:
-            bias_map = None
-        if self.config['detector_systematics']['enable_cosmic_rays_2d']:
-            cosmic_rays_map = fits.getdata(self.config['detector_systematics']['cosmic_rays_2d_file'])
-        else:
-            cosmic_rays_map = None
-        if self.config['detector_systematics']['enable_hot_pixels_2d']:
-            hot_pixels_map = fits.getdata(self.config['detector_systematics']['hot_pixels_2d_file'])
-        else:
-            hot_pixels_map = None
+        # load 2D systematics (INI True/False must use config_getboolean, not bare if on strings)
+        sys_section = "detector_systematics"
+
+        def _load_systematic_map(enable_key: str, file_key: str):
+            if not config_getboolean(self.config, sys_section, enable_key):
+                return None
+            section = self.config[sys_section]
+            file_path = section[file_key] if isinstance(section, dict) else section.get(file_key)
+            return fits.getdata(file_path)
+
+        read_noise_map = _load_systematic_map("enable_read_noise_2d", "read_noise_2d_file")
+        bias_map = _load_systematic_map("enable_dc_2d", "dc_2d_file")
+        cosmic_rays_map = _load_systematic_map("enable_cosmic_rays_2d", "cosmic_rays_2d_file")
+        hot_pixels_map = _load_systematic_map("enable_hot_pixels_2d", "hot_pixels_2d_file")
 
         # systematics: additive
         ## ## TODO: ARE THESE ALL ADDIITVE?
@@ -418,7 +430,6 @@ class Detector:
         # generate the array with the spectrum only (no detector noise yet)
         footprint_sum = np.sum(footprint_cube, axis=0)
 
-        ipdb.set_trace()
         logging.info(f"Total detector footprint is {footprint_sum.sum()} pixels")
 
         if plot: # pragma: no cover
@@ -441,12 +452,13 @@ class Detector:
         # returns a 1D vector of the systematics
 
         # make blank canvas onto which we will add the systematics
-        canvas_systematics = np.array((self.footprint_cube.shape[0]), dtype=float)
+        canvas_systematics = np.zeros((self.footprint_cube[0,:,:].shape), dtype=float)
 
         # read in the 2D systematics
         if len(self.systematics_additive_dict) > 0: # if there are any listed
             for key, value in self.systematics_additive_dict.items():
                 if value is not None: # if there is a 2D array
+                    ipdb.set_trace()
                     logging.info(f"Applying {key} systematic (additive) to the detector")
                     canvas_systematics = canvas_systematics + value
         # apply the 2D multiplicative systematics to the spectrum
@@ -456,13 +468,17 @@ class Detector:
                     logging.info(f"Applying {key} systematic (multiplicative) to the detector")
                     canvas_systematics = canvas_systematics * value
         
+        # for reference/debugging
+        #self.canvas_systematics = canvas_systematics
+        
         # use the footprint_cube to sum the 2D systematics within each wavelength bin
         systematics_vector_1d = np.zeros(self.num_wavel_bins)
+
         for wavel_bin_num in range(0, self.num_wavel_bins):
+            # for a given wavelength bin, sum the systematics across the pixels corresponding to that wavelength bin
+            # self.footprint_cube[wavel_bin_num,:,:] is just a boolean array, so we multiply it
             systematics_vector_1d[wavel_bin_num] = np.sum( self.footprint_cube[wavel_bin_num,:,:] * canvas_systematics )
-        
-        # given the wavelength bins on the detector (self.footprint_cube) generate a 
-        ## ## CONTINUE HERE
+        ipdb.set_trace()
 
         '''
         # apply the 2D additive systematics to the spectrum
@@ -470,7 +486,9 @@ class Detector:
         systematics_vector = np.zeros(self.num_wavel_bins)
         for wavel_bin_num in range(0, self.num_wavel_bins):
             systematics_vector[wavel_bin_num] = systematics_dict[wavel_bin_num].sum()
-        return systematics_vector
+        '''
+        return systematics_vector_1d
+
 
 '''
 @dataclass

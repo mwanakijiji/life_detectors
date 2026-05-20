@@ -7,7 +7,7 @@ that define all parameters for noise calculations.
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 import logging
 import configparser
 import os
@@ -16,6 +16,33 @@ import uuid
 import ipdb
 
 logger = logging.getLogger(__name__)
+
+
+def config_getboolean(
+    config: Union[configparser.ConfigParser, Dict[str, Dict[str, Any]]],
+    section: str,
+    key: str,
+    default: bool = False,
+) -> bool:
+    """Read a True/False INI flag from ConfigParser or a dict from load_config."""
+    if isinstance(config, configparser.ConfigParser):
+        if not config.has_section(section):
+            return default
+        return config.getboolean(section, key, fallback=default)
+    sec = config.get(section, {})
+    if key not in sec:
+        return default
+    val = sec[key]
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        lower = val.strip().lower()
+        if lower == "true":
+            return True
+        if lower == "false":
+            return False
+    return default
+
 
 '''
 def save_config(config: Dict[str, Any], filepath: str) -> None:
@@ -67,7 +94,13 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
             try:
                 config_dict[section][key] = float(value)
             except ValueError:
-                config_dict[section][key] = value
+                lower = value.strip().lower()
+                if lower == "true":
+                    config_dict[section][key] = True
+                elif lower == "false":
+                    config_dict[section][key] = False
+                else:
+                    config_dict[section][key] = value
 
     # Log all sections and their parameters
     for section in config_dict:

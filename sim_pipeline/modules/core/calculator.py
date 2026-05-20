@@ -87,7 +87,7 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
-    def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix_array, plot: bool = False) -> np.ndarray:
+    def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix_array, addl_systematics_vector: np.ndarray = None, plot: bool = False) -> np.ndarray:
         """ _star_planet_only
         Vectorized S/N function
 
@@ -95,6 +95,7 @@ class NoiseCalculator:
         wavel_bin_centers: wavelength bin centers (um)
         del_lambda_array: wavelength bin widths (um)
         n_pix_array: array of elements which represent the total number of pixels under each wavelength element footprint (pix)
+        addl_systematics_vector: vector of same length as wavel_bin_centers, which represents additional systematics to ADD like an addl noise termto the S/N calculation
 
         OUTPUTS:
         s2n: S/N (unitless); can be 2D
@@ -223,6 +224,11 @@ class NoiseCalculator:
         # second term under square root in the denominator
         term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped)
 
+        # includes addl systematics term
+        ## ## TODO: MAKE THIS MORE SOPHISTICATED; WITH COVARIANCE MATRIX ETC
+        term_5 = n_pix * addl_systematics_vector
+
+        ipdb.set_trace()
         s2n_tot = ( term_1 * term_2 / np.sqrt(term_3 + term_4) ) / u.electron**0.5 # get rid of the sqrt(e-) units for plotting
         s2n_tot = s2n_tot.value # this is already unitless, but I want to turn it from a u.Quantity into a np.array
 
@@ -343,7 +349,6 @@ class NoiseCalculator:
         # get the boolean illumination footprint (cube where each slice is the footprint for one wavelength bin)
         ## ## NOTE THIS IS KIND OF REDUNDANT RIGHT NOW, SINCE THE NUMBER OF PIXELS PER WAVELENGTH BIN IS CONSTANT AS CALCULATED BELOW; MIGHT CHANGE THIS LATER IF THE DISPERSION IS NOT CONSTANT
         footprint_spec_cube = detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
-        ipdb.set_trace()
 
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
@@ -357,18 +362,15 @@ class NoiseCalculator:
         for wavel_bin_num in range(0, n_bins):
             val = np.sum(footprint_spec_cube[wavel_bin_num, :, :]) * u.pix
             n_pix_array = u.Quantity(np.append(n_pix_array, val))
+
+        # retrieve the addl systematics vector
+        addl_systematics_vector = detector.convert_2d_systematics_to_1d_vector()
         
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
         # return S/N; and the variable values that are either the dark current or read noise (whichever has length >1)
         ipdb.set_trace()
-        s2n = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array)
+        s2n = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array, addl_systematics_vector=addl_systematics_vector)
 
-        '''
-        # old formulation
-        s2n = np.sqrt(n_int) * np.divide(eta * t_int * del_Np_prime_del_t_reshaped, 
-                        np.sqrt(eta * t_int * ( del_Np_prime_del_t_reshaped + nulling_factor * del_Ns_prime_del_t_reshaped ) + 
-                            n_pix_array_reshaped * (( R**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped))) # the R**2/(u.electron / u.pix) is necessary to make the units consistent 
-        '''
 
     
         # write the S/N data to a FITS file, with the config data in the header
