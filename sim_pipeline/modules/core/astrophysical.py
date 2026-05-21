@@ -263,8 +263,6 @@ class AstrophysicalSources:
             plot: whether to plot the on-sky scene
         '''
 
-        ipdb.set_trace()
-
         n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
         pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
         pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
@@ -292,8 +290,6 @@ class AstrophysicalSources:
         x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_star_arcsec'].split(","))
         x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_planet_arcsec'].split(","))
 
-        ipdb.set_trace()
-
         # check consistency in units
         flux_star = incident_dict['star']['astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
         flux_planet = incident_dict['exoplanet_bb']['astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
@@ -311,29 +307,53 @@ class AstrophysicalSources:
         idx_x_planet = (np.abs(sky_xx_arcsec[0, :] - x_planet_arcsec)).argmin()
 
         # kernel which will be broadcast across wavelength axis
+        '''
+        # 1 pixel only
         kernel_star = np.zeros((n_pix, n_pix))
         kernel_star[idx_y_star, idx_x_star] = 1.0
         canvas_star_3D = flux_star[:, None, None] * kernel_star[None, :, :]
+        '''
+
+        # a box of pixels (so I can actually see it)
+        half_pix = 20
+        y0 = max(0, idx_y_star - half_pix)
+        y1 = min(n_pix, idx_y_star + half_pix + 1)
+        x0 = max(0, idx_x_star - half_pix)
+        x1 = min(n_pix, idx_x_star + half_pix + 1)
+        kernel_star = np.zeros((n_pix, n_pix))
+        kernel_star[y0:y1, x0:x1] = 1.0
+        kernel_star /= kernel_star.sum()   # keep total flux conserved
+        canvas_star_3D = flux_star[:, None, None] * kernel_star[None, :, :]
+
         # shape (n_wavel, n_pix, n_pix), unit ph/(um m^2 s)
+        '''
+        # 1 pixel only
         kernel_planet = np.zeros((n_pix, n_pix))
         kernel_planet[idx_y_planet, idx_x_planet] = 1.0
         canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
+        '''
+        y0 = max(0, idx_y_planet - half_pix)
+        y1 = min(n_pix, idx_y_planet + half_pix + 1)
+        x0 = max(0, idx_x_planet - half_pix)
+        x1 = min(n_pix, idx_x_planet + half_pix + 1)
+        kernel_planet = np.zeros((n_pix, n_pix))
+        kernel_planet[y0:y1, x0:x1] = 1.0
+        kernel_planet /= kernel_planet.sum()   # keep total flux conserved
+        canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
+
         scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
 
         # save the scene to FITS file
         wavel_array = incident_dict['exoplanet_bb']['wavel']
         file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
         hdul = fits.HDUList([
-            fits.PrimaryHDU(scene_no_screen.value, name='INCIDENT_FLUX_PH_SEC_M2_UM'),
+            fits.PrimaryHDU(scene_no_screen.value),
             fits.ImageHDU(sky_xx_arcsec, name='XX_ARCSEC'),
             fits.ImageHDU(sky_yy_arcsec, name='YY_ARCSEC'),
             fits.ImageHDU(wavel_array.value, name='WAVEL_UM'),
         ])
         hdul.writeto(file_name_fits, overwrite=True)
         logger.info(f"Saved scene to {file_name_fits}")
-
-
-        ipdb.set_trace()
     
         return scene_no_screen
 
