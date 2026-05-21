@@ -95,15 +95,19 @@ class InstrumentDepTerms:
 
         logging.info(f'Generating ersatz transmission screen...')
 
+        # on-sky array (not necessarily the same size as the detector array)
         # make array of pixels 10 mas on a side, centered at 0
-        n_pix = 1001 # odd number to simplify centering
-        pix_size_mas = 10  # milliarcseconds
+        n_pix = 1001
+        pix_size_mas = 10
+        n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+        pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
         pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
         axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
         xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
-        self.screen_xx_arcsec = xx_arcsec
-        self.screen_yy_arcsec = yy_arcsec
+        self.sky_xx_arcsec = xx_arcsec
+        self.sky_yy_arcsec = yy_arcsec
         return self.transmission_screen_2d
+
 
     '''
     def pass_through_transmission_screen(self, plot: bool = False):

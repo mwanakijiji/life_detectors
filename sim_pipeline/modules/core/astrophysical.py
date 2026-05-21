@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from astropy import units as u
 import astropy.constants as const
 import pandas as pd
+from astropy.io import fits
 
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
@@ -252,6 +253,90 @@ class AstrophysicalSources:
         
         return incident_dict
     
+
+    def generate_onsky_scene(self, incident_dict: dict, plot: bool = False):
+        '''
+        Construct the on-sky scene from the incident flux dictionary and positions of objects as set in the config file.
+
+        INPUTS:
+            incident_dict: dictionary of incident flux for each source
+            plot: whether to plot the on-sky scene
+        '''
+
+        ipdb.set_trace()
+
+        n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+        pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
+        pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
+        axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
+        xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
+        sky_xx_arcsec = xx_arcsec
+        sky_yy_arcsec = yy_arcsec
+        
+        # initialize canvases (wavelength x sky y x sky x)
+        n_wavel = int(self.config['wavelength_range']['n_points'])
+        canvas_star_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
+        canvas_planet_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
+
+        # point sources only for now
+        ## ## TODO: ADD RESOLVED SOURCES
+        '''
+        for source_name in incident_dict:
+            if source_name is "star":
+                x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in incident_dict[source_name]["pos_star_arcsec"].split(","))
+            elif source_name is "exoplanet_model_10pc":
+                x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in incident_dict[source_name]["pos_star_arcsec"].split(","))
+            else:
+                continue
+        '''
+        x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_star_arcsec'].split(","))
+        x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_planet_arcsec'].split(","))
+
+        ipdb.set_trace()
+
+        # check consistency in units
+        flux_star = incident_dict['star']['astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
+        flux_planet = incident_dict['exoplanet_bb']['astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
+        if flux_star.unit != flux_planet.unit:
+            raise ValueError(
+                f"Star/planet flux units differ: {flux_star.unit} vs {flux_planet.unit}"
+            )
+        else:
+            FLUX_UNIT = flux_star.unit
+            logger.info(f"Constructing scene. Star/planet flux units are consistent: {flux_star.unit}")
+
+        idx_y_star = (np.abs(sky_yy_arcsec[:, 0] - y_star_arcsec)).argmin()
+        idx_x_star = (np.abs(sky_xx_arcsec[0, :] - x_star_arcsec)).argmin()
+        idx_y_planet = (np.abs(sky_yy_arcsec[:, 0] - y_planet_arcsec)).argmin()
+        idx_x_planet = (np.abs(sky_xx_arcsec[0, :] - x_planet_arcsec)).argmin()
+
+        # kernel which will be broadcast across wavelength axis
+        kernel_star = np.zeros((n_pix, n_pix))
+        kernel_star[idx_y_star, idx_x_star] = 1.0
+        canvas_star_3D = flux_star[:, None, None] * kernel_star[None, :, :]
+        # shape (n_wavel, n_pix, n_pix), unit ph/(um m^2 s)
+        kernel_planet = np.zeros((n_pix, n_pix))
+        kernel_planet[idx_y_planet, idx_x_planet] = 1.0
+        canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
+        scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
+
+        # save the scene to FITS file
+        wavel_array = incident_dict['exoplanet_bb']['wavel']
+        file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
+        hdul = fits.HDUList([
+            fits.PrimaryHDU(scene_no_screen.value, name='INCIDENT_FLUX_PH_SEC_M2_UM'),
+            fits.ImageHDU(sky_xx_arcsec, name='XX_ARCSEC'),
+            fits.ImageHDU(sky_yy_arcsec, name='YY_ARCSEC'),
+            fits.ImageHDU(wavel_array.value, name='WAVEL_UM'),
+        ])
+        hdul.writeto(file_name_fits, overwrite=True)
+        logger.info(f"Saved scene to {file_name_fits}")
+
+
+        ipdb.set_trace()
+    
+        return scene_no_screen
+
     '''
     def convert_adu(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:
         # Converts photons to e and ADU
