@@ -261,6 +261,11 @@ class AstrophysicalSources:
         INPUTS:
             incident_dict: dictionary of incident flux for each source
             plot: whether to plot the on-sky scene
+
+        OUTPUTS:
+            dict_source_layered_scene: dictionary of the on-sky scene for each source
+                - star: 3D array of the on-sky scene for the star
+                - planet: 3D array of the on-sky scene for the planet
         '''
 
         n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
@@ -341,21 +346,33 @@ class AstrophysicalSources:
         kernel_planet /= kernel_planet.sum()   # keep total flux conserved
         canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
 
-        scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
+        source_collapsed_scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
+
+        dict_source_layered_scene = {'star': canvas_star_3D, 'planet': canvas_planet_3D}
+
+        #scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
+
+        def _cube_values(q):
+            '''
+            Strip units (if any) for saving as FITS file
+            '''
+            return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
 
         # save the scene to FITS file
         wavel_array = incident_dict['exoplanet_bb']['wavel']
         file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
         hdul = fits.HDUList([
-            fits.PrimaryHDU(scene_no_screen.value),
-            fits.ImageHDU(sky_xx_arcsec, name='XX_ARCSEC'),
-            fits.ImageHDU(sky_yy_arcsec, name='YY_ARCSEC'),
-            fits.ImageHDU(wavel_array.value, name='WAVEL_UM'),
+            fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
+            fits.ImageHDU(_cube_values(dict_source_layered_scene["star"]), name="STAR"),
+            fits.ImageHDU(_cube_values(dict_source_layered_scene["planet"]), name="PLANET"),
+            fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
+            fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
+            fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),
         ])
         hdul.writeto(file_name_fits, overwrite=True)
         logger.info(f"Saved scene to {file_name_fits}")
     
-        return scene_no_screen
+        return dict_source_layered_scene
 
     '''
     def convert_adu(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:

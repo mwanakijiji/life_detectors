@@ -117,23 +117,23 @@ class InstrumentDepTerms:
         return screen_transmission_ersatz
 
 
-    def pass_through_transmission_screen(self, source_cube_no_screen: np.ndarray, transmission_screen: np.ndarray, plot: bool = False):
+    def pass_through_transmission_screen(self, source_dict_pre_screen: dict, transmission_screen: np.ndarray, plot: bool = False):
         '''
         Pass each astrophysical source through the transmission screen, and update prop_dict with the propagated terms
         photons/sec/m^2 -> photons/sec/m^2
 
         INPUTS:
-            source_cube_no_screen (Quantity): on-sky scene before transmission screen, shape (n_wavel, n_pix, n_pix)
+            source_cube_no_screen (dict of Quantities): on-sky scene before transmission screen; for each key (astro source), value (Quantitiy array) has shape (n_wavel, n_pix, n_pix)
             transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
             plot (bool): whether to plot the scene
-        '''
-
-        # make array of pixels 10 mas on a side, centered at 0
+        '''        
+        source_dict_post_screen = {}
+        for source_name, source_val in source_dict_pre_screen.items():
+            source_dict_post_screen[source_name] = source_val * transmission_screen[None, :, :]
         
-        source_cube_post_screen = source_cube_no_screen * transmission_screen[None, :, :]
-
-        # cobble together a scene, with a circle of radius 0.1" at the center
-
+        # collapse the sources into a single 3D array, for plotting
+        source_cube_post_screen = np.stack([source_dict_post_screen[source_name] for source_name in source_dict_post_screen.keys()], axis=0)
+        source_collapsed_cube_post_screen_sum = np.sum(source_cube_post_screen, axis=0)
 
         # if name is right and units are right
         '''
@@ -150,41 +150,38 @@ class InstrumentDepTerms:
                 }}
         self.prop_dict.update(dict_this)
         '''
-        ipdb.set_trace()
         if plot:
             idx = 15 # wavelength slice index
-            source_img = source_cube_no_screen[idx, :, :].value
-            source_units = source_cube_no_screen[idx, :, :].unit.to_string()
-            transmission_img = transmission_screen
-            source_times_transmission_img = source_cube_post_screen[idx, :, :].value
-            source_times_transmission_units = source_cube_post_screen[idx, :, :].unit.to_string()
+            for source_name, source_val in source_dict_post_screen.items():
+                source_img = source_dict_pre_screen[source_name][idx, :, :].value
+                source_units = source_val[idx, :, :].unit.to_string()
+                transmission_img = transmission_screen
+                source_times_transmission_img = source_val[idx, :, :].value
+                source_times_transmission_units = source_val[idx, :, :].unit.to_string()
 
-            fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-            im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
-            axs[0].set_title(f"Source")
-            axs[0].set_xlabel(f"x (pixel)")
-            axs[0].set_ylabel(f"y (pixel)")
-            fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_units}") ## ## TODO: MAY NEED TO ADD /ARCSEC**2 TO UNITS, ONCE ARCSEC ARE FULLY INCORPORATED HERE
+                fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
+                im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
 
-            im1 = axs[1].imshow(transmission_img, origin='lower', cmap='gray')
-            axs[1].set_title("Transmission")
-            axs[1].set_xlabel(f"x (pixel)")
-            axs[1].set_ylabel(f"y (pixel)")
-            fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
+                fig.suptitle(f"Source: {source_name}, idx_wavel: {idx}")
+                axs[0].set_title("Source")
+                axs[0].set_xlabel(f"x (pixel)")
+                axs[0].set_ylabel(f"y (pixel)")
+                fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_units}") ## ## TODO: MAY NEED TO ADD /ARCSEC**2 TO UNITS, ONCE ARCSEC ARE FULLY INCORPORATED HERE
+                im1 = axs[1].imshow(transmission_img, origin='lower', cmap='gray')
+                axs[1].set_title("Transmission")
+                axs[1].set_xlabel(f"x (pixel)")
+                axs[1].set_ylabel(f"y (pixel)")
+                fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
+                im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
+                axs[2].set_title("Source * Transmission")
+                fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
 
-            im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-            axs[2].set_title("Source * Transmission")
-            axs[2].set_xlabel(f"x (pixel)")
-            axs[2].set_ylabel(f"y (pixel)")
-            fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
+                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}.png"
+                fig.savefig(file_name_plot)
+                plt.close(fig)
+                logging.info(f"Saved plot of source, transmission, source * transmission triptych to {file_name_plot}")
 
-            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych.png"
-            fig.savefig(file_name_plot) ## ## TODO: PEG THE FILE NAMES TO CONFIG
-            plt.close(fig)
-            logging.info(f"Saved plot of source, transmission, source * transmission triptych to {file_name_plot}")
-            ipdb.set_trace()
-
-        return
+        return source_cube_post_screen
 
 
     def pass_through_aperture(self, plot: bool = False):
