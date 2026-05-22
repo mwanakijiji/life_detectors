@@ -227,18 +227,18 @@ class AstrophysicalSources:
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
         # = ph/um/m^2/sec
 
-        incident_dict['astro_flux_ph_sec_m2_um'] = flux_incident
+        incident_dict['pre_screen_astro_flux_ph_sec_m2_um'] = flux_incident
 
         
         if plot: # pragma: no cover
             plt.clf()
             plt.figure(figsize=(8, 8)) 
-            plt.plot(incident_dict['wavel'], incident_dict['astro_flux_ph_sec_m2_um'])
+            plt.plot(incident_dict['wavel'], incident_dict['pre_screen_astro_flux_ph_sec_m2_um'])
             plt.yscale('log')
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e9]) # for comparison with Dannert
             plt.xlabel(f"Wavelength ({incident_dict['wavel'].unit})")
-            plt.ylabel(f"Flux (" + str(incident_dict['astro_flux_ph_sec_m2_um'].unit) + ")")
+            plt.ylabel(f"Flux (" + str(incident_dict['pre_screen_astro_flux_ph_sec_m2_um'].unit) + ")")
             plt.title(
                 format_plot_title(
                     f"Incident flux from {source_name} (at Earth, rescaled for distance {float(self.config['target']['distance'])} pc)",
@@ -296,8 +296,8 @@ class AstrophysicalSources:
         x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_planet_arcsec'].split(","))
 
         # check consistency in units
-        flux_star = incident_dict['star']['astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
-        flux_planet = incident_dict['exoplanet_bb']['astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
+        flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
+        flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
         if flux_star.unit != flux_planet.unit:
             raise ValueError(
                 f"Star/planet flux units differ: {flux_star.unit} vs {flux_planet.unit}"
@@ -348,7 +348,7 @@ class AstrophysicalSources:
 
         source_collapsed_scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
 
-        dict_source_layered_scene = {'star': canvas_star_3D, 'planet': canvas_planet_3D}
+        dict_source_layered_scene = {'star': canvas_star_3D, 'exoplanet_model_10pc': canvas_planet_3D}
 
         #scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
 
@@ -359,12 +359,12 @@ class AstrophysicalSources:
             return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
 
         # save the scene to FITS file
-        wavel_array = incident_dict['exoplanet_bb']['wavel']
+        wavel_array = incident_dict['exoplanet_model_10pc']['wavel'] ## ## TODO: GENERALIZE THIS
         file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
         hdul = fits.HDUList([
             fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
             fits.ImageHDU(_cube_values(dict_source_layered_scene["star"]), name="STAR"),
-            fits.ImageHDU(_cube_values(dict_source_layered_scene["planet"]), name="PLANET"),
+            fits.ImageHDU(_cube_values(dict_source_layered_scene["exoplanet_model_10pc"]), name="PLANET"),
             fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
             fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
             fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),

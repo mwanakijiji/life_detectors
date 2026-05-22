@@ -5,6 +5,7 @@ This module handles calculations of instrumental noise sources including
 dark current, read noise, and other detector effects.
 """
 
+from socket import IPV6_DONTFRAG
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ class InstrumentDepTerms:
         Args:
             config: Configuration dictionary
             unit_converter: Unit conversion object
-            sources: Dictionary of sources of flux; {'wavel': <Quantity um>, 'astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
+            sources: Dictionary of sources of flux; {'wavel': <Quantity um>, 'pre_screen_astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
             sources_to_include: List of sources to actuallyinclude in the S/N calculation (and plots of incident fluxes)
         '''
 
@@ -52,6 +53,7 @@ class InstrumentDepTerms:
 
         gain = float(self.config["detector"]["gain"]) * u.electron / u.adu  # e-/ADU
 
+        #########################################################################################################################
         # read noise
         # e-/pix rms
         #self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
@@ -67,6 +69,7 @@ class InstrumentDepTerms:
         #read_noise_adu_rms = self.sources_instrum['read_noise_adu']
         #logging.info(f'Read noise is {read_noise_adu_rms} rms')
 
+        #########################################################################################################################
         # dark current rate 
         # e/pix/sec
         dark_current_str = self.config["detector"]["dark_current"]
@@ -127,17 +130,27 @@ class InstrumentDepTerms:
             transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
             plot (bool): whether to plot the scene
         '''        
+
         source_dict_post_screen = {}
         for source_name, source_val in source_dict_pre_screen.items():
             source_dict_post_screen[source_name] = source_val * transmission_screen[None, :, :]
         
-        # collapse the sources into a single 3D array, for plotting
+        # collapse the sources into a single 3D array (wavel, x, y), for plotting
         source_cube_post_screen = np.stack([source_dict_post_screen[source_name] for source_name in source_dict_post_screen.keys()], axis=0)
         source_collapsed_cube_post_screen_sum = np.sum(source_cube_post_screen, axis=0)
 
+        # integrate over 2D sky to get total flux from each source
+        # update the sources
+        source_integrated_dict_post_screen = {}
+        for source_name, source_val in source_dict_post_screen.items():
+            source_val_integrated = np.sum(source_val, axis=(1,2))
+            self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = source_val_integrated
+            self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = source_dict_post_screen[source_name]
+            logging.info(f'Flux of {source_name} passed through transmission screen')
+
         # if name is right and units are right
         '''
-        if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
+        if ('pre_screen_astro_flux_ph_sec_m2_um' in source_val) and (source_val['pre_screen_astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
             dict_this = {source_name: {
                 'wavel': source_val['wavel'], 
                 'scene_2D_no_screen': scene_no_screen, 
@@ -145,8 +158,8 @@ class InstrumentDepTerms:
                 'source_cube_no_screen': source_cube_no_screen,
                 'source_cube_with_screen': source_cube_with_screen,
                 'transmission_screen_2D': screen_transmission_ersatz,
-                'flux_pre_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um'],
-                'flux_post_screen_ph_sec_m2_um': source_val['astro_flux_ph_sec_m2_um']
+                'flux_pre_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um'],
+                'flux_post_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um']
                 }}
         self.prop_dict.update(dict_this)
         '''
@@ -181,7 +194,7 @@ class InstrumentDepTerms:
                 plt.close(fig)
                 logging.info(f"Saved plot of source, transmission, source * transmission triptych to {file_name_plot}")
 
-        return source_cube_post_screen
+        return
 
 
     def pass_through_aperture(self, plot: bool = False):
@@ -190,17 +203,13 @@ class InstrumentDepTerms:
 
         for source_name, source_val in self.sources_astroph.items():
             # if name is right and units are right
-            if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-                dict_this = {source_name: {'wavel': source_val['wavel'], 
-                'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] )}}
+            if ('flux_cube_post_screen_ph_sec_um' in source_val) and (source_val['flux_cube_post_screen_ph_sec_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
+                dict_this = {source_name: {
+                                        'wavel': source_val['wavel'], 
+                                        'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
+                                        'flux_cube_post_screen_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['flux_cube_post_screen_ph_sec_um'] )
+                                        }}
                 self.prop_dict.update(dict_this)
-            ''' ## ## TODO: PUT THIS BACK IN ONCE READY FOR TRANSMISSION SCREEN
-            if ('astro_flux_ph_sec_m2_um' in source_val) and (source_val['astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-                dict_this = {source_name: {'wavel': source_val['wavel'], 
-                'flux_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['astro_flux_ph_sec_m2_um'] ),
-                'flux_pre_aperture_ph_sec_m2_um': source_val['flux_post_screen_ph_sec_um']}}
-                self.prop_dict.update(dict_this)
-            '''
 
         '''
         # overplot all the sources
