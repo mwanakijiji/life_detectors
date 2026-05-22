@@ -356,7 +356,7 @@ def run_single_calculation(config_path: str,
         instrument_dep_terms.calculate_instrinsic_instrumental_noise()
         
         # Calculate S/N
-        logger.info("Calculating signal-to-noise ratio...")
+        logger.info("Calculating signal-to-noise ratio...") # true
         noise_calc = calculator.NoiseCalculator(
             config,
             sources_all=instrument_dep_terms, 
