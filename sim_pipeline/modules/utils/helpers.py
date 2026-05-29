@@ -657,7 +657,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         # (W / (micron sr m2)) comes from integrand
         # AU^2 units come from rdr in units of AU
         # final units here should be W / (micron m2)
-        I_lambda = 2 * np.pi * np.trapezoid(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU # u.au comes from dr
+        I_lambda = 2 * np.pi * np.trapz(integrand, x=r_array, axis=0) * (u.W / (u.um * u.m**2)) * u.AU # u.au comes from dr
         I_lambda = I_lambda.to(u.W / u.um)
 
         return I_lambda
