@@ -1,0 +1,27 @@
+# Aperture array layout (positions in meters, instrument frame)
+# x, y: meters from array reference origin
+
+schema_version: 1
+units:
+  position: m
+
+reference:
+  origin: array_center   # describe your frame in code/docs
+  # x: e.g. along dispersion; y: e.g. cross-dispersion
+
+apertures:
+  - name: aperture_00
+    x_m: 0.0
+    y_m: 0.0
+
+  - name: aperture_01
+    x_m: 10.0
+    y_m: 0.0
+
+  - name: aperture_02
+    x_m: 10.0
+    y_m: 10.0
+
+  - name: aperture_03
+    x_m: 0.0
+    y_m: 10.0
