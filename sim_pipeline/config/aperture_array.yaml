@@ -1,5 +1,5 @@
 # Aperture array layout (positions in meters, instrument frame)
-# x, y: meters from array reference origin
+# Code stacks positions as pos_vec_m = [y_m, x_m] per aperture (y first, x second).
 
 schema_version: 1
 units:

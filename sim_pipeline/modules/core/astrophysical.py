@@ -3,6 +3,8 @@ Astrophysical noise calculations for the modules package.
 
 This module handles calculations of astrophysical noise sources including
 stars, exoplanets, exozodiacal disks, and zodiacal backgrounds.
+
+Sky coordinate convention: y first, x second (see instrumental.py module doc).
 """
 
 import numpy as np
@@ -20,7 +22,7 @@ from astropy.io import fits
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..data.units import UnitConverter
-from ..utils.helpers import format_plot_title
+from ..utils.helpers import format_plot_title, parse_sky_position_arcsec_yx
 
 logger = logging.getLogger(__name__)
 
@@ -292,8 +294,12 @@ class AstrophysicalSources:
             else:
                 continue
         '''
-        x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_star_arcsec'].split(","))
-        x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in self.config['onsky_scene']['pos_planet_arcsec'].split(","))
+        y_star_arcsec, x_star_arcsec = parse_sky_position_arcsec_yx(
+            self.config['onsky_scene']['pos_star_arcsec']
+        )
+        y_planet_arcsec, x_planet_arcsec = parse_sky_position_arcsec_yx(
+            self.config['onsky_scene']['pos_planet_arcsec']
+        )
 
         # check consistency in units
         flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
@@ -365,8 +371,8 @@ class AstrophysicalSources:
             fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
             fits.ImageHDU(_cube_values(dict_source_layered_scene["star"]), name="STAR"),
             fits.ImageHDU(_cube_values(dict_source_layered_scene["exoplanet_model_10pc"]), name="PLANET"),
-            fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
             fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
+            fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
             fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),
         ])
         hdul.writeto(file_name_fits, overwrite=True)

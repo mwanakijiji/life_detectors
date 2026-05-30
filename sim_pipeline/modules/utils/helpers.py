@@ -28,6 +28,14 @@ import copy
 logger = logging.getLogger(__name__)
 
 
+def parse_sky_position_arcsec_yx(pos_str: str) -> tuple[float, float]:
+    """Parse on-sky position string as y, x offsets in arcsec (y first, x second)."""
+    parts = [float(v.strip()) for v in str(pos_str).split(",")]
+    if len(parts) != 2:
+        raise ValueError(f"Expected two comma-separated values (y, x arcsec), got {pos_str!r}")
+    return parts[0], parts[1]
+
+
 ########################################################
 # start bunch of functions to get and set plot title context
 def _config_get(config, section: str, key: str, default: Optional[str] = None) -> Optional[str]:

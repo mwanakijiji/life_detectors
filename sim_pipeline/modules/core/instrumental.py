@@ -3,6 +3,12 @@ Instrumental noise calculations for the modules package.
 
 This module handles calculations of instrumental noise sources including
 dark current, read noise, and other detector effects.
+
+Sky / aperture coordinate convention (use everywhere in this repo):
+  - 2D sky angle arrays: index 0 = y, index 1 = x (arcsec or rad).
+  - 3D cubes (3, Ny, Nx): slice 0 = science; slice 1 = y; slice 2 = x.
+  - Aperture position vectors pos_vec_m: [y_m, x_m] per aperture.
+  - Config pos_*_arcsec strings: "y, x" (y first, x second).
 """
 
 from socket import IPV6_DONTFRAG
@@ -105,22 +111,15 @@ class InstrumentDepTerms:
         '''
         INPUTS:
         A_vec: array of amplitudes (ex. np.array([1, 1, 1]))
-        x_vec: array of vectors of aperture positions (y,x) [m] (ex. np.array(([0, -1], [0, 1], [1, 1])))
-        phi_dc_vec_rad: array of absolute DC (i.e., induced) phase offsets of each branch of the instrument [rad] (ex. np.array([0, np.pi/4, 0]))
-        theta_vec_2d_asec: cube with slice 0 = y_asec, slice 1 = x_asec (ex. astro_cube[1:,:,:])
+        phi_dc_vec_rad: phase offsets per aperture [rad]
         wavel_m: wavelength in meters (ex. 1e-6)
-        # incl_comp_transmission: boolean, if True, include the transmissions of the component baselines in slice 1 to -3
-        plot: boolean, if True, plot the instrument response
+        plot: if True, plot and write FITS cubes
 
         OUTPUT:
-        complex_instrument_response: instrument response over the sky; slices are
-        [0] = total instrument response
-        [-2] = y coord in sky [arcsec]
-        [-1] = x coord in sky [arcsec]
-        transmission_instrument_response: instrument response over the sky; slices are
-        [0] = total on-sky transmission
-        [-2] = y coord in sky [arcsec]
-        [-1] = x coord in sky [arcsec]
+        transmission_instrument_response: (3, Ny, Nx) cube
+        [0] = on-sky transmission (instrument response)
+        [1] = y on-sky [arcsec]
+        [2] = x on-sky [arcsec]
         '''
 
         # read in array parameters from config file
@@ -131,17 +130,16 @@ class InstrumentDepTerms:
         # construct vectors
         A_vec = [] # amplitudes
         phi_dc_vec_rad = [] # relative phase offests of each arm
-        x_vec = [] # positions of apertures
+        pos_vec_m = []  # [y_m, x_m] per aperture
         for aperture in aperture_array_definition['apertures']:
             A_vec.append(aperture['amplitude'])
-            phi_dc_vec_rad.append(np.deg2rad(aperture['phi_dc_deg'])) 
-            x_vec.append([aperture['x_m'], aperture['y_m']]) # x_vec is a 2d vector; elements have x,y convention
+            phi_dc_vec_rad.append(np.deg2rad(aperture['phi_dc_deg']))
+            pos_vec_m.append([aperture['y_m'], aperture['x_m']])
         A_vec = np.array(A_vec)
         phi_dc_vec_rad = np.array(phi_dc_vec_rad)
-        x_vec = np.array(x_vec)
+        pos_vec_m = np.array(pos_vec_m)
 
-        # make cube to hold the on-sky coordinates
-        n_pix = 201 # int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+        n_pix = int(self.config['onsky_scene']['n_pix'])
         pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
         pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
         axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
@@ -177,16 +175,16 @@ class InstrumentDepTerms:
                 # Differential phase between apertures j and k [rad]
                 del_phi_dc_jk_rad = phi_dc_vec_rad[k] - phi_dc_vec_rad[j]
                 
-                # Baseline from aperture j to aperture k [m]
-                del_x_jk = x_vec[k] - x_vec[j]  # shape: (2,)
-                
+                # Baseline from aperture j to aperture k [m]; del_x_jk[0]=Δy, del_x_jk[1]=Δx
+                del_x_jk = pos_vec_m[k] - pos_vec_m[j]
+
                 # Compute phase term for all sky positions at once using broadcasting
                 # theta_vec_rad_array has shape (2, Ny, Nx), del_x_jk has shape (2,)
                 # We want to compute dot(del_x_jk, theta_vec_rad_array) for all positions
                 # This gives shape (Ny, Nx)
                 phase_term = (2 * np.pi / wavel_m) * (
-                    del_x_jk[0] * theta_vec_rad_array[1] +  # x_m · θ_x
-                    del_x_jk[1] * theta_vec_rad_array[0]    # y_m · θ_y
+                    del_x_jk[0] * theta_vec_rad_array[0] +  # Δy · θ_y
+                    del_x_jk[1] * theta_vec_rad_array[1]    # Δx · θ_x
                 )
                 
                 # Use cosine addition formula: cos(a + b) = cos(a)cos(b) - sin(a)sin(b)

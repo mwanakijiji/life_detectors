@@ -1,5 +1,8 @@
-
 # Builds basic transmission screens for nulling
+#
+# Sky convention: y first, x second.
+#   - theta_vec_2d_asec[0]=y, [1]=x; 3D cubes [0]=science, [1]=y, [2]=x
+#   - pos_vec / x_vec tuples are [y_m, x_m] or [y_arcsec, x_arcsec] in phase code
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,15 +35,15 @@ circle2 = ((X + d/2)**2 + Y**2) < radius**2
 aperture = np.zeros((N, N), dtype=float)
 aperture[(circle1 | circle2)] = 1
 
-# Slices 2 and 3: x and y coordinates in meters
-x_m = (X) * pixel_scale
+# Slices 1 and 2: y and x coordinates in meters (y first, x second)
 y_m = (Y) * pixel_scale
+x_m = (X) * pixel_scale
 
 # Make the 3D array
 aperture_cube = np.zeros((3, N, N), dtype=float)
 aperture_cube[0] = aperture
-aperture_cube[1] = x_m
-aperture_cube[2] = y_m
+aperture_cube[1] = y_m
+aperture_cube[2] = x_m
 '''
 
 '''
@@ -85,9 +88,9 @@ x = np.arange(N) - N // 2
 y = np.arange(N) - N // 2
 X, Y = np.meshgrid(x, y)
 
-# Slices 2 and 3: x and y coordinates in meters
-x_asec = (X) * pixel_scale_onsky
+# Slices 1 and 2: y and x on-sky coordinates [arcsec] (y first, x second)
 y_asec = (Y) * pixel_scale_onsky
+x_asec = (X) * pixel_scale_onsky
 
 # add the coordinates
 astro_cube[0] = astro_scene
@@ -128,14 +131,10 @@ def inst_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_asec, wavel_m, 
     plot: boolean, if True, plot the instrument response
 
     OUTPUT:
-    complex_instrument_response: instrument response over the sky; slices are
-      [0] = total instrument response
-      [-2] = y coord in sky [arcsec]
-      [-1] = x coord in sky [arcsec]
-    transmission_instrument_response: instrument response over the sky; slices are
-      [0] = total on-sky transmission
-      [-2] = y coord in sky [arcsec]
-      [-1] = x coord in sky [arcsec]
+    transmission_instrument_response: (3, Ny, Nx)
+      [0] = on-sky transmission
+      [1] = y [arcsec]
+      [2] = x [arcsec]
     '''
 
     # theta_vec_rad: cube with slice 0 = y_asec, slice 1 = x_asec
@@ -203,8 +202,8 @@ def inst_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_asec, wavel_m, 
 
     # cube_canvas[0,:,:] = R_theta_vec
     cube_canvas[0,:,:] = R_theta_vec
-    cube_canvas[1:,:,:] = theta_vec_rad_array[0,:,:] # y-coords [asec]
-    cube_canvas[2:,:,:] = theta_vec_rad_array[1,:,:] # x-coords [asec]
+    cube_canvas[1, :, :] = theta_vec_2d_asec[0, :, :]  # y [arcsec]
+    cube_canvas[2, :, :] = theta_vec_2d_asec[1, :, :]  # x [arcsec]
 
     # conceptual point here! this response to photons is real, not complex! See Lay Eqn. (3): it's the rr*
     complex_instrument_response = cube_canvas
