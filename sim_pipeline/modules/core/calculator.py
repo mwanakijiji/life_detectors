@@ -115,6 +115,7 @@ class NoiseCalculator:
                                                 self.sources_all.prop_dict['exoplanet_bb']['wavel'].value, 
                                                 self.sources_all.prop_dict['exoplanet_bb']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)
         elif "exoplanet_model_10pc" in self.sources_to_include:
+            ipdb.set_trace()
             exoplanet_flux_e_sec_um = np.interp(wavel_bin_centers.value, 
                                                 self.sources_all.prop_dict['exoplanet_model_10pc']['wavel'].value, 
                                                 self.sources_all.prop_dict['exoplanet_model_10pc']['flux_e_sec_um'].value) * u.electron / (u.um * u.s)

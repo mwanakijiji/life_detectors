@@ -15,6 +15,9 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 import astropy.io.fits as fits
 from astropy.visualization import ZScaleInterval, ImageNormalize
+import yaml
+from pathlib import Path
+
 
 
 from ..data.units import UnitConverter
@@ -95,29 +98,216 @@ class InstrumentDepTerms:
         return 
 
 
-    def generate_transmission_screen(self, plot: bool = False):
-        '''
-        Generate an ersatz transmission screen, for testing purposes.
+    def generate_instrument_transmission(self, wavel_m: float = 11e-6, plot: bool = False):
+        # phi_dc_vec_rad, theta_vec_2d_asec, 
+        # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
 
+        '''
         INPUTS:
-            plot (bool): whether to plot the screen
+        A_vec: array of amplitudes (ex. np.array([1, 1, 1]))
+        x_vec: array of vectors of aperture positions (y,x) [m] (ex. np.array(([0, -1], [0, 1], [1, 1])))
+        phi_dc_vec_rad: array of absolute DC (i.e., induced) phase offsets of each branch of the instrument [rad] (ex. np.array([0, np.pi/4, 0]))
+        theta_vec_2d_asec: cube with slice 0 = y_asec, slice 1 = x_asec (ex. astro_cube[1:,:,:])
+        wavel_m: wavelength in meters (ex. 1e-6)
+        # incl_comp_transmission: boolean, if True, include the transmissions of the component baselines in slice 1 to -3
+        plot: boolean, if True, plot the instrument response
 
-        OUTPUTS:
-            screen_transmission_ersatz (np.ndarray): ersatz transmission screen, shape (n_pix, n_pix)
+        OUTPUT:
+        complex_instrument_response: instrument response over the sky; slices are
+        [0] = total instrument response
+        [-2] = y coord in sky [arcsec]
+        [-1] = x coord in sky [arcsec]
+        transmission_instrument_response: instrument response over the sky; slices are
+        [0] = total on-sky transmission
+        [-2] = y coord in sky [arcsec]
+        [-1] = x coord in sky [arcsec]
         '''
 
-        logging.info(f'Generating ersatz transmission screen...')
+        # read in array parameters from config file
+        aperture_array_definition_file_name = self.config["telescope"]["aperture_array_config_file_name"]
+        with open(aperture_array_definition_file_name, 'r') as file:
+            aperture_array_definition = yaml.safe_load(file)
 
-        # on-sky array (not necessarily the same size as the detector array)
-        # make array of pixels 10 mas on a side, centered at 0
-        n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+        # construct vectors
+        A_vec = [] # amplitudes
+        phi_dc_vec_rad = [] # relative phase offests of each arm
+        x_vec = [] # positions of apertures
+        for aperture in aperture_array_definition['apertures']:
+            A_vec.append(aperture['amplitude'])
+            phi_dc_vec_rad.append(np.deg2rad(aperture['phi_dc_deg'])) 
+            x_vec.append([aperture['x_m'], aperture['y_m']]) # x_vec is a 2d vector; elements have x,y convention
+        A_vec = np.array(A_vec)
+        phi_dc_vec_rad = np.array(phi_dc_vec_rad)
+        x_vec = np.array(x_vec)
+
+        # make cube to hold the on-sky coordinates
+        n_pix = 201 # int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
         pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
         pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
         axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
         xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
-        screen_transmission_ersatz = np.sin(xx_arcsec)**2
+        sky_xx_arcsec = xx_arcsec
+        sky_yy_arcsec = yy_arcsec
+        arcsec_to_rad = np.pi / (180.0 * 3600.0)
+        theta_vec_rad_array = np.zeros((2, n_pix, n_pix), dtype=float)
+        theta_vec_rad_array[0] = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad]
+        theta_vec_rad_array[1] = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad]
 
-        return screen_transmission_ersatz
+        # Initialize the instrument response array
+        R_theta_vec = np.zeros(np.shape(theta_vec_rad_array[0]))  # shape: (Ny, Nx)
+
+        ipdb.set_trace()
+        
+        # Calculate total number of baselines (unique pairs of apertures)
+        N_apertures = len(aperture_array_definition['apertures'])
+        logging.info(f'Number of apertures: {N_apertures}')
+        # For N apertures, number of unique baselines = N*(N-1)/2
+        N_baselines = N_apertures * (N_apertures - 1) // 2
+        logging.info(f'Total number of baselines: {N_baselines}')
+
+        #if incl_comp_transmission:
+        #    cube_canvas = np.zeros((N_baselines+3, N, N))
+
+        cube_canvas = np.zeros((3, n_pix, n_pix))
+
+        # Sum over all pairs of apertures (j, k) where j < k
+        for j in range(N_apertures):
+            for k in range(N_apertures):
+
+                # Differential phase between apertures j and k [rad]
+                del_phi_dc_jk_rad = phi_dc_vec_rad[k] - phi_dc_vec_rad[j]
+                
+                # Baseline from aperture j to aperture k [m]
+                del_x_jk = x_vec[k] - x_vec[j]  # shape: (2,)
+                
+                # Compute phase term for all sky positions at once using broadcasting
+                # theta_vec_rad_array has shape (2, Ny, Nx), del_x_jk has shape (2,)
+                # We want to compute dot(del_x_jk, theta_vec_rad_array) for all positions
+                # This gives shape (Ny, Nx)
+                phase_term = (2 * np.pi / wavel_m) * (
+                    del_x_jk[0] * theta_vec_rad_array[1] +  # x_m · θ_x
+                    del_x_jk[1] * theta_vec_rad_array[0]    # y_m · θ_y
+                )
+                
+                # Use cosine addition formula: cos(a + b) = cos(a)cos(b) - sin(a)sin(b)
+                # This is more efficient than computing cos and sin separately
+                # Eqn. B12 in Dannert 2025
+                # Eqn. 3 in Lay 2004
+                response_jk = A_vec[j] * A_vec[k] * np.cos(del_phi_dc_jk_rad + phase_term)
+                
+                # Add contribution from this pair to the total response
+                '''
+                if plot:
+                    plt.clf()
+                    plt.imshow(response_jk)
+                    plt.title(f'Baseline {j}-{k}')
+                    plt.colorbar()
+                    plt.show()
+                '''
+                
+                '''
+                # if incl_comp_transmission, add this as a separate slice
+                if incl_comp_transmission:
+                '''
+
+                # Add contribution from this pair to the total response
+                R_theta_vec += response_jk        
+
+        # cube_canvas[0,:,:] = R_theta_vec
+        cube_canvas[0, :, :] = R_theta_vec
+        cube_canvas[1, :, :] = sky_yy_arcsec  # y [arcsec]
+        cube_canvas[2, :, :] = sky_xx_arcsec  # x [arcsec]
+
+        # conceptual point here! this response to photons is real, not complex! See Lay Eqn. (3): it's the rr*
+        complex_instrument_response = cube_canvas
+
+        # now for the actual transmission
+        transmission_instrument_response = np.zeros(np.shape(cube_canvas))
+        #transmission_instrument_response[0,:,:] = np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
+        transmission_instrument_response[0,:,:] = R_theta_vec # on-sky transmission
+
+        #transmission_instrument_response[0,:,:] /= np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this right?)
+        transmission_instrument_response[1:3,:,:] = cube_canvas[1:3,:,:] # replicate coordinates
+
+        if plot:
+            plt.clf()
+
+            ipdb.set_trace()
+
+            arcsec_to_rad = np.pi / (180.0 * 3600.0)
+
+            y_sky_asec = transmission_instrument_response[1, :, :]  # y at each pixel
+            x_sky_asec = transmission_instrument_response[2, :, :]  # x at each pixel
+            x_sky_rad = x_sky_asec * arcsec_to_rad
+            y_sky_rad = y_sky_asec * arcsec_to_rad
+            #y_sky_asec = y_sky_rad * 206265
+            #x_sky_asec = x_sky_rad * 206265
+
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+            extent = [
+                x_sky_asec.min(), x_sky_asec.max(),   # left, right
+                y_sky_asec.min(), y_sky_asec.max(),   # bottom, top
+            ]
+
+            im0 = axes[0].imshow(
+                transmission_instrument_response[0, :, :],
+                origin="lower",
+                extent=extent,
+                aspect="equal",
+            )
+            #axes[0].set_xlim(-0.5, 0.5) # zoom in on central 1x1 arcsec**2
+            #axes[0].set_ylim(-0.5, 0.5) # zoom in on central 1x1 arcsec**2
+            axes[0].set_xlabel("x [arcsec]")
+            axes[0].set_ylabel("y [arcsec]")
+            axes[0].set_title("Net on-sky transmission")
+            plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+
+            # make what the HOSTS screen should look like
+            hosts_trans = np.power( np.sin(np.pi * x_sky_rad * 14.4 / 11e-6), 2 )
+
+            im1 = axes[1].imshow(
+                hosts_trans,
+                origin="lower",
+                extent=extent,
+                aspect="equal",
+            )
+            #axes[1].set_xlim(-0.5, 0.5) # zoom in on central 1x1 arcsec**2
+            #axes[1].set_ylim(-0.5, 0.5) # zoom in on central 1x1 arcsec**2
+            axes[1].set_xlabel("x [arcsec]")
+            axes[1].set_ylabel("y [arcsec]")
+            axes[1].set_title("HOSTS transmission (l/B=0.158asec)")
+            plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+            plt.tight_layout()
+            ipdb.set_trace()
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"transmission_instrument_response.png"
+            plt.savefig(file_name_plot)
+            logging.info(f"Saved plot of transmission instrument response to {file_name_plot}")
+            plt.close(fig)
+
+            save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+            transmission_cube_3d = np.stack(
+                (transmission_instrument_response[0, :, :], y_sky_asec, x_sky_asec),
+                axis=0,
+            )
+            hosts_cube_3d = np.stack((hosts_trans, y_sky_asec, x_sky_asec), axis=0)
+            fits.writeto(
+                save_dir + "transmission_instrument_response_cube.fits",
+                transmission_cube_3d,
+                overwrite=True,
+            )
+            fits.writeto(
+                save_dir + "hosts_transmission_cube.fits",
+                hosts_cube_3d,
+                overwrite=True,
+            )
+            logging.info(
+                f"Saved 3D FITS cubes: {save_dir}transmission_instrument_response_cube.fits, "
+                f"{save_dir}hosts_transmission_cube.fits"
+            )
+            
+        
+        return transmission_instrument_response
 
 
     def pass_through_transmission_screen(self, source_dict_pre_screen: dict, transmission_screen: np.ndarray, plot: bool = False):
@@ -437,7 +627,6 @@ class Detector:
             # self.footprint_cube[wavel_bin_num,:,:] is just a boolean array, so we multiply it
             systematics_vector_1d[wavel_bin_num] = np.sum( self.footprint_cube[wavel_bin_num,:,:] * canvas_systematics )
         ipdb.set_trace()
-
         '''
         # apply the 2D additive systematics to the spectrum
 

@@ -9,19 +9,22 @@ reference:
   origin: array_center   # describe your frame in code/docs
   # x: e.g. along dispersion; y: e.g. cross-dispersion
 
+
 apertures:
   - name: aperture_00
-    x_m: 0.0
+    amplitude: 1.0
+    phi_dc_deg: 0
+    x_m: -7.2
     y_m: 0.0
 
   - name: aperture_01
-    x_m: 10.0
+    amplitude: 1.0
+    phi_dc_deg: 180
+    x_m: 7.2
     y_m: 0.0
 
-  - name: aperture_02
-    x_m: 10.0
-    y_m: 10.0
-
-  - name: aperture_03
-    x_m: 0.0
-    y_m: 10.0
+# apertures variables:
+# amplitude: amplitude of the aperture
+# phi_dc_deg: phase offset of the aperture (in degrees, since pi is hard to set in a yaml file)
+# x_m: x position of the aperture
+# y_m: y position of the aperture

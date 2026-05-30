@@ -113,10 +113,9 @@ plt.tight_layout()
 plt.show()
 
 
-## ## Instrument response & transmission
-def inst_response_and_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_asec, wavel_m, plot=False):
-    # Complex instrument respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
-    # ... and the on-sky transmission
+## ## Instrument transmission (should I add complex responses too?)
+def inst_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_asec, wavel_m, plot=False):
+    # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
 
     '''
     INPUTS:
@@ -165,8 +164,6 @@ def inst_response_and_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_as
     for j in range(N_apertures):
         for k in range(N_apertures):
 
-            ipdb.set_trace()
-
             # Differential phase between apertures j and k [rad]
             del_phi_dc_jk_rad = phi_dc_vec_rad[k] - phi_dc_vec_rad[j]
             
@@ -205,7 +202,6 @@ def inst_response_and_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_as
             R_theta_vec += response_jk        
 
     # cube_canvas[0,:,:] = R_theta_vec
-    ipdb.set_trace()
     cube_canvas[0,:,:] = R_theta_vec
     cube_canvas[1:,:,:] = theta_vec_rad_array[0,:,:] # y-coords [asec]
     cube_canvas[2:,:,:] = theta_vec_rad_array[1,:,:] # x-coords [asec]
@@ -214,15 +210,14 @@ def inst_response_and_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_as
     complex_instrument_response = cube_canvas
 
     # now for the actual transmission
-    transmission_instrument_response = np.zeros(np.shape(complex_instrument_response))
+    transmission_instrument_response = np.zeros(np.shape(cube_canvas))
     #transmission_instrument_response[0,:,:] = np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
     transmission_instrument_response[0,:,:] = R_theta_vec # on-sky transmission
 
     #transmission_instrument_response[0,:,:] /= np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this right?)
-    transmission_instrument_response[1:3,:,:] = complex_instrument_response[1:3,:,:] # replicate coordinates
+    transmission_instrument_response[1:3,:,:] = cube_canvas[1:3,:,:] # replicate coordinates
 
     if plot:
-        ipdb.set_trace()
         plt.clf()
 
         y_sky_rad = transmission_instrument_response[1, :, :]  # y at each pixel
@@ -266,7 +261,7 @@ def inst_response_and_transmission(A_vec, x_vec, phi_dc_vec_rad, theta_vec_2d_as
         plt.show()
         
     
-    return complex_instrument_response, transmission_instrument_response
+    return transmission_instrument_response
 
 # %%
 # Set parameters of the interferometer: 2 and 3 apertures 
@@ -295,8 +290,7 @@ theta_sky_asec = astro_cube[1:, :, :]  # y, x arcsec grids
 # theta_vec_2d_asec: cube with slice 0 = y_asec, slice 1 = x_asec (ex. astro_cube[1:,:,:])
 # wavel_m: wavelength in meters (ex. 1e-6)
 # plot: boolean, if True, plot the instrument response
-ipdb.set_trace()
-complex_response, transmission_response = inst_response_and_transmission(
+complex_response, transmission_response = inst_transmission(
     A_vec=A_vec_2,
     x_vec=x_vec_2,
     phi_dc_vec_rad=phi_dc_vec_rad_2,

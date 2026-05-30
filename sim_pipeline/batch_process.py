@@ -341,17 +341,18 @@ def run_single_calculation(config_path: str,
 
         # generate the transmission screen
         logger.info("Generating transmission screen...")
-        transmission_screen = instrument_dep_terms.generate_transmission_screen(plot=plot)
+        transmission_screen = instrument_dep_terms.generate_instrument_transmission(plot=plot)
 
-       # pass astrophysical scene through transmission screen
+        # pass astrophysical scene through transmission screen
         logger.info("Passing astrophysical flux through transmission screen...")
+        ipdb.set_trace() # is transmission_screen right shape?
         instrument_dep_terms.pass_through_transmission_screen(source_dict_pre_screen = astro_scene_perfect_no_screen, transmission_screen = transmission_screen, plot=plot)
         
         # Pass through telescope aperture
         logger.info("Converting photons to photo-electrons...")
         instrument_dep_terms.pass_through_aperture(plot=plot)
 
-        # Convert photons to electrons
+        # on detector: convert photons to electrons
         instrument_dep_terms.photons_to_e()
         instrument_dep_terms.calculate_instrinsic_instrumental_noise()
         
