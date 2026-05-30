@@ -104,7 +104,7 @@ class InstrumentDepTerms:
         return 
 
 
-    def generate_instrument_transmission(self, wavel_m: float = 11e-6, plot: bool = False):
+    def generate_instrument_transmission(self, wavel_m: float = 11e-6, normalize: bool = True, plot: bool = False):
         # phi_dc_vec_rad, theta_vec_2d_asec, 
         # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
 
@@ -113,6 +113,7 @@ class InstrumentDepTerms:
         A_vec: array of amplitudes (ex. np.array([1, 1, 1]))
         phi_dc_vec_rad: phase offsets per aperture [rad]
         wavel_m: wavelength in meters (ex. 1e-6)
+        normalize: if True, normalize the transmission to 1 (otherwise, for N identical apertures, max transmission is N)
         plot: if True, plot and write FITS cubes
 
         OUTPUT:
@@ -304,7 +305,9 @@ class InstrumentDepTerms:
                 f"{save_dir}hosts_transmission_cube.fits"
             )
             
-        
+        if normalize: 
+            transmission_instrument_response /= np.max(transmission_instrument_response)
+
         return transmission_instrument_response
 
 
