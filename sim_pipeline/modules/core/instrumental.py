@@ -192,6 +192,8 @@ class InstrumentDepTerms:
                 # This is more efficient than computing cos and sin separately
                 # Eqn. B12 in Dannert 2025
                 # Eqn. 3 in Lay 2004
+                # phase_term: 2pi/lambda * b dot theta (in some notations)
+                # del_phi_dc_jk_rad: phase offset between apertures j and k [rad]
                 response_jk = A_vec[j] * A_vec[k] * np.cos(del_phi_dc_jk_rad + phase_term)
                 
                 # Add contribution from this pair to the total response
