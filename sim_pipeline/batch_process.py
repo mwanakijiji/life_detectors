@@ -339,36 +339,60 @@ def run_single_calculation(config_path: str,
             sources_to_include=sources_to_include
         )
 
-        # generate the transmission screen
-        logger.info("Generating transmission screen...")
-        transmission_screen = instrument_dep_terms.generate_instrument_transmission(plot=plot)
+        # Pristine copy after incident flux, before any screen/aperture steps
+        sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
-        # pass astrophysical scene through transmission screen
-        logger.info("Passing astrophysical flux through transmission screen...")
-        ipdb.set_trace() # is transmission_screen right shape?
-        instrument_dep_terms.pass_through_transmission_screen(source_dict_pre_screen = astro_scene_perfect_no_screen, transmission_screen = transmission_screen, plot=plot)
-        
-        # Pass through telescope aperture
-        logger.info("Converting photons to photo-electrons...")
-        instrument_dep_terms.pass_through_aperture(plot=plot)
+        # make 1 full rotation
+        angles_deg = np.arange(0, 360, step=180)  # e.g. step=1 or 5
+        results = {}  # dict to hold results for each angle
 
-        # on detector: convert photons to electrons
-        instrument_dep_terms.photons_to_e()
-        instrument_dep_terms.calculate_instrinsic_instrumental_noise()
-        
-        # Calculate S/N
-        logger.info("Calculating signal-to-noise ratio...")
-        noise_calc = calculator.NoiseCalculator(
-            config,
-            sources_all=instrument_dep_terms, 
-            sources_to_include=sources_to_include
-        )
-        
-        # This will automatically save the FITS file 
-        s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
-        
-        #logger.info(f"Successfully completed calculation with n_int={n_int}")
-        logger.info(f"Results saved to: {output_fits_file_abs_path}")
+        for angle_deg in angles_deg:
+            # Reset mutable pipeline state
+            instrument_dep_terms.sources_astroph = copy.deepcopy(sources_astroph_pristine)
+            instrument_dep_terms.prop_dict = {}
+
+            # generate the transmission screens (one per output)
+            logger.info("Generating transmission screens...")
+            # no rotation yet
+            transmission_screens = instrument_dep_terms.generate_instrument_transmission(plot=plot)
+            # rotate the transmission screens
+            transmission_screens = np.rotate(transmission_screens, angle_deg, axes=(1,2))
+
+            # pass astrophysical scene through transmission screens
+            logger.info("Passing astrophysical flux through transmission screens...")
+            ipdb.set_trace() # is transmission_screen right shape?
+            instrument_dep_terms.pass_through_transmission_screen(
+                source_dict_pre_screen = astro_scene_perfect_no_screen, 
+                transmission_screen = transmission_screens, 
+                plot=plot)
+            
+            # Pass through telescope aperture
+            logger.info("Converting photons to photo-electrons...")
+            instrument_dep_terms.pass_through_aperture(plot=plot)
+
+            # Record snapshot for this angle
+            results[angle_deg] = {
+                "prop_dict": copy.deepcopy(instrument_dep_terms.prop_dict),
+                "sources_astroph": copy.deepcopy(instrument_dep_terms.sources_astroph),
+            }
+
+            # on detector: convert photons to electrons
+            instrument_dep_terms.photons_to_e()
+            instrument_dep_terms.calculate_instrinsic_instrumental_noise()
+            
+            # Calculate S/N
+            logger.info("Calculating signal-to-noise ratio...")
+            noise_calc = calculator.NoiseCalculator(
+                config,
+                sources_all=instrument_dep_terms, 
+                sources_to_include=sources_to_include
+            )
+            
+            # This will automatically save the FITS file 
+            s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
+            
+            #logger.info(f"Successfully completed calculation with n_int={n_int}")
+            logger.info(f"Results saved to: {output_fits_file_abs_path}")
         
         # Clean up temporary config file
         #os.remove(temp_config_path)
