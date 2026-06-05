@@ -130,15 +130,22 @@ class InstrumentDepTerms:
 
         # construct vectors
         A_vec = [] # amplitudes
-        phi_dc_vec_rad = [] # relative phase offests of each arm
+        phi_dc_vec_rad = [] # relative phase offests of each arm (one vector per aperture)
         pos_vec_m = []  # [y_m, x_m] per aperture
+        phase_vector_rad_array = [] # phase vector for each output
         for aperture in aperture_array_definition['apertures']:
+            ipdb.set_trace()
             A_vec.append(aperture['amplitude'])
-            phi_dc_vec_rad.append(np.deg2rad(aperture['phi_dc_deg']))
             pos_vec_m.append([aperture['y_m'], aperture['x_m']])
+        for output in aperture_array_definition['outputs']:
+            phase_vector_deg = output['phase_vector_deg']
+            phase_vector_rad = np.deg2rad(phase_vector_deg)
+            phase_vector_rad_array.append(phase_vector_rad)
         A_vec = np.array(A_vec)
         phi_dc_vec_rad = np.array(phi_dc_vec_rad)
         pos_vec_m = np.array(pos_vec_m)
+
+
 
         n_pix = int(self.config['onsky_scene']['n_pix'])
         pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
@@ -151,9 +158,6 @@ class InstrumentDepTerms:
         theta_vec_rad_array = np.zeros((2, n_pix, n_pix), dtype=float)
         theta_vec_rad_array[0] = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad]
         theta_vec_rad_array[1] = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad]
-
-        # Initialize the instrument response array
-        R_theta_vec = np.zeros(np.shape(theta_vec_rad_array[0]))  # shape: (Ny, Nx)
 
         ipdb.set_trace()
         
@@ -169,67 +173,105 @@ class InstrumentDepTerms:
 
         cube_canvas = np.zeros((3, n_pix, n_pix))
 
+        # dict to hold bright and dark outputs
+        output_all_responses = {}
+
         # Sum over all pairs of apertures (j, k) where j < k
-        for j in range(N_apertures):
-            for k in range(N_apertures):
+        def R_m(phase_vector_rad: np.ndarray, wavel_m: float):
+            # response of output m
+            # N_apertures: number of apertures N
+            # phase_vector_deg: phase vector for output m (total number of outputs is not nec. same as apertures N)
+            # return: response of output m
 
-                # Differential phase between apertures j and k [rad]
-                del_phi_dc_jk_rad = phi_dc_vec_rad[k] - phi_dc_vec_rad[j]
-                
-                # Baseline from aperture j to aperture k [m]; del_x_jk[0]=Δy, del_x_jk[1]=Δx
-                del_x_jk = pos_vec_m[k] - pos_vec_m[j]
+            # convert phase vector to radians
+            #phase_vector_rad = np.deg2rad(phase_vector_deg)
+            R_theta_vec = np.zeros(np.shape(theta_vec_rad_array[0]))  # shape: (Ny, Nx)
 
-                # Compute phase term for all sky positions at once using broadcasting
-                # theta_vec_rad_array has shape (2, Ny, Nx), del_x_jk has shape (2,)
-                # We want to compute dot(del_x_jk, theta_vec_rad_array) for all positions
-                # This gives shape (Ny, Nx)
-                phase_term = (2 * np.pi / wavel_m) * (
-                    del_x_jk[0] * theta_vec_rad_array[0] +  # Δy · θ_y
-                    del_x_jk[1] * theta_vec_rad_array[1]    # Δx · θ_x
-                )
-                
-                # Use cosine addition formula: cos(a + b) = cos(a)cos(b) - sin(a)sin(b)
-                # This is more efficient than computing cos and sin separately
-                # Eqn. B12 in Dannert 2025
-                # Eqn. 3 in Lay 2004
-                # phase_term: 2pi/lambda * b dot theta (in some notations)
-                # del_phi_dc_jk_rad: phase offset between apertures j and k [rad]
-                response_jk = A_vec[j] * A_vec[k] * np.cos(del_phi_dc_jk_rad + phase_term)
-                
-                # Add contribution from this pair to the total response
-                '''
-                if plot:
-                    plt.clf()
-                    plt.imshow(response_jk)
-                    plt.title(f'Baseline {j}-{k}')
-                    plt.colorbar()
-                    plt.show()
-                '''
-                
-                '''
-                # if incl_comp_transmission, add this as a separate slice
-                if incl_comp_transmission:
-                '''
+            # sum over all baselines (i.e., over apertures over apertures)
+            for j in range(N_apertures):
+                for k in range(N_apertures):
 
-                # Add contribution from this pair to the total response
-                R_theta_vec += response_jk        
+                    # Differential phase between apertures j and k [rad]
+                    del_phi_dc_jk_rad = phase_vector_rad[k] - phase_vector_rad[j]
+                    
+                    # Baseline from aperture j to aperture k [m]; del_x_jk[0]=Δy, del_x_jk[1]=Δx
+                    del_x_jk = pos_vec_m[k] - pos_vec_m[j]
 
-        # cube_canvas[0,:,:] = R_theta_vec
-        cube_canvas[0, :, :] = R_theta_vec
-        cube_canvas[1, :, :] = sky_yy_arcsec  # y [arcsec]
-        cube_canvas[2, :, :] = sky_xx_arcsec  # x [arcsec]
+                    # Compute phase term for all sky positions at once using broadcasting
+                    # theta_vec_rad_array has shape (2, Ny, Nx), del_x_jk has shape (2,)
+                    # We want to compute dot(del_x_jk, theta_vec_rad_array) for all positions
+                    # This gives shape (Ny, Nx)
+                    phase_term = (2 * np.pi / wavel_m) * (
+                        del_x_jk[0] * theta_vec_rad_array[0] +  # Δy · θ_y
+                        del_x_jk[1] * theta_vec_rad_array[1]    # Δx · θ_x
+                    )
+                    
+                    # Use cosine addition formula: cos(a + b) = cos(a)cos(b) - sin(a)sin(b)
+                    # This is more efficient than computing cos and sin separately
+                    # Eqn. B12 in Dannert 2025
+                    # Eqn. 3 in Lay 2004
+                    # phase_term: 2pi/lambda * b dot theta (in some notations)
+                    # del_phi_dc_jk_rad: phase offset between apertures j and k [rad]
+                    response_jk = A_vec[j] * A_vec[k] * np.cos(del_phi_dc_jk_rad + phase_term)
+                    
+                    # Add contribution from this pair to the total response
+                    '''
+                    if plot:
+                        plt.clf()
+                        plt.imshow(response_jk)
+                        plt.title(f'Baseline {j}-{k}')
+                        plt.colorbar()
+                        plt.show()
+                    '''
+                    
+                    '''
+                    # if incl_comp_transmission, add this as a separate slice
+                    if incl_comp_transmission:
+                    '''
 
-        # conceptual point here! this response to photons is real, not complex! See Lay Eqn. (3): it's the rr*
-        complex_instrument_response = cube_canvas
+                    # Add contribution from this pair to the total response
+                    R_theta_vec += response_jk        
 
-        # now for the actual transmission
-        transmission_instrument_response = np.zeros(np.shape(cube_canvas))
-        #transmission_instrument_response[0,:,:] = np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
-        transmission_instrument_response[0,:,:] = R_theta_vec # on-sky transmission
+            # cube_canvas[0,:,:] = R_theta_vec
+            cube_canvas[0, :, :] = R_theta_vec
+            cube_canvas[1, :, :] = sky_yy_arcsec  # y [arcsec]
+            cube_canvas[2, :, :] = sky_xx_arcsec  # x [arcsec]
 
-        #transmission_instrument_response[0,:,:] /= np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this right?)
-        transmission_instrument_response[1:3,:,:] = cube_canvas[1:3,:,:] # replicate coordinates
+            # conceptual point here! this response to photons is real, not complex! See Lay Eqn. (3): it's the rr*
+            complex_instrument_response = cube_canvas
 
+            # now for the actual transmission
+            transmission_instrument_response = np.zeros(np.shape(cube_canvas))
+            #transmission_instrument_response[0,:,:] = np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
+            transmission_instrument_response[0,:,:] = R_theta_vec # on-sky transmission
+
+            #transmission_instrument_response[0,:,:] /= np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this right?)
+            transmission_instrument_response[1:3,:,:] = cube_canvas[1:3,:,:] # replicate coordinates
+
+            # amplitude can be >1 due to addition of aperture amplitudes
+            if normalize: 
+                max_field_amplitude = 0
+                # find the total field amplitude of the apertures, then square for transmission
+                for aperture in aperture_array_definition['apertures']:
+                    field_amplitude = aperture['amplitude']
+                    max_field_amplitude += field_amplitude
+                max_response = max_field_amplitude**2
+                transmission_instrument_response /= max_response
+
+            return transmission_instrument_response
+
+
+        for output in aperture_array_definition['outputs']:
+            phase_vector_rad = np.deg2rad(output['phase_vector_deg'])
+            transmission_instrument_response = R_m(phase_vector_rad=phase_vector_rad, wavel_m=wavel_m)
+            output_all_responses[output['name']] = transmission_instrument_response
+
+
+
+
+        ipdb.set_trace()
+        '''
+        # check: double Bracewell should look like HOSTS
         if plot:
             plt.clf()
 
@@ -306,9 +348,27 @@ class InstrumentDepTerms:
                 f"Saved 3D FITS cubes: {save_dir}transmission_instrument_response_cube.fits, "
                 f"{save_dir}hosts_transmission_cube.fits"
             )
-            
-        if normalize: 
-            transmission_instrument_response /= np.max(transmission_instrument_response)
+        '''
+        ipdb.set_trace()
+
+
+        # save all responses to FITS files
+        for output_name, transmission_instrument_response in output_all_responses.items():
+            save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+            fits.writeto(
+                save_dir + f"transmission_instrument_response_{output_name}.fits",
+                transmission_instrument_response,
+                overwrite=True,
+            )
+            logging.info(f"Saved transmission instrument response for {output_name} to {save_dir}transmission_instrument_response_{output_name}.fits")
+        # save the differential dark
+        differential_dark = output_all_responses['output_3_dark'] - output_all_responses['output_4_dark']
+        fits.writeto(
+            save_dir + f"differential_dark.fits",
+            differential_dark,
+            overwrite=True,
+        )
+        logging.info(f"Saved differential dark to {save_dir}differential_dark.fits")
 
         return transmission_instrument_response
 
