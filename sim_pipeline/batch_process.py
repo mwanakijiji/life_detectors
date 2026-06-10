@@ -18,7 +18,13 @@ import ipdb
 import pandas as pd
 import numpy as np
 import uuid
+import copy
 from datetime import datetime
+from scipy import ndimage
+import matplotlib.pyplot as plt
+import astropy.units as u
+from astropy.visualization import quantity_support
+
 
 
 
@@ -34,6 +40,81 @@ from modules.utils import helpers
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
+
+DARK_OUTPUT_PANELS = [
+    ('output_3_dark', 'spectrum_output_3_dark'),
+    ('output_4_dark', 'spectrum_output_4_dark'),
+]
+
+OUTPUT_FLUX_KEYS = [
+    ('illumination_integrated_dark_3', 'output_3_dark', None),
+    ('illumination_integrated_dark_4', 'output_4_dark', None),
+    ('spectrum_output_1_bright', 'output_1_bright', (1, 2)),
+    ('spectrum_output_2_bright', 'output_2_bright', (1, 2)),
+    ('spectrum_output_3_dark', 'output_3_dark', (1, 2)),
+    ('spectrum_output_4_dark', 'output_4_dark', (1, 2)),
+]
+
+
+def record_info_at_angle(
+    prop_dict: dict,
+    angle_deg: float,
+    save_dir: str,
+    *,
+    star_source: str = 'star',
+    planet_source: str = 'exoplanet_model_10pc',
+    plot: bool = True,
+) -> dict:
+    """
+    Snapshot prop_dict for one rotation angle and plot star vs planet spectra
+    for the two dark outputs.
+    """
+    angle_results = {}
+
+    for source_name, source_val in prop_dict.items():
+        cubes = source_val['flux_cube_post_screen_post_aperture_ph_sec_um']
+        source_snapshot = {'wavel': source_val['wavel']}
+
+        for result_key, output_name, sum_axes in OUTPUT_FLUX_KEYS:
+            cube = cubes[output_name]
+            source_snapshot[result_key] = (
+                np.sum(cube) if sum_axes is None else np.sum(cube, axis=sum_axes)
+            )
+
+        angle_results[source_name] = source_snapshot
+
+    logger.info(f"Recorded results for angle {angle_deg}.")
+
+    if plot: 
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+        wavel = angle_results[star_source]['wavel']
+        flux_unit = angle_results[star_source]['spectrum_output_3_dark'].unit
+
+        for ax, (output_label, spectrum_key) in zip(axes, DARK_OUTPUT_PANELS):
+            ax.plot(wavel, angle_results[star_source][spectrum_key], label='star')
+            ax.plot(wavel, angle_results[planet_source][spectrum_key], label='planet')
+            ax.set_yscale('log')
+            ax.set_xlim(4.0, 18.0)
+            ax.set_ylim(1e-3, 1e9)
+            ax.axhline(y=1e-1, color='gray', linestyle='--')
+            ax.axhline(y=1e7, color='gray', linestyle='--')
+            ax.set_title(output_label)
+            ax.set_xlabel(f'Wavelength ({wavel.unit})')
+            ax.set_ylabel(f'Flux ({flux_unit})')
+            ax.legend()
+
+        fig.suptitle(f'Stellar and planet flux vs wavelength at angle {angle_deg}')
+        file_name_plot = (
+            f"{save_dir}stellar_and_planet_flux_vs_wavelength_at_angle_{angle_deg}.png"
+        )
+        fig.savefig(file_name_plot)
+        plt.close(fig)
+        logger.info(
+            f"Saved plot of stellar and planet flux vs wavelength at angle {angle_deg}: {file_name_plot}"
+        )
+
+    return angle_results
 
 
 def _normalize_output_root(output_root: str) -> str:
@@ -343,8 +424,12 @@ def run_single_calculation(config_path: str,
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
         # make 1 full rotation
-        angles_deg = np.arange(0, 360, step=180)  # e.g. step=1 or 5
+        angles_deg = np.arange(0, 360, step=45)  # e.g. step=1 or 5
         results = {}  # dict to hold results for each angle
+
+        override_stellar_mask = bool(True)
+        if override_stellar_mask:
+            input("! ------ Inserting a manual stellar mask for ALL outputs. Press Enter if you're OK with this ------- !")
 
         for angle_deg in angles_deg:
             # Reset mutable pipeline state
@@ -354,28 +439,38 @@ def run_single_calculation(config_path: str,
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
             # no rotation yet
-            transmission_screens = instrument_dep_terms.generate_instrument_transmission(plot=plot)
+            transmission_screens = instrument_dep_terms.generate_instrument_transmission(override_stellar_mask=override_stellar_mask, plot=plot)
+
             # rotate the transmission screens
-            transmission_screens = np.rotate(transmission_screens, angle_deg, axes=(1,2))
+            transmission_screens_only_rot = ndimage.rotate(transmission_screens[0:4,:,:], angle_deg, axes=(1,2), reshape=False) # rotate the screens, but not the sky coordinates
+            transmission_screens[0:4,:,:] = transmission_screens_only_rot
 
             # pass astrophysical scene through transmission screens
             logger.info("Passing astrophysical flux through transmission screens...")
-            ipdb.set_trace() # is transmission_screen right shape?
+
             instrument_dep_terms.pass_through_transmission_screen(
+                fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen, 
                 transmission_screen = transmission_screens, 
                 plot=plot)
+
+            ## ## TODO: PHASE CHOP HERE
             
             # Pass through telescope aperture
             logger.info("Converting photons to photo-electrons...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
-            # Record snapshot for this angle
-            results[angle_deg] = {
-                "prop_dict": copy.deepcopy(instrument_dep_terms.prop_dict),
-                "sources_astroph": copy.deepcopy(instrument_dep_terms.sources_astroph),
-            }
+            # record condensed information at this angle (to avoid mem leak)
+            results[angle_deg] = record_info_at_angle(
+                prop_dict = instrument_dep_terms.prop_dict,
+                angle_deg = angle_deg,
+                save_dir = str(config['dirs']['save_s2n_data_unique_dir']),
+                star_source = 'star',
+                planet_source = 'exoplanet_model_10pc',
+                plot=plot,
+            )
 
+            '''
             # on detector: convert photons to electrons
             instrument_dep_terms.photons_to_e()
             instrument_dep_terms.calculate_instrinsic_instrumental_noise()
@@ -393,18 +488,39 @@ def run_single_calculation(config_path: str,
             
             #logger.info(f"Successfully completed calculation with n_int={n_int}")
             logger.info(f"Results saved to: {output_fits_file_abs_path}")
-        
+            ipdb.set_trace()
+            '''
+
+        # stand-in to make a simple plot of the planet flux as function of rotation angle
+        angles_sorted = sorted(results.keys())
+        abcissa_values = u.Quantity(angles_sorted, u.deg)
+        ordinate_values = []
+        for ang in range(0,len(angles_sorted)):
+            ordinate_values.append(results[angles_sorted[ang]]['exoplanet_model_10pc']['illumination_integrated_dark_3'])
+        ordinate_values = u.Quantity(ordinate_values)
+
+        ipdb.set_trace()
+        #abcissa_values = np.array(abcissa_values).flatten()
+        #ordinate_values = np.array(ordinate_values).flatten()
+        plt.clf()
+        with quantity_support():
+            plt.plot(abcissa_values, ordinate_values, linestyle='--', marker='o',
+                    label='total planet signal (one dark output)')
+        plt.legend()
+        plt.title('Planet flux as function of rotation angle, dark_3 output')
+        plt.xlabel(f'Angle (deg)')
+        plt.ylabel(f"Total flux ({instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um'].unit})")
+        file_name_plot = str(config['dirs']['save_s2n_data_unique_dir']) + f"planet_flux_as_function_of_rotation_angle.png"
+        plt.savefig(file_name_plot)
+        logging.info(f"Saved plot of planet flux as function of rotation angle to {file_name_plot}")
+        plt.show()
+        ipdb.set_trace()
+
         # Clean up temporary config file
         #os.remove(temp_config_path)
         
         return True
-        
-    #except Exception as e:
-    #    logger.error(f"Error in calculation with n_int={n_int}: {e}")
-    #    # Clean up temporary config file if it exists
-    #    if 'temp_config_path' in locals() and os.path.exists(temp_config_path):
-   #         os.remove(temp_config_path)
-   #     return False
+
 
 def batch_qe_nint_process(base_config_path: str, 
                 qe_values: List[float],
@@ -451,6 +567,7 @@ def batch_qe_nint_process(base_config_path: str,
         logging.info(f"Processing single calculation:")
         logging.info(f"Parameter qe = {qe}")
 
+        # run single calculation, for range of rotation angles
         success = run_single_calculation(
             config_path=base_config_path,
             base_filename = base_filename,
@@ -462,6 +579,8 @@ def batch_qe_nint_process(base_config_path: str,
             lum_types=lum_types,
             output_root=output_root,
         )
+
+        ipdb.set_trace()
                     
         if success:
             logging.info(f"  ✓ Success for the following planetary system parameters:")

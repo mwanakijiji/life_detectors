@@ -104,23 +104,25 @@ class InstrumentDepTerms:
         return 
 
 
-    def generate_instrument_transmission(self, wavel_m: float = 11e-6, normalize: bool = True, plot: bool = False):
+    def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False):
         # phi_dc_vec_rad, theta_vec_2d_asec, 
         # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
 
         '''
         INPUTS:
-        A_vec: array of amplitudes (ex. np.array([1, 1, 1]))
-        phi_dc_vec_rad: phase offsets per aperture [rad]
-        wavel_m: wavelength in meters (ex. 1e-6)
-        normalize: if True, normalize the transmission to 1 (otherwise, for N identical apertures, max transmission is N)
-        plot: if True, plot and write FITS cubes
+        # wavel_m (float): Wavelength in meters (e.g., 1e-6).
+        # normalize (bool): If True, normalize transmission to unity maximum. If False, max transmission is N for N identical apertures.
+        # plot (bool): If True, generate plots and write FITS cubes.
 
         OUTPUT:
-        transmission_instrument_response: (3, Ny, Nx) cube
-        [0] = on-sky transmission (instrument response)
-        [1] = y on-sky [arcsec]
-        [2] = x on-sky [arcsec]
+        # Returns:
+        #   transmission_instrument_response: np.ndarray of shape (6, Ny, Nx)
+        #     [0]: transmission, bright output 1
+        #     [1]: transmission, bright output 2
+        #     [2]: transmission, dark output 3
+        #     [3]: transmission, dark output 4
+        #     [4]: y-coordinates on sky [arcsec]
+        #     [5]: x-coordinates on sky [arcsec]
         '''
 
         # read in array parameters from config file
@@ -134,7 +136,6 @@ class InstrumentDepTerms:
         pos_vec_m = []  # [y_m, x_m] per aperture
         phase_vector_rad_array = [] # phase vector for each output
         for aperture in aperture_array_definition['apertures']:
-            ipdb.set_trace()
             A_vec.append(aperture['amplitude'])
             pos_vec_m.append([aperture['y_m'], aperture['x_m']])
         for output in aperture_array_definition['outputs']:
@@ -144,8 +145,6 @@ class InstrumentDepTerms:
         A_vec = np.array(A_vec)
         phi_dc_vec_rad = np.array(phi_dc_vec_rad)
         pos_vec_m = np.array(pos_vec_m)
-
-
 
         n_pix = int(self.config['onsky_scene']['n_pix'])
         pix_size_mas = float(self.config['onsky_scene']['pix_size_mas'])  # milliarcseconds
@@ -158,8 +157,6 @@ class InstrumentDepTerms:
         theta_vec_rad_array = np.zeros((2, n_pix, n_pix), dtype=float)
         theta_vec_rad_array[0] = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad]
         theta_vec_rad_array[1] = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad]
-
-        ipdb.set_trace()
         
         # Calculate total number of baselines (unique pairs of apertures)
         N_apertures = len(aperture_array_definition['apertures'])
@@ -258,6 +255,16 @@ class InstrumentDepTerms:
                 max_response = max_field_amplitude**2
                 transmission_instrument_response /= max_response
 
+            # a small override mask is put over the star for now to avoid geometrical leakage ## ## TODO: remove this once the geometry is properly implemented
+            nulling_factor = float(self.config['nulling']['nulling_factor'])
+            logging.info(f'Star is manually being nulled to {nulling_factor}')
+            # mask the central NxN pixels
+            N_mask = 20
+            transmission_instrument_response[0, 
+                                            transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
+                                            transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
+                                            ] = nulling_factor
+
             return transmission_instrument_response
 
 
@@ -267,9 +274,6 @@ class InstrumentDepTerms:
             output_all_responses[output['name']] = transmission_instrument_response
 
 
-
-
-        ipdb.set_trace()
         '''
         # check: double Bracewell should look like HOSTS
         if plot:
@@ -349,10 +353,9 @@ class InstrumentDepTerms:
                 f"{save_dir}hosts_transmission_cube.fits"
             )
         '''
-        ipdb.set_trace()
-
 
         # save all responses to FITS files
+        # output_all_responses contains output_1_bright, output_2_bright, output_3_dark, output_4_dark
         for output_name, transmission_instrument_response in output_all_responses.items():
             save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
             fits.writeto(
@@ -370,82 +373,134 @@ class InstrumentDepTerms:
         )
         logging.info(f"Saved differential dark to {save_dir}differential_dark.fits")
 
-        return transmission_instrument_response
+        # arrange outputs into a cube, shape (4, n_pix, n_pix), slices order 0 = output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark
+        # for-loop to preserve order
+        keys_ordered = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark', 'yy', 'xx']
+        transmission_instrument_response_cube = np.zeros((6, n_pix, n_pix))
+        for t in range(4):
+            transmission_instrument_response_cube[t, :, :] = output_all_responses[keys_ordered[t]][0, :, :] # screens
+        transmission_instrument_response_cube[4, :, :] = output_all_responses['output_1_bright'][1, :, :] # y vals
+        transmission_instrument_response_cube[5, :, :] = output_all_responses['output_1_bright'][2, :, :] # x vals
+
+        return transmission_instrument_response_cube
 
 
-    def pass_through_transmission_screen(self, source_dict_pre_screen: dict, transmission_screen: np.ndarray, plot: bool = False):
+    def pass_through_transmission_screen(self, fyi_angle, source_dict_pre_screen: dict, transmission_screen: np.ndarray, plot: bool = False):
         '''
         Pass each astrophysical source through the transmission screen, and update prop_dict with the propagated terms
         photons/sec/m^2 -> photons/sec/m^2
 
         INPUTS:
-            source_cube_no_screen (dict of Quantities): on-sky scene before transmission screen; for each key (astro source), value (Quantitiy array) has shape (n_wavel, n_pix, n_pix)
+            fyi_angle (float): angle of the transmission screen (for plotting strings only)
+            source_cube_no_screen (dict of Quantities): on-sky scene before transmission screen; for each key (astro source), value (Quantity array) has shape (n_wavel, n_pix, n_pix)
             transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
             plot (bool): whether to plot the scene
         '''        
 
+        transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark'] ## ## TODO: insert check to ensure always consistent
+        transmission_screen = transmission_screen[0:4,:,:] # just keep the transmission slices for now ## ## TODO: include the yy and xx slices as a check somehow
+
+        # put all the post-screen fluxes (for each source and from each channel) into a single dict
         source_dict_post_screen = {}
         for source_name, source_val in source_dict_pre_screen.items():
-            source_dict_post_screen[source_name] = source_val * transmission_screen[None, :, :]
-        
+            source_dict_post_screen[source_name] = {}
+            for transmission_screen_name in transmission_screen_order:
+                source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screen[transmission_screen_order.index(transmission_screen_name), :, :]
+                # collapse the sources into a single 3D array (wavel, x, y), for plotting
+                # source_dict_post_screen[source_name][transmission_screen_name + '_collapsed'] = np.sum(source_dict_post_screen[source_name][transmission_screen_name], axis=(1,2))
+        # there should be a cube for each output (4 cubes total)
+
         # collapse the sources into a single 3D array (wavel, x, y), for plotting
-        source_cube_post_screen = np.stack([source_dict_post_screen[source_name] for source_name in source_dict_post_screen.keys()], axis=0)
-        source_collapsed_cube_post_screen_sum = np.sum(source_cube_post_screen, axis=0)
+        # there should be a cube for each output (4 cubes total)
+        #for transmission_screen_name in transmission_screen_order:
+
+        #source_cube_post_screen = np.stack([source_dict_post_screen[source_name] for source_name in source_dict_post_screen.keys()], axis=0)
+        #source_collapsed_cube_post_screen_sum = np.sum(source_cube_post_screen, axis=0)
 
         # integrate over 2D sky to get total flux from each source
         # update the sources
         source_integrated_dict_post_screen = {}
         for source_name, source_val in source_dict_post_screen.items():
-            source_val_integrated = np.sum(source_val, axis=(1,2))
-            self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = source_val_integrated
-            self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = source_dict_post_screen[source_name]
-            logging.info(f'Flux of {source_name} passed through transmission screen')
+            # source_val has 4 different screens, so integrate them separately
+            self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
+            self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = {} # will contain flux cube corresponding to each screen
+            for transmission_screen_name in transmission_screen_order:
+                source_val_integrated = np.sum(source_val[transmission_screen_name], axis=(1,2))
+                self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'][transmission_screen_name] = source_val_integrated
+                self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'][transmission_screen_name] = source_val[transmission_screen_name]
+                logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
-        # if name is right and units are right
-        '''
-        if ('pre_screen_astro_flux_ph_sec_m2_um' in source_val) and (source_val['pre_screen_astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-            dict_this = {source_name: {
-                'wavel': source_val['wavel'], 
-                'scene_2D_no_screen': scene_no_screen, 
-                'scene_2D_with_screen': scene_with_screen,
-                'source_cube_no_screen': source_cube_no_screen,
-                'source_cube_with_screen': source_cube_with_screen,
-                'transmission_screen_2D': screen_transmission_ersatz,
-                'flux_pre_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um'],
-                'flux_post_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um']
-                }}
-        self.prop_dict.update(dict_this)
-        '''
-        if plot:
-            idx = 15 # wavelength slice index
-            for source_name, source_val in source_dict_post_screen.items():
-                source_img = source_dict_pre_screen[source_name][idx, :, :].value
-                source_units = source_val[idx, :, :].unit.to_string()
-                transmission_img = transmission_screen
-                source_times_transmission_img = source_val[idx, :, :].value
-                source_times_transmission_units = source_val[idx, :, :].unit.to_string()
+            if plot:
 
-                fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-                im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
+                # flux vs wavelength depending on screen
+                plt.clf()
+                plt.figure(figsize=(12, 4))
+                for transmission_screen_name in transmission_screen_order:
+                    plt.plot(self.sources_astroph[source_name]['wavel'], self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'][transmission_screen_name], label=transmission_screen_name)
+                plt.plot(self.sources_astroph[source_name]['wavel'], self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'], label='pre-screen')
+                plt.xlim([4.,18.])
+                plt.legend()
+                plt.title(f'Flux of {source_name} passed through transmission screens')
+                plt.xlabel('Wavelength')
+                plt.ylabel('Flux (ph/s/m^2/um)')
+                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"flux_of_{source_name}_passed_through_transmission_screens_angle_{int(fyi_angle)}.png"
+           
+                plt.savefig(file_name_plot)
+                logging.info(f"Saved plot of flux of {source_name} passed through transmission screens at angle {int(fyi_angle)}: {file_name_plot}")
+                plt.close()
 
-                fig.suptitle(f"Source: {source_name}, idx_wavel: {idx}")
-                axs[0].set_title("Source")
-                axs[0].set_xlabel(f"x (pixel)")
-                axs[0].set_ylabel(f"y (pixel)")
-                fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_units}") ## ## TODO: MAY NEED TO ADD /ARCSEC**2 TO UNITS, ONCE ARCSEC ARE FULLY INCORPORATED HERE
-                im1 = axs[1].imshow(transmission_img, origin='lower', cmap='gray')
-                axs[1].set_title("Transmission")
-                axs[1].set_xlabel(f"x (pixel)")
-                axs[1].set_ylabel(f"y (pixel)")
-                fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
-                im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-                axs[2].set_title("Source * Transmission")
-                fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
 
-                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}.png"
-                fig.savefig(file_name_plot)
-                plt.close(fig)
-                logging.info(f"Saved plot of source, transmission, source * transmission triptych to {file_name_plot}")
+                # source_val_integrated = np.sum(source_val, axis=(1,2))
+                # self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = source_val_integrated
+                # self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = source_dict_post_screen[source_name]
+                # logging.info(f'Flux of {source_name} passed through transmission screen')
+            
+                # if name is right and units are right
+                '''
+                if ('pre_screen_astro_flux_ph_sec_m2_um' in source_val) and (source_val['pre_screen_astro_flux_ph_sec_m2_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
+                    dict_this = {source_name: {
+                        'wavel': source_val['wavel'], 
+                        'scene_2D_no_screen': scene_no_screen, 
+                        'scene_2D_with_screen': scene_with_screen,
+                        'source_cube_no_screen': source_cube_no_screen,
+                        'source_cube_with_screen': source_cube_with_screen,
+                        'transmission_screen_2D': screen_transmission_ersatz,
+                        'flux_pre_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um'],
+                        'flux_post_screen_ph_sec_m2_um': source_val['pre_screen_astro_flux_ph_sec_m2_um']
+                        }}
+                self.prop_dict.update(dict_this)
+                '''
+
+                # tryptichs of source, transmission, source * transmission
+                idx = 15 # wavelength slice index (for plotting only)
+                for transmission_screen_name in transmission_screen_order:
+                    source_img = source_dict_pre_screen[source_name][idx, :, :].value
+                    source_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
+                    transmission_img = transmission_screen[transmission_screen_order.index(transmission_screen_name), :, :]
+                    source_times_transmission_img = source_val[transmission_screen_name][idx, :, :].value
+                    source_times_transmission_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
+
+                    fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
+                    im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
+
+                    fig.suptitle(f"Source: {source_name}, idx_wavel: {idx}")
+                    axs[0].set_title("Source")
+                    axs[0].set_xlabel(f"x (pixel)")
+                    axs[0].set_ylabel(f"y (pixel)")
+                    fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_units}") ## ## TODO: MAY NEED TO ADD /ARCSEC**2 TO UNITS, ONCE ARCSEC ARE FULLY INCORPORATED HERE
+                    im1 = axs[1].imshow(transmission_img, origin='lower', cmap='gray')
+                    axs[1].set_title("Transmission")
+                    axs[1].set_xlabel(f"x (pixel)")
+                    axs[1].set_ylabel(f"y (pixel)")
+                    fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
+                    im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
+                    axs[2].set_title("Source * Transmission")
+                    fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
+
+                    file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}_angle_{int(fyi_angle)}_output_{transmission_screen_name}.png"
+                    fig.savefig(file_name_plot)
+                    plt.close(fig)
+                    logging.info(f"Saved plot of source, transmission, source * transmission triptych at angle {int(fyi_angle)} to {file_name_plot}")
 
         return
 
@@ -454,15 +509,21 @@ class InstrumentDepTerms:
         # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec
 
+        transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark']
+        collecting_area = float(self.config["telescope"]["collecting_area"]) * u.m**2
+
         for source_name, source_val in self.sources_astroph.items():
-            # if name is right and units are right
-            if ('flux_cube_post_screen_ph_sec_um' in source_val) and (source_val['flux_cube_post_screen_ph_sec_um'].unit == u.ph / (u.um * u.m**2 * u.s)):
-                dict_this = {source_name: {
-                                        'wavel': source_val['wavel'], 
-                                        'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
-                                        'flux_cube_post_screen_post_aperture_ph_sec_um': np.multiply( float(self.config["telescope"]["collecting_area"])*u.m**2, source_val['flux_cube_post_screen_ph_sec_um'] )
-                                        }}
-                self.prop_dict.update(dict_this)
+            if 'flux_cube_post_screen_ph_sec_um' not in source_val:
+                continue
+            post_aperture_flux_by_output = {
+                output_name: collecting_area * source_val['flux_cube_post_screen_ph_sec_um'][output_name]
+                for output_name in transmission_screen_order
+            }
+            self.prop_dict[source_name] = {
+                'wavel': source_val['wavel'],
+                'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
+                'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output,
+            }
 
         '''
         # overplot all the sources
@@ -669,7 +730,6 @@ class Detector:
         if len(self.systematics_additive_dict) > 0: # if there are any listed
             for key, value in self.systematics_additive_dict.items():
                 if value is not None: # if there is a 2D array
-                    ipdb.set_trace()
                     logging.info(f"Applying {key} systematic (additive) to the detector")
                     canvas_systematics = canvas_systematics + value
         # apply the 2D multiplicative systematics to the spectrum
@@ -689,7 +749,7 @@ class Detector:
             # for a given wavelength bin, sum the systematics across the pixels corresponding to that wavelength bin
             # self.footprint_cube[wavel_bin_num,:,:] is just a boolean array, so we multiply it
             systematics_vector_1d[wavel_bin_num] = np.sum( self.footprint_cube[wavel_bin_num,:,:] * canvas_systematics )
-        ipdb.set_trace()
+
         '''
         # apply the 2D additive systematics to the spectrum
 

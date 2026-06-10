@@ -326,7 +326,7 @@ class AstrophysicalSources:
         '''
 
         # a box of pixels (so I can actually see it)
-        half_pix = 20
+        half_pix = 2
         y0 = max(0, idx_y_star - half_pix)
         y1 = min(n_pix, idx_y_star + half_pix + 1)
         x0 = max(0, idx_x_star - half_pix)
