@@ -24,6 +24,7 @@ from scipy import ndimage
 import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.visualization import quantity_support
+import yaml
 
 
 
@@ -46,6 +47,7 @@ DARK_OUTPUT_PANELS = [
     ('output_4_dark', 'spectrum_output_4_dark'),
 ]
 
+
 OUTPUT_FLUX_KEYS = [
     ('illumination_integrated_dark_3', 'output_3_dark', None),
     ('illumination_integrated_dark_4', 'output_4_dark', None),
@@ -53,7 +55,9 @@ OUTPUT_FLUX_KEYS = [
     ('spectrum_output_2_bright', 'output_2_bright', (1, 2)),
     ('spectrum_output_3_dark', 'output_3_dark', (1, 2)),
     ('spectrum_output_4_dark', 'output_4_dark', (1, 2)),
+    ('spectrum_chopped_dark_outputs', 'chopped_dark_outputs', (1, 2)),
 ]
+
 
 
 def record_info_at_angle(
@@ -70,11 +74,11 @@ def record_info_at_angle(
     for the two dark outputs.
     """
     angle_results = {}
-
     for source_name, source_val in prop_dict.items():
         cubes = source_val['flux_cube_post_screen_post_aperture_ph_sec_um']
         source_snapshot = {'wavel': source_val['wavel']}
 
+        #OUTPUT_FLUX_KEYS = list(source_val['flux_cube_post_screen_post_aperture_ph_sec_um'].keys())
         for result_key, output_name, sum_axes in OUTPUT_FLUX_KEYS:
             cube = cubes[output_name]
             source_snapshot[result_key] = (
@@ -84,6 +88,7 @@ def record_info_at_angle(
         angle_results[source_name] = source_snapshot
 
     logger.info(f"Recorded results for angle {angle_deg}.")
+
 
     if plot: 
 
@@ -424,7 +429,7 @@ def run_single_calculation(config_path: str,
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
         # make 1 full rotation
-        angles_deg = np.arange(0, 360, step=45)  # e.g. step=1 or 5
+        angles_deg = np.linspace(0, 360, num=int(config['observation']['N_angles']), endpoint=False)  # e.g. step=1 or 5
         results = {}  # dict to hold results for each angle
 
         override_stellar_mask = bool(True)
@@ -445,22 +450,22 @@ def run_single_calculation(config_path: str,
             transmission_screens_only_rot = ndimage.rotate(transmission_screens[0:4,:,:], angle_deg, axes=(1,2), reshape=False) # rotate the screens, but not the sky coordinates
             transmission_screens[0:4,:,:] = transmission_screens_only_rot
 
-            # pass astrophysical scene through transmission screens
+            # pass astrophysical scene through transmission screens (and chop)
             logger.info("Passing astrophysical flux through transmission screens...")
 
-            instrument_dep_terms.pass_through_transmission_screen(
+            instrument_dep_terms.pass_through_transmission_screens(
                 fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen, 
-                transmission_screen = transmission_screens, 
+                transmission_screens = transmission_screens, 
+                chop = True,
                 plot=plot)
 
-            ## ## TODO: PHASE CHOP HERE
-            
             # Pass through telescope aperture
             logger.info("Converting photons to photo-electrons...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
             # record condensed information at this angle (to avoid mem leak)
+            # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
             results[angle_deg] = record_info_at_angle(
                 prop_dict = instrument_dep_terms.prop_dict,
                 angle_deg = angle_deg,
@@ -491,13 +496,86 @@ def run_single_calculation(config_path: str,
             ipdb.set_trace()
             '''
 
-        # stand-in to make a simple plot of the planet flux as function of rotation angle
+        # calculate the S/N of the chopped dark outputs; need S_p and S_p_3; see Dannert+ 2022 Eqn. 20
+
+        # build a pandas dataframe of the chopped signal (and keep wavelength)
         angles_sorted = sorted(results.keys())
-        abcissa_values = u.Quantity(angles_sorted, u.deg)
-        ordinate_values = []
-        for ang in range(0,len(angles_sorted)):
-            ordinate_values.append(results[angles_sorted[ang]]['exoplanet_model_10pc']['illumination_integrated_dark_3'])
-        ordinate_values = u.Quantity(ordinate_values)
+        wavel = results[angles_sorted[0]]['exoplanet_model_10pc']['wavel']
+        data_S_p = {} # modulated signal between dark outputs 3 and 4
+        data_S_p_3 = {} # signal from dark output 3
+        data_S_p_sqd = {} # squared
+        data_S_p_3_sqd = {}
+
+        for angle in angles_sorted: # note pandas doesn't like units
+            # note units (see Dannert+ 2022 Eqn (17)); 
+            # results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] is already the same as the integral of ( transmission * flux * collecting_area ) over solid angle of the FOV. 
+            # ... we still need to multiply by 
+            #      t: integration time of one readout (corresponding to one angle)
+            #      eta: detector efficiency, in practice this is throughput * QE
+            # units are
+            # [t] * [eta] * [ results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] ] = s * 1 * ph / (micron s) = ph / micron
+            # 
+            t_times_eta = float(config['observation']['t_int_frame']) * float(config['detector']['quantum_efficiency'])
+            data_S_p[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta
+            data_S_p_3[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta
+            data_S_p_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta, 2)
+            data_S_p_3_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta, 2)
+
+        # tack wavelength back on
+        #df_S_p['wavel'] = wavel
+        #df_S_p_3['wavel'] = wavel
+
+        #'wavel': wavel.value
+        df_S_p = pd.DataFrame(data_S_p)
+        df_S_p_sqd = pd.DataFrame(data_S_p_sqd)
+        df_S_p_3 = pd.DataFrame(data_S_p_3)
+        df_S_p_3_sqd = pd.DataFrame(data_S_p_3_sqd)
+
+        # now insert mean column, averaging over angles; Dannert+ 2022 Eqn. (19)
+        df_S_p_sqd['avg_S_p_sqd_phi'] = df_S_p_sqd.mean(axis=1)
+        #df_S_p_3 = pd.DataFrame(data_S_p_3)
+        df_S_p_3_sqd['avg_S_p_3_sqd_phi'] = df_S_p_3_sqd.mean(axis=1)
+        # now reconstitute units, which pandas does not like
+        ipdb.set_trace()
+        unit = results[angles_sorted[0]]['exoplanet_model_10pc']['spectrum_output_3_dark'].unit ** 2 # note the squared
+        S_p_sqd_phi_mean = df_S_p_sqd['avg_S_p_sqd_phi'].values * unit
+        S_p_3_sqd_phi_mean = df_S_p_3_sqd['avg_S_p_3_sqd_phi'].values * unit
+        
+        # SNR_lambda for each wavelength bin; see Dannert+ 2022 Eqn. (20)
+        # note integration is over the wavelength bin only; not the entire spectrum
+        ## ## TODO: make sure wavelength bin sizes are consistent with calcs further upstream
+        SNR_lambda_array = []
+
+        # find SNR for each wavelength bin for this rotation angle
+        for wavel_bin_num in range(len(wavel)-1):
+
+            print(f"wavel_bin_num: {wavel_bin_num}")
+            wavel_start = wavel[wavel_bin_num].value
+            wavel_stop = wavel[wavel_bin_num + 1].value
+            d_wavel = wavel_stop - wavel_start
+
+            wavel_range = np.array([wavel_start, wavel_stop]) ## ## TODO: make this denser later? np.linspace(wavel_start, wavel_stop, 100)
+
+            # use simple rectangles to integrate
+            term_1 = np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]) * d_wavel
+
+            term_2 = np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]) * d_wavel
+
+            term_3 = np.sqrt(2. * term_2)
+
+            #term_1 = np.trapz(y=np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
+            #term_2 = np.trapz(y=np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
+            #term_3 = np.sqrt(2. * term_2)
+       
+
+            # SNR for that wavelength bin
+            SNR_lambda = term_1 / term_3 ## ## TODO: update to include S_sym term
+            SNR_lambda_array.append(SNR_lambda.value)
+
+        SNR_lambda_array = u.Quantity(SNR_lambda_array)
+        SNR_tot = np.sqrt( 
+                        np.sum(np.power(SNR_lambda_array,2)) 
+                        )
 
         ipdb.set_trace()
         #abcissa_values = np.array(abcissa_values).flatten()
@@ -507,17 +585,15 @@ def run_single_calculation(config_path: str,
             plt.plot(abcissa_values, ordinate_values, linestyle='--', marker='o',
                     label='total planet signal (one dark output)')
         plt.legend()
-        plt.title('Planet flux as function of rotation angle, dark_3 output')
+        output_string = 'chopped_dark_outputs'
+        plt.title('Planet flux as function of rotation angle, ' + output_string + ' output')
         plt.xlabel(f'Angle (deg)')
-        plt.ylabel(f"Total flux ({instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um'].unit})")
+        ipdb.set_trace()
+        plt.ylabel(f"Total flux ({instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um'][output_string].unit})")
         file_name_plot = str(config['dirs']['save_s2n_data_unique_dir']) + f"planet_flux_as_function_of_rotation_angle.png"
         plt.savefig(file_name_plot)
         logging.info(f"Saved plot of planet flux as function of rotation angle to {file_name_plot}")
         plt.show()
-        ipdb.set_trace()
-
-        # Clean up temporary config file
-        #os.remove(temp_config_path)
         
         return True
 
@@ -709,6 +785,16 @@ def parameter_sweep(
 
     if output_root:
         logging.info(f"Top-level batch output root override: {_normalize_output_root(output_root)}")
+
+    aperture_array_config_path = config_single_obs["telescope"]["aperture_array_config_file_name"]
+    with open(aperture_array_config_path, 'r') as file:
+        aperture_array_definition = yaml.safe_load(file)
+    n_apertures = len(aperture_array_definition['apertures'])
+    logging.info(f"Number of apertures: {n_apertures}")
+
+    # calculate the total collecting area of the telescope
+    collecting_area = helpers.compute_collecting_area_m2(config_single_obs) * u.m**2
+    logging.info(f"Total collecting area of telescope: {collecting_area}")
 
     # does the user want to look at a single planet or a planet population?
     systems_2_look_at = config_single_obs["system_options"]["systems_2_look_at"]

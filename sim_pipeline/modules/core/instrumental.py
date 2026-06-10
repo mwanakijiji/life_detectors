@@ -23,13 +23,13 @@ import astropy.io.fits as fits
 from astropy.visualization import ZScaleInterval, ImageNormalize
 import yaml
 from pathlib import Path
-
-
+import logging
 
 from ..data.units import UnitConverter
-from ..utils.helpers import format_plot_title
+from ..utils.helpers import format_plot_title, compute_collecting_area_m2
 from ..utils.loader import config_getboolean
 
+logger = logging.getLogger(__name__)
 
 class InstrumentDepTerms:
     # Provides the effects of the instrument (including astro flux passed through the telescope aperture)
@@ -93,9 +93,9 @@ class InstrumentDepTerms:
 
         # total dark current in e-, based on integration time
         # e/pix/sec -> e/pix
-        integration_time = float(self.config["observation"]["t_int_obs_total"]) * u.second  # seconds
+        integration_time_per_frame = float(self.config["observation"]["t_int_frame"]) * u.second  # seconds
         self.sources_instrum['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
-        self.sources_instrum['dark_current_e_pix-1'] = dark_current_rate_e_pix_sec * integration_time
+        self.sources_instrum['dark_current_e_pix-1'] = dark_current_rate_e_pix_sec * integration_time_per_frame
 
         # total dark current in ADU
         # e/pix -> ADU/pix
@@ -263,7 +263,7 @@ class InstrumentDepTerms:
             transmission_instrument_response[0, 
                                             transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
                                             transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
-                                            ] = nulling_factor
+                                            ] = nulling_factor ## ## TODO: IS THIS THE RIGHT LOGIC HERE? A 1E-5 NULL HERE WOULD MEAN ZERO TRANSMISSION OF THE STAR IN THE CHOPPED SIGNAL; IS THAT RIGHT?
 
             return transmission_instrument_response
 
@@ -385,27 +385,28 @@ class InstrumentDepTerms:
         return transmission_instrument_response_cube
 
 
-    def pass_through_transmission_screen(self, fyi_angle, source_dict_pre_screen: dict, transmission_screen: np.ndarray, plot: bool = False):
+    def pass_through_transmission_screens(self, fyi_angle, source_dict_pre_screen: dict, transmission_screens: np.ndarray, chop: bool = True, plot: bool = False):
         '''
-        Pass each astrophysical source through the transmission screen, and update prop_dict with the propagated terms
+        Pass each astrophysical source through the transmission screens, and update prop_dict with the propagated terms
         photons/sec/m^2 -> photons/sec/m^2
 
         INPUTS:
             fyi_angle (float): angle of the transmission screen (for plotting strings only)
             source_cube_no_screen (dict of Quantities): on-sky scene before transmission screen; for each key (astro source), value (Quantity array) has shape (n_wavel, n_pix, n_pix)
             transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
+            chop (bool): whether to chop the signal between dark outputs
             plot (bool): whether to plot the scene
         '''        
 
         transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark'] ## ## TODO: insert check to ensure always consistent
-        transmission_screen = transmission_screen[0:4,:,:] # just keep the transmission slices for now ## ## TODO: include the yy and xx slices as a check somehow
+        transmission_screens = transmission_screens[0:4,:,:] # just keep the transmission slices for now ## ## TODO: include the yy and xx slices as a check somehow
 
         # put all the post-screen fluxes (for each source and from each channel) into a single dict
         source_dict_post_screen = {}
         for source_name, source_val in source_dict_pre_screen.items():
             source_dict_post_screen[source_name] = {}
             for transmission_screen_name in transmission_screen_order:
-                source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screen[transmission_screen_order.index(transmission_screen_name), :, :]
+                source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
                 # collapse the sources into a single 3D array (wavel, x, y), for plotting
                 # source_dict_post_screen[source_name][transmission_screen_name + '_collapsed'] = np.sum(source_dict_post_screen[source_name][transmission_screen_name], axis=(1,2))
         # there should be a cube for each output (4 cubes total)
@@ -430,6 +431,19 @@ class InstrumentDepTerms:
                 self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'][transmission_screen_name] = source_val[transmission_screen_name]
                 logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
+            if chop:
+                logger.info("Chopping signal between dark outputs...")
+                dark_transmission_3_dark = transmission_screens[transmission_screen_order.index('output_3_dark'), :, :] ## ## TODO: Make transmission screens chromatic (wavel, x, y), not just (x, y)
+                dark_transmission_4_dark = transmission_screens[transmission_screen_order.index('output_4_dark'), :, :]
+                chopped_dark_transmission = dark_transmission_3_dark - dark_transmission_4_dark
+                # subtract the signals as passed through the dark transmission screens
+
+                # the cube of the chopped signal (wavel, x, y)
+                self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_ph_sec_um'] = source_val['output_3_dark'] - source_val['output_4_dark']
+
+                # the chopped transmission screen (x, y) for now; update with wavelength axis later
+                self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_transmission_ph_sec_um'] = chopped_dark_transmission
+
             if plot:
 
                 # flux vs wavelength depending on screen
@@ -448,7 +462,6 @@ class InstrumentDepTerms:
                 plt.savefig(file_name_plot)
                 logging.info(f"Saved plot of flux of {source_name} passed through transmission screens at angle {int(fyi_angle)}: {file_name_plot}")
                 plt.close()
-
 
                 # source_val_integrated = np.sum(source_val, axis=(1,2))
                 # self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = source_val_integrated
@@ -471,12 +484,35 @@ class InstrumentDepTerms:
                 self.prop_dict.update(dict_this)
                 '''
 
-                # tryptichs of source, transmission, source * transmission
                 idx = 15 # wavelength slice index (for plotting only)
+
+                if chop:
+                    fig, axs = plt.subplots(1, 2, figsize=(12, 6), constrained_layout=True)
+
+                    im0 = axs[0].imshow(chopped_dark_transmission, origin='lower', cmap='gray')
+                    axs[0].set_title('Chopped dark transmission')
+                    fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
+
+                    chopped_flux = self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_ph_sec_um'][idx, :, :]
+                    chopped_flux_units = chopped_flux.unit.to_string()
+                    im1 = axs[1].imshow(chopped_flux.value, origin='lower', cmap='gray')
+                    axs[1].set_title(f'Chopped flux (idx_wavel={idx})')
+                    fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=chopped_flux_units)
+
+                    fig.suptitle(f'Chop: {source_name}, angle {int(fyi_angle)}')
+                    file_name_plot = (
+                        str(self.config['dirs']['save_s2n_data_unique_dir'])
+                        + f"chopped_dark_transmission_{source_name}_angle_{int(fyi_angle)}.png"
+                    )
+                    fig.savefig(file_name_plot)
+                    plt.close(fig)
+                    logging.info(f"Saved plot of chopped dark transmission at angle {int(fyi_angle)} to {file_name_plot}")
+
+                # tryptichs of source, transmission, source * transmission
                 for transmission_screen_name in transmission_screen_order:
                     source_img = source_dict_pre_screen[source_name][idx, :, :].value
                     source_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
-                    transmission_img = transmission_screen[transmission_screen_order.index(transmission_screen_name), :, :]
+                    transmission_img = transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
                     source_times_transmission_img = source_val[transmission_screen_name][idx, :, :].value
                     source_times_transmission_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
 
@@ -494,7 +530,7 @@ class InstrumentDepTerms:
                     axs[1].set_ylabel(f"y (pixel)")
                     fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
                     im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-                    axs[2].set_title("Source * Transmission")
+                    axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n(not chopped)")
                     fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
 
                     file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}_angle_{int(fyi_angle)}_output_{transmission_screen_name}.png"
@@ -505,24 +541,51 @@ class InstrumentDepTerms:
         return
 
 
+    def chop_signal(self, fyi_angle, transmission_screens: np.ndarray, plot: bool = False):
+        '''
+        Chop the signal between dark outputs
+        '''
+
+        for source_name, source_val in self.prop_dict.items():
+            self.prop_dict[source_name]['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'] = source_val['flux_cube_post_screen_post_aperture_ph_sec_um']['output_3_dark'] - source_val['flux_cube_post_screen_post_aperture_ph_sec_um']['output_4_dark']
+
+        chopped_transmission_screen_darks = transmission_screens[2,:,:] - transmission_screens[3,:,:]   
+        if plot:
+            plt.clf()
+            plt.figure(figsize=(6, 6))
+            plt.imshow(chopped_transmission_screen_darks, origin='lower', cmap='gray')
+            plt.colorbar()
+            plt.title('Chopped dark transmission screens')
+            plt.savefig(str(self.config['dirs']['save_s2n_data_unique_dir']) + f"chopped_dark_transmission_screens_angle_{int(fyi_angle)}.png")
+            plt.close()
+        #self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um']['output_3_dark'] - 
+
+        return
+
     def pass_through_aperture(self, plot: bool = False):
         # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec
 
         transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark']
-        collecting_area = float(self.config["telescope"]["collecting_area"]) * u.m**2
+        collecting_area = compute_collecting_area_m2(self.config) * u.m**2
 
         for source_name, source_val in self.sources_astroph.items():
+            
             if 'flux_cube_post_screen_ph_sec_um' not in source_val:
                 continue
             post_aperture_flux_by_output = {
                 output_name: collecting_area * source_val['flux_cube_post_screen_ph_sec_um'][output_name]
                 for output_name in transmission_screen_order
             }
+
+            try: # if chopped
+                post_aperture_flux_by_output['chopped_dark_outputs'] = collecting_area * source_val['flux_cube_post_screen_post_chop_ph_sec_um']
+            except:
+                logging.error(f"Chopped dark outputs not found for source {source_name}; need to enable no-chop option")
             self.prop_dict[source_name] = {
                 'wavel': source_val['wavel'],
                 'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
-                'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output,
+                'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output, # includes chop signal if enabled
             }
 
         '''

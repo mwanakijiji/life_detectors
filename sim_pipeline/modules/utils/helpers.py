@@ -23,6 +23,8 @@ from matplotlib.colors import LogNorm
 import glob
 import os
 import copy
+import yaml
+from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
@@ -728,6 +730,17 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
 
 
     return luminosity_photons_exozodi_disk, luminosity_energy_disk_lambda
+
+
+def compute_collecting_area_m2(config: dict) -> float:
+    """Geometric collecting area from aperture YAML and single-mirror diameter."""
+
+    tel = config["telescope"]
+    with open(tel["aperture_array_config_file_name"]) as f:
+        aperture_array = yaml.safe_load(f)
+    n_apertures = len(aperture_array["apertures"])
+    diameter_m = float(tel["single_mirror_diameter"])
+    return n_apertures * np.pi * (0.5 * diameter_m) ** 2
 
 
 def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:

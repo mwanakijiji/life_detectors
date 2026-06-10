@@ -145,9 +145,9 @@ class NoiseCalculator:
         
         # Convert all inputs to numpy arrays to enable broadcasting
         # This ensures consistent shapes for vectorized operations
-        n_int = int(np.floor( float(self.config["observation"]["t_int_obs_total"]) / float(self.config["observation"]["t_int_frame"]) )) 
+        n_int = int(self.config["observation"]["N_angles"])
         logging.info(f'Number of frames: {n_int:d}')
-        t_int = np.asarray(float(self.config['observation']['t_int_obs_total'])) * u.second
+        t_int_total = float(self.config['observation']['t_int_frame']) * float(self.config['observation']['N_angles']) * u.second
         n_pix_array = np.asarray(n_pix_array) * u.pix
         del_Np_prime_del_t = np.asarray(del_Np_prime_del_t) * u.electron / u.second
         del_Ns_prime_del_t = np.asarray(del_Ns_prime_del_t) * u.electron / u.second
@@ -353,7 +353,7 @@ class NoiseCalculator:
 
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
-        n_int = int(np.floor( float(self.config["observation"]["t_int_obs_total"]) / float(self.config["observation"]["t_int_frame"]) )) # number of frames
+        n_int = int(self.config["observation"]["N_angles"]) # number of frames
         logging.info(f'Number of frames: {n_int:d}')
 
         # the number of pixels for each wavelength bin
@@ -452,6 +452,7 @@ class NoiseCalculator:
 
         # pragma: no cover
         # Prepare two left-aligned columns for figure metadata
+        total_integration_time = float(self.config['observation']['t_int_frame']) * float(self.config['observation']['N_angles']) * u.second
         instrumental_lines = [
             "INSTRUMENTAL:",
             "\n",
@@ -464,7 +465,7 @@ class NoiseCalculator:
             f"read noise = {read_noise_display} e- rms",
             f"gain = {float(self.config['detector']['gain']):.2f} e-/ADU",
             f"pix per wavel bin = {float(self.config['detector']['pix_per_wavel_bin']):.2f}",
-            f"integration time, total for obs. = {float(self.config['observation']['t_int_obs_total']):.2f} sec",
+            f"integration time, total for obs. = {total_integration_time} sec",
             f"integration time per readout = {float(self.config['observation']['t_int_frame']):.2f} sec",
             f"number of readouts = {int(n_int)}"
         ]
