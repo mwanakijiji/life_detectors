@@ -26,7 +26,7 @@ import astropy.units as u
 from astropy.visualization import quantity_support
 import yaml
 
-
+from modules.core.instrumental import OutputChannel
 
 
 # Add the project root to the Python path
@@ -457,12 +457,26 @@ def run_single_calculation(config_path: str,
                 fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen, 
                 transmission_screens = transmission_screens, 
-                chop = True,
                 plot=plot)
 
             # Pass through telescope aperture
             logger.info("Converting photons to photo-electrons...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
+
+            # set instrumental noise terms
+            instrument_dep_terms.calculate_instrinsic_instrumental_noise()
+
+            ## ## CONTINUE HERE: UPDATE THE CHANNELS WITH DISPERSED SIGNALS
+
+            # disperse signals on the detector (astrophysical signals should still be photons, not electrons)
+            instrument_dep_terms.disperse_signals_on_detector(plot=plot)
+
+            # on detector: convert quantities still in photons to electrons
+            instrument_dep_terms.photons_to_e()
+
+            # chop the signal between dark outputs
+            ipdb.set_trace()
+            instrument_dep_terms.chop_signal(fyi_angle=angle_deg, transmission_screens=transmission_screens, plot=plot)
 
             # record condensed information at this angle (to avoid mem leak)
             # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
@@ -476,9 +490,7 @@ def run_single_calculation(config_path: str,
             )
 
             '''
-            # on detector: convert photons to electrons
-            instrument_dep_terms.photons_to_e()
-            instrument_dep_terms.calculate_instrinsic_instrumental_noise()
+
             
             # Calculate S/N
             logger.info("Calculating signal-to-noise ratio...")

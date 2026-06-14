@@ -345,11 +345,18 @@ class NoiseCalculator:
         # wavelength bin widths (in wavelength units, not pixels)
         bin_widths = bin_edges[1:]-bin_edges[:-1] # removed units for plotting
 
-        # instantiate detector object
-        detector = Detector(config=self.config, num_wavel_bins=n_bins)
+        # instantiate detector objects for each of the channels
+        detector_bright_1 = Detector(config=self.config, num_wavel_bins=n_bins)
+        detector_bright_2 = Detector(config=self.config, num_wavel_bins=n_bins)
+        detector_dark_3 = Detector(config=self.config, num_wavel_bins=n_bins)
+        detector_dark_4 = Detector(config=self.config, num_wavel_bins=n_bins)
+
         # get the boolean illumination footprint (cube where each slice is the footprint for one wavelength bin)
         ## ## NOTE THIS IS KIND OF REDUNDANT RIGHT NOW, SINCE THE NUMBER OF PIXELS PER WAVELENGTH BIN IS CONSTANT AS CALCULATED BELOW; MIGHT CHANGE THIS LATER IF THE DISPERSION IS NOT CONSTANT
-        footprint_spec_cube = detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
+        footprint_spec_cube_bright_1 = detector_bright_1.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool_bright_1.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
+        footprint_spec_cube_bright_2 = detector_bright_2.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool_bright_2.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
+        footprint_spec_cube_dark_3 = detector_dark_3.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool_dark_3.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
+        footprint_spec_cube_dark_4 = detector_dark_4.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + 'footprint_bool_dark_4.png', plot=True) ## ## TO DO: MAKE THIS FUNCTION INHERIT THE SAVE DIR MORE CLEANLY, RAHTER THAN PASSING IT
 
         # integration time for 1 frame
         #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
@@ -361,16 +368,21 @@ class NoiseCalculator:
         #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
         n_pix_array = u.Quantity([]) * u.pix
         for wavel_bin_num in range(0, n_bins):
-            val = np.sum(footprint_spec_cube[wavel_bin_num, :, :]) * u.pix
+            val = np.sum(footprint_spec_cube_bright_1[wavel_bin_num, :, :]) * u.pix
             n_pix_array = u.Quantity(np.append(n_pix_array, val))
 
         # retrieve the addl systematics vector
-        addl_systematics_vector = detector.convert_2d_systematics_to_1d_vector()
+        addl_systematics_vector_bright_1 = detector_bright_1.convert_2d_systematics_to_1d_vector()
+        addl_systematics_vector_bright_2 = detector_bright_2.convert_2d_systematics_to_1d_vector()
+        addl_systematics_vector_dark_3 = detector_dark_3.convert_2d_systematics_to_1d_vector()
+        addl_systematics_vector_dark_4 = detector_dark_4.convert_2d_systematics_to_1d_vector()
+
+        ipdb.set_trace()
         
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
         # return S/N; and the variable values that are either the dark current or read noise (whichever has length >1)
         ipdb.set_trace()
-        s2n = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array, addl_systematics_vector=addl_systematics_vector)
+        s2n_dark_3 = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array, addl_systematics_vector=addl_systematics_vector_dark_3)
 
 
     
