@@ -14,7 +14,7 @@ Sky / aperture coordinate convention (use everywhere in this repo):
 from socket import IPV6_DONTFRAG
 import numpy as np
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import logging
 import ipdb
 import astropy.units as u
@@ -25,6 +25,7 @@ import yaml
 from pathlib import Path
 import logging
 
+
 from ..data.units import UnitConverter
 from ..utils.helpers import format_plot_title, compute_collecting_area_m2
 from ..utils.loader import config_getboolean
@@ -32,19 +33,383 @@ from ..utils.loader import config_getboolean
 logger = logging.getLogger(__name__)
 
 
+class Detector:
+    # Detector object that contains the illumination footprint and possibly fancier noise sources
+
+    def __init__(self, config: Dict, num_wavel_bins: int):
+        '''
+        Args:
+            config: Configuration dictionary
+            num_wavel_bins: Number of wavelength bins
+        '''
+
+        self.side_length_pix = int(config["detector"]["size"])
+        self.pitch_pix = float(config["detector"]["pitch_pix"])
+        self.pix_per_wavel_bin = float(config["detector"]["pix_per_wavel_bin"])
+        self.num_wavel_bins = num_wavel_bins
+        self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
+
+
+        self.config = config
+
+        #self.gain = config["detector"]["gain"]
+        #self.quantum_efficiency = config["detector"]["quantum_efficiency"]
+        #self.photons_to_e = config["detector"]["photons_to_e"]
+        #self.read_noise = config["detector"]["read_noise"]
+        #self.dark_current = config["detector"]["dark_current"]
+
+        # initialize dict to carry intrinsic instrumental terms (independent of astrophysics)
+        #self.sources_instrum = {}
+
+        # initialize dict to carry propagated astrophysicalterms (i.e., intensity levels on the detector, after instrument effects)
+        #self.prop_dict = {}
+        # assume wavelengths are the same for the star and planet
+        #self.prop_dict['wavel'] = self.star_flux['wavel']
+
+        # load 2D systematics (INI True/False must use config_getboolean, not bare if on strings)
+        sys_section = "detector_systematics"
+
+        def _load_systematic_map(enable_key: str, file_key: str):
+            if not config_getboolean(self.config, sys_section, enable_key):
+                return None
+            section = self.config[sys_section]
+            file_path = section[file_key] if isinstance(section, dict) else section.get(file_key)
+            return fits.getdata(file_path)
+
+        read_noise_map = _load_systematic_map("enable_read_noise_2d", "read_noise_2d_file")
+        bias_map = _load_systematic_map("enable_dc_2d", "dc_2d_file")
+        cosmic_rays_map = _load_systematic_map("enable_cosmic_rays_2d", "cosmic_rays_2d_file")
+        hot_pixels_map = _load_systematic_map("enable_hot_pixels_2d", "hot_pixels_2d_file")
+
+        # systematics: additive
+        ## ## TODO: ARE THESE ALL ADDIITVE?
+        self.systematics_additive_dict = {
+            'read_noise_map': read_noise_map,
+            'bias_map': bias_map,
+            'cosmic_rays_map': cosmic_rays_map,
+            'hot_pixels_map': hot_pixels_map
+        }
+        # multiplicative systematics
+        self.systematics_multiplicative_dict = {}
+        logging.info('Loaded detector systematics')
+
+        return
+
+    def footprint_spectral(self, file_name_plot: str, plot: bool = True):
+        '''
+        # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
+        # file_name_plot: name of the file to save the plot to
+        # plot: whether to make an FYI plot of the footprint
+
+        # lower-left corner of the footprint
+        # (keep this coordinate whole numbers for now)
+
+        INPUTS:
+
+
+        OUTPUTS:
+        None; the footprint is stored in self.footprint_cube.
+
+        '''
+
+        starting_pixel = np.array([100,300])
+
+        footprint_cube = np.full((self.num_wavel_bins, self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
+
+        # for each wavelength bin, make the footprint for that bin alone
+        for wavel_bin_num in range(0, self.num_wavel_bins):
+            # assumes horizontal spectra
+
+            # initialize the footprint
+            footprint_this = np.full((self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
+
+            # get the starting lower-left pixel for this wavelength bin
+            # (note this can be a float)
+            starting_pixel_this = starting_pixel + np.array([0,wavel_bin_num * self.pix_per_wavel_bin])
+
+            # get the footprint for this wavelength bin
+            pixel_ceil_start_x = int(np.ceil(starting_pixel_this[1]))
+            pixel_frac_start_x = pixel_ceil_start_x-starting_pixel_this[1]
+            pixel_floor_end_x = int(np.floor(starting_pixel_this[1] + self.pix_per_wavel_bin))
+            pixel_frac_end_x = (starting_pixel_this[1] + self.pix_per_wavel_bin) - pixel_floor_end_x
+            # where whole pixels are under the footprint, set them to 1
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x):int(pixel_floor_end_x)] = 1.0
+
+            # where partial pixels are under the footprint, set their values to the fraction of the pixel that is under the footprint
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x)-1] = pixel_frac_start_x
+            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_floor_end_x)] = pixel_frac_end_x
+
+            # add to the cube
+            footprint_cube[wavel_bin_num,:,:] = footprint_this
+            logging.info(f"Wavelength bin {wavel_bin_num} detector footprint is {footprint_this.sum()} pixels")
+
+        # FYI FITS file
+        # fits.writeto(f"/Users/eckhartspalding/Downloads/footprint_cube.fits", footprint_cube, overwrite=True)
+
+        # generate the array with the spectrum only (no detector noise yet)
+        footprint_sum = np.sum(footprint_cube, axis=0)
+
+        logging.info(f"Total detector footprint is {footprint_sum.sum()} pixels")
+
+        if plot: # pragma: no cover
+            plt.clf()
+            plt.title(format_plot_title("Detector spectral footprint (True)", self.config))
+            norm = ImageNormalize(footprint_sum, interval=ZScaleInterval())
+            plt.imshow(footprint_sum, origin='lower', cmap='gray', norm=norm)
+            plt.xlabel(f"Pixel")
+            plt.ylabel(f"Pixel")
+            plt.gca().set_aspect('equal', adjustable='box')
+            plt.savefig(file_name_plot)
+            logging.info(f"Saved plot of detector footprint containing all wavelength bins to {file_name_plot}")
+
+        self.footprint_cube = footprint_cube
+
+        return
+
+    def convert_2d_systematics_to_1d_vector(self) -> np.ndarray:
+        # convert the 2D systematics to a 1D vector, based on the footprint_cube which sets where each wavelength bin is on the detector
+        # returns a 1D vector of the systematics
+
+        # make blank canvas onto which we will add the systematics
+        canvas_systematics = np.zeros((self.footprint_cube[0,:,:].shape), dtype=float)
+
+        # read in the 2D systematics
+        if len(self.systematics_additive_dict) > 0: # if there are any listed
+            for key, value in self.systematics_additive_dict.items():
+                if value is not None: # if there is a 2D array
+                    logging.info(f"Applying {key} systematic (additive) to the detector")
+                    canvas_systematics = canvas_systematics + value
+        # apply the 2D multiplicative systematics to the spectrum
+        if len(self.systematics_multiplicative_dict) > 0: # if there are any listed
+            for key, value in self.systematics_multiplicative_dict.items():
+                if value is not None:# if there is a 2D array
+                    logging.info(f"Applying {key} systematic (multiplicative) to the detector")
+                    canvas_systematics = canvas_systematics * value
+        
+        # for reference/debugging
+        #self.canvas_systematics = canvas_systematics
+        
+        # use the footprint_cube to sum the 2D systematics within each wavelength bin
+        systematics_vector_1d = np.zeros(self.num_wavel_bins)
+
+        for wavel_bin_num in range(0, self.num_wavel_bins):
+            # for a given wavelength bin, sum the systematics across the pixels corresponding to that wavelength bin
+            # self.footprint_cube[wavel_bin_num,:,:] is just a boolean array, so we multiply it
+            systematics_vector_1d[wavel_bin_num] = np.sum( self.footprint_cube[wavel_bin_num,:,:] * canvas_systematics )
+
+        '''
+        # apply the 2D additive systematics to the spectrum
+
+        systematics_vector = np.zeros(self.num_wavel_bins)
+        for wavel_bin_num in range(0, self.num_wavel_bins):
+            systematics_vector[wavel_bin_num] = systematics_dict[wavel_bin_num].sum()
+        '''
+        return systematics_vector_1d
+
+
+'''
+@dataclass
+class InstrumentalNoise:
+    """
+    Calculates instrumental noise sources for telescope observations.
+    
+    This class handles the calculation of detector noise including
+    dark current, read noise, and other instrumental effects.
+    """
+    
+    def __init__(self, config: Dict, unit_converter: UnitConverter):
+        """
+        Initialize instrumental noise calculator.
+        
+        Args:
+            config: Configuration dictionary
+            unit_converter: Unit conversion utility
+        """
+        self.config = config
+        self.unit_converter = unit_converter
+    
+    def calculate_dark_current_electrons(self, integration_time: float) -> float:
+        """
+        Calculate dark current noise in electrons per pixel.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Dark current noise in electrons per pixel
+        """
+        dark_current_rate = self.config["detector"]["dark_current"]  # e-/pixel/sec
+        
+        # Dark current is a Poisson process, so noise = sqrt(N)
+        dark_electrons = dark_current_rate * integration_time
+        dark_noise = np.sqrt(dark_electrons)
+        
+        return dark_noise
+    
+    def calculate_dark_current_adu(self, integration_time: float) -> float:
+        """
+        Calculate dark current noise in ADU per pixel.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Dark current noise in ADU per pixel
+        """
+        gain = self.config["detector"]["gain"]  # e-/ADU
+        
+        # Calculate noise in electrons
+        noise_electrons = self.calculate_dark_current_electrons(integration_time)
+        
+        # Convert to ADU
+        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
+        
+        return noise_adu
+    
+    def calculate_read_noise_electrons(self) -> float:
+        """
+        Calculate read noise in electrons per pixel.
+        
+        Returns:
+            Read noise in electrons per pixel
+        """
+        read_noise = self.config["detector"]["read_noise"]  # e-/pixel
+        
+        # Read noise is typically Gaussian, so we use the value directly
+        return read_noise
+    
+    def calculate_read_noise_adu(self) -> float:
+        """
+        Calculate read noise in ADU per pixel.
+        
+        Returns:
+            Read noise in ADU per pixel
+        """
+        gain = self.config["detector"]["gain"]  # e-/ADU
+        
+        # Calculate noise in electrons
+        noise_electrons = self.calculate_read_noise_electrons()
+        
+        # Convert to ADU
+        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
+        
+        return noise_adu
+    
+    def calculate_total_instrumental_noise_electrons(self, integration_time: float) -> float:
+        """
+        Calculate total instrumental noise in electrons per pixel.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Total instrumental noise in electrons per pixel
+        """
+        total_noise_squared = 0.0
+        
+        sources_config = self.config.get("instrumental_sources", {})
+        
+        # Add dark current noise
+        if sources_config.get("dark_current", {}).get("enabled", True):
+            dark_noise = self.calculate_dark_current_electrons(integration_time)
+            total_noise_squared += dark_noise ** 2
+            logger.debug(f"Dark current noise: {dark_noise:.2f} e-/pixel")
+        
+        # Add read noise
+        if sources_config.get("read_noise", {}).get("enabled", True):
+            read_noise = self.calculate_read_noise_electrons()
+            total_noise_squared += read_noise ** 2
+            logger.debug(f"Read noise: {read_noise:.2f} e-/pixel")
+        
+        # Add other instrumental noise sources here as needed
+        # For example: thermal noise, quantization noise, etc.
+        
+        total_noise = np.sqrt(total_noise_squared)
+        
+        return total_noise
+    
+    def calculate_total_instrumental_noise_adu(self, integration_time: float) -> float:
+        """
+        Calculate total instrumental noise in ADU per pixel.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Total instrumental noise in ADU per pixel
+        """
+        gain = self.config["detector"]["gain"]  # e-/ADU
+        
+        # Calculate noise in electrons
+        noise_electrons = self.calculate_total_instrumental_noise_electrons(integration_time)
+        
+        # Convert to ADU
+        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
+        
+        return noise_adu
+    
+    def get_noise_breakdown_electrons(self, integration_time: float) -> Dict[str, float]:
+        """
+        Get breakdown of instrumental noise sources in electrons.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Dictionary mapping noise source names to their contributions
+        """
+        breakdown = {}
+        
+        sources_config = self.config.get("instrumental_sources", {})
+        
+        # Dark current
+        if sources_config.get("dark_current", {}).get("enabled", True):
+            breakdown["dark_current"] = self.calculate_dark_current_electrons(integration_time)
+        
+        # Read noise
+        if sources_config.get("read_noise", {}).get("enabled", True):
+            breakdown["read_noise"] = self.calculate_read_noise_electrons()
+        
+        return breakdown
+    
+    def get_noise_breakdown_adu(self, integration_time: float) -> Dict[str, float]:
+        """
+        Get breakdown of instrumental noise sources in ADU.
+        
+        Args:
+            integration_time: Integration time in seconds
+            
+        Returns:
+            Dictionary mapping noise source names to their contributions
+        """
+        gain = self.config["detector"]["gain"]  # e-/ADU
+        
+        breakdown_electrons = self.get_noise_breakdown_electrons(integration_time)
+        breakdown_adu = {}
+        
+        for source, noise_electrons in breakdown_electrons.items():
+            breakdown_adu[source] = self.unit_converter.electrons_to_adu(noise_electrons, gain)
+        
+        return breakdown_adu
+'''
+
+
 @dataclass
 class OutputChannel:
     '''
     Holds signals as detected in each output channel
     name: name of the output channel
-    signal_by_source: dictionary of signals by source
     snr: signal-to-noise ratio of the signal in the channel
     '''
     name: str
-    signal_by_source: dict = field(default_factory=dict)
+    detector: Optional[Detector] = None
     instrum_noise: dict = field(default_factory=dict)   # instrumental terms for this channel
     astroph_signal: dict = field(default_factory=dict)   # astrophysical signals for this channel
     snr: Optional[float] = None
+    spec_R: float | None = None # spectral R
+    bin_edges: np.ndarray | None = None # wavelength bins
+    bin_centers: np.ndarray | None = None # wavelength bins
+    bin_widths: np.ndarray | None = None # wavelength bins
 
 
 class InstrumentDepTerms:
@@ -77,6 +442,27 @@ class InstrumentDepTerms:
             name: OutputChannel(name=name)
             for name in ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark']
         }
+
+        # for each output channel, set the detection wavelength bins (same for all channels for now)
+        R = float(self.config["detector"]["spec_res"]) # spectral resolution (lambda/del_lambda)
+        # bins are spaced geometrically in wavelength space, with recurrence relation lambda_i = lambda_{0} * (1 + 1/R)**i
+        lambda_min, lambda_max = float(self.config["wavelength_range"]["min"]) * u.um, float(self.config["wavelength_range"]["max"])  * u.um
+        # number of bins that fit fully in [lmin, lmax]
+        n_bins = int(np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / R)))
+
+        # geometric bin edges and centers
+        bin_edges = lambda_min * (1.0 + 1.0 / R) ** np.arange(n_bins + 1)
+        bin_centers = np.sqrt(bin_edges[:-1] * bin_edges[1:])
+        # wavelength bin widths (in wavelength units, not pixels)
+        bin_widths = bin_edges[1:]-bin_edges[:-1] # removed units for plotting
+        for output_channel in self.output_channels.values():
+            output_channel.spec_R = R
+            output_channel.bin_edges = bin_edges
+            output_channel.bin_centers = bin_centers
+            output_channel.bin_widths = bin_widths
+
+
+
 
     def calculate_instrinsic_instrumental_noise(self):
         # calculate intrinsic instrumental noise, and update self.sources_instrum
@@ -126,7 +512,6 @@ class InstrumentDepTerms:
         for output_name, output_channel in self.output_channels.items():
             output_channel.instrum_noise['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
             output_channel.instrum_noise['read_noise_e_pix-1'] = read_noise_e_rms
-        ipdb.set_trace()
 
         return 
 
@@ -412,11 +797,72 @@ class InstrumentDepTerms:
         return transmission_instrument_response_cube
 
 
-    def disperse_signals_on_detector(self, plot: bool = False):
+    def disperse_astro_signals_on_detector(self, plot: bool = False):
         '''
         Disperse signals on the detector, using the detector object
         '''
-        ipdb.set_trace()
+        ## ## TODO: allow different dispersion laws for each output channel
+
+        # disperse in each channel
+        for output_channel in self.output_channels.values():
+            ipdb.set_trace()
+            if output_channel.detector is None:
+                output_channel.detector = Detector(config=self.config, num_wavel_bins=len(output_channel.bin_centers))
+            logging.info(f"Dispersing signals on detector for {output_channel.name}")
+            #output_channel.detector.disperse_signals(output_channel.signal_by_source)
+            ipdb.set_trace()
+
+            # generate the spectral footprint (shape (n_bins, n_pix, n_pix)) and tack it to output_channel.detector.footprint_cube
+            output_channel.detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + f'footprint_bool_{output_channel.name}.png', plot=True)
+
+            ipdb.set_trace()
+            # dump the photons from each source in each wavelength bin into the output_channel.detector.footprint_cube
+            # integration time for 1 frame
+            #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
+            n_int_this_angle = int(self.config["observation"]["N_int_per_angle"]) # number of frames for each angle position ## ## TODO: Make this be able to be != 1
+            logging.info(f'Number of frames at this angle position: {n_int_this_angle:d}')
+
+            ipdb.set_trace()
+            # the number of pixels for each wavelength bin
+            # (in practice the number of pixels is the same for all wavelength bins, but this can be updated later if the dispersion is not constant)
+            #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
+            n_pix_wavel_bin_array = u.Quantity([]) * u.pix
+
+            # loop over each wavelength bin
+            '''
+            for wavel_bin_num in range(0, len(output_channel.bin_centers)):
+                for source_name, source_val in self.sources_astroph.items():
+
+                    # put all the astrophysical photons in this wavelength bin 
+                    n_pix_in_wavel_bin_this = np.sum(output_channel.detector.footprint_cube[wavel_bin_num, :, :]) * u.pix # number of pixels in this wavelength bin
+                    n_pix_wavel_bin_array = u.Quantity(np.append(n_pix_wavel_bin_array, n_pix_in_wavel_bin_this))
+            '''
+            # tack on to the output_channel.detector.n_pix_array
+
+            footprint_cube = output_channel.detector.footprint_cube  # (n_bins, ny, nx)
+            n_pix_per_wavel_bin = np.sum(footprint_cube, axis=(1, 2)) * u.pix  # (n_bins,)
+
+            # dump the astrophysical photons from each source in each wavelength bin into the output_channel.detector.footprint_cube
+            for source_name, source_val in self.sources_astroph.items():
+
+                # flatten the 3D flux cube into a 1D array (spatial information is lost)
+                flux_astro_1d_ph_sec_um = np.sum(self.prop_dict[source_name]['flux_cube_post_screen_post_aperture_ph_sec_um'][output_channel.name], axis=(1,2))
+                # interpolate the flux to fit the wavelength bins on the detector
+                flux_astro_1d_interpolated_ph_sec_um = np.interp(x = output_channel.bin_centers, xp = self.prop_dict[source_name]['wavel'], fp = flux_1d)
+                flux_astro_1d_interpolated_ph_sec_wavel_bin = flux_astro_1d_interpolated_ph_sec_um * output_channel.bin_widths
+                flux_astro_1d_interpolated_ph_sec_pixel = flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
+
+                #output_channel.signal_by_source = {}
+                output_channel.astroph_signal[source_name] = {
+                    'wavel': output_channel.bin_centers,           # (n_bins,) Quantity
+                    'flux_astro_1d_interpolated_ph_sec_um': flux_astro_1d_interpolated_ph_sec_um.decompose,
+                    'flux_astro_1d_interpolated_ph_sec_wavel_bin': flux_astro_1d_interpolated_ph_sec_wavel_bin.decompose,
+                    'flux_astro_1d_interpolated_ph_sec_pixel': flux_astro_1d_interpolated_ph_sec_pixel.decompose,
+                    'n_pix_per_wavel_bin': n_pix_per_wavel_bin.decompose,                # (n_bins,) pix — from footprint
+                }
+            ipdb.set_trace()
+            print('hi')
+
         return
 
 
@@ -687,354 +1133,3 @@ class InstrumentDepTerms:
 
         return
     '''
-
-
-class Detector:
-    # Detector object that contains the illumination footprint and possibly fancier noise sources
-
-    def __init__(self, config: Dict, num_wavel_bins: int):
-        '''
-        Args:
-            config: Configuration dictionary
-            num_wavel_bins: Number of wavelength bins
-        '''
-
-        self.side_length_pix = int(config["detector"]["size"])
-        self.pitch_pix = float(config["detector"]["pitch_pix"])
-        self.pix_per_wavel_bin = float(config["detector"]["pix_per_wavel_bin"])
-        self.num_wavel_bins = num_wavel_bins
-        self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
-
-
-        self.config = config
-
-        #self.gain = config["detector"]["gain"]
-        #self.quantum_efficiency = config["detector"]["quantum_efficiency"]
-        #self.photons_to_e = config["detector"]["photons_to_e"]
-        #self.read_noise = config["detector"]["read_noise"]
-        #self.dark_current = config["detector"]["dark_current"]
-
-        # initialize dict to carry intrinsic instrumental terms (independent of astrophysics)
-        #self.sources_instrum = {}
-
-        # initialize dict to carry propagated astrophysicalterms (i.e., intensity levels on the detector, after instrument effects)
-        #self.prop_dict = {}
-        # assume wavelengths are the same for the star and planet
-        #self.prop_dict['wavel'] = self.star_flux['wavel']
-
-        # load 2D systematics (INI True/False must use config_getboolean, not bare if on strings)
-        sys_section = "detector_systematics"
-
-        def _load_systematic_map(enable_key: str, file_key: str):
-            if not config_getboolean(self.config, sys_section, enable_key):
-                return None
-            section = self.config[sys_section]
-            file_path = section[file_key] if isinstance(section, dict) else section.get(file_key)
-            return fits.getdata(file_path)
-
-        read_noise_map = _load_systematic_map("enable_read_noise_2d", "read_noise_2d_file")
-        bias_map = _load_systematic_map("enable_dc_2d", "dc_2d_file")
-        cosmic_rays_map = _load_systematic_map("enable_cosmic_rays_2d", "cosmic_rays_2d_file")
-        hot_pixels_map = _load_systematic_map("enable_hot_pixels_2d", "hot_pixels_2d_file")
-
-        # systematics: additive
-        ## ## TODO: ARE THESE ALL ADDIITVE?
-        self.systematics_additive_dict = {
-            'read_noise_map': read_noise_map,
-            'bias_map': bias_map,
-            'cosmic_rays_map': cosmic_rays_map,
-            'hot_pixels_map': hot_pixels_map
-        }
-        # multiplicative systematics
-        self.systematics_multiplicative_dict = {}
-        logging.info('Loaded detector systematics')
-
-        return
-
-    def footprint_spectral(self, file_name_plot: str, plot: bool = True):
-        # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
-        # file_name_plot: name of the file to save the plot to
-        # plot: whether to make an FYI plot of the footprint
-
-        # lower-left corner of the footprint
-        # (keep this coordinate whole numbers for now)
-        starting_pixel = np.array([100,300])
-
-        footprint_cube = np.full((self.num_wavel_bins, self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
-
-        # for each wavelength bin, make the footprint for that bin alone
-        for wavel_bin_num in range(0, self.num_wavel_bins):
-            # assumes horizontal spectra
-
-            # initialize the footprint
-            footprint_this = np.full((self.side_length_pix, self.side_length_pix), 0.0, dtype=float)
-
-            # get the starting lower-left pixel for this wavelength bin
-            # (note this can be a float)
-            starting_pixel_this = starting_pixel + np.array([0,wavel_bin_num * self.pix_per_wavel_bin])
-
-            # get the footprint for this wavelength bin
-            pixel_ceil_start_x = int(np.ceil(starting_pixel_this[1]))
-            pixel_frac_start_x = pixel_ceil_start_x-starting_pixel_this[1]
-            pixel_floor_end_x = int(np.floor(starting_pixel_this[1] + self.pix_per_wavel_bin))
-            pixel_frac_end_x = (starting_pixel_this[1] + self.pix_per_wavel_bin) - pixel_floor_end_x
-            # where whole pixels are under the footprint, set them to 1
-            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x):int(pixel_floor_end_x)] = 1.0
-
-            # where partial pixels are under the footprint, set their values to the fraction of the pixel that is under the footprint
-            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_ceil_start_x)-1] = pixel_frac_start_x
-            footprint_this[int(starting_pixel_this[0]):int(starting_pixel_this[0]+self.pix_spectral_width), int(pixel_floor_end_x)] = pixel_frac_end_x
-
-            # add to the cube
-            footprint_cube[wavel_bin_num,:,:] = footprint_this
-            logging.info(f"Wavelength bin {wavel_bin_num} detector footprint is {footprint_this.sum()} pixels")
-
-        # FYI FITS file
-        # fits.writeto(f"/Users/eckhartspalding/Downloads/footprint_cube.fits", footprint_cube, overwrite=True)
-
-        # generate the array with the spectrum only (no detector noise yet)
-        footprint_sum = np.sum(footprint_cube, axis=0)
-
-        logging.info(f"Total detector footprint is {footprint_sum.sum()} pixels")
-
-        if plot: # pragma: no cover
-            plt.clf()
-            plt.title(format_plot_title("Detector spectral footprint (True)", self.config))
-            norm = ImageNormalize(footprint_sum, interval=ZScaleInterval())
-            plt.imshow(footprint_sum, origin='lower', cmap='gray', norm=norm)
-            plt.xlabel(f"Pixel")
-            plt.ylabel(f"Pixel")
-            plt.gca().set_aspect('equal', adjustable='box')
-            plt.savefig(file_name_plot)
-            logging.info(f"Saved plot of detector footprint containing all wavelength bins to {file_name_plot}")
-
-        self.footprint_cube = footprint_cube
-
-        return footprint_cube
-
-    def convert_2d_systematics_to_1d_vector(self) -> np.ndarray:
-        # convert the 2D systematics to a 1D vector, based on the footprint_cube which sets where each wavelength bin is on the detector
-        # returns a 1D vector of the systematics
-
-        # make blank canvas onto which we will add the systematics
-        canvas_systematics = np.zeros((self.footprint_cube[0,:,:].shape), dtype=float)
-
-        # read in the 2D systematics
-        if len(self.systematics_additive_dict) > 0: # if there are any listed
-            for key, value in self.systematics_additive_dict.items():
-                if value is not None: # if there is a 2D array
-                    logging.info(f"Applying {key} systematic (additive) to the detector")
-                    canvas_systematics = canvas_systematics + value
-        # apply the 2D multiplicative systematics to the spectrum
-        if len(self.systematics_multiplicative_dict) > 0: # if there are any listed
-            for key, value in self.systematics_multiplicative_dict.items():
-                if value is not None:# if there is a 2D array
-                    logging.info(f"Applying {key} systematic (multiplicative) to the detector")
-                    canvas_systematics = canvas_systematics * value
-        
-        # for reference/debugging
-        #self.canvas_systematics = canvas_systematics
-        
-        # use the footprint_cube to sum the 2D systematics within each wavelength bin
-        systematics_vector_1d = np.zeros(self.num_wavel_bins)
-
-        for wavel_bin_num in range(0, self.num_wavel_bins):
-            # for a given wavelength bin, sum the systematics across the pixels corresponding to that wavelength bin
-            # self.footprint_cube[wavel_bin_num,:,:] is just a boolean array, so we multiply it
-            systematics_vector_1d[wavel_bin_num] = np.sum( self.footprint_cube[wavel_bin_num,:,:] * canvas_systematics )
-
-        '''
-        # apply the 2D additive systematics to the spectrum
-
-        systematics_vector = np.zeros(self.num_wavel_bins)
-        for wavel_bin_num in range(0, self.num_wavel_bins):
-            systematics_vector[wavel_bin_num] = systematics_dict[wavel_bin_num].sum()
-        '''
-        return systematics_vector_1d
-
-
-'''
-@dataclass
-class InstrumentalNoise:
-    """
-    Calculates instrumental noise sources for telescope observations.
-    
-    This class handles the calculation of detector noise including
-    dark current, read noise, and other instrumental effects.
-    """
-    
-    def __init__(self, config: Dict, unit_converter: UnitConverter):
-        """
-        Initialize instrumental noise calculator.
-        
-        Args:
-            config: Configuration dictionary
-            unit_converter: Unit conversion utility
-        """
-        self.config = config
-        self.unit_converter = unit_converter
-    
-    def calculate_dark_current_electrons(self, integration_time: float) -> float:
-        """
-        Calculate dark current noise in electrons per pixel.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Dark current noise in electrons per pixel
-        """
-        dark_current_rate = self.config["detector"]["dark_current"]  # e-/pixel/sec
-        
-        # Dark current is a Poisson process, so noise = sqrt(N)
-        dark_electrons = dark_current_rate * integration_time
-        dark_noise = np.sqrt(dark_electrons)
-        
-        return dark_noise
-    
-    def calculate_dark_current_adu(self, integration_time: float) -> float:
-        """
-        Calculate dark current noise in ADU per pixel.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Dark current noise in ADU per pixel
-        """
-        gain = self.config["detector"]["gain"]  # e-/ADU
-        
-        # Calculate noise in electrons
-        noise_electrons = self.calculate_dark_current_electrons(integration_time)
-        
-        # Convert to ADU
-        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
-        
-        return noise_adu
-    
-    def calculate_read_noise_electrons(self) -> float:
-        """
-        Calculate read noise in electrons per pixel.
-        
-        Returns:
-            Read noise in electrons per pixel
-        """
-        read_noise = self.config["detector"]["read_noise"]  # e-/pixel
-        
-        # Read noise is typically Gaussian, so we use the value directly
-        return read_noise
-    
-    def calculate_read_noise_adu(self) -> float:
-        """
-        Calculate read noise in ADU per pixel.
-        
-        Returns:
-            Read noise in ADU per pixel
-        """
-        gain = self.config["detector"]["gain"]  # e-/ADU
-        
-        # Calculate noise in electrons
-        noise_electrons = self.calculate_read_noise_electrons()
-        
-        # Convert to ADU
-        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
-        
-        return noise_adu
-    
-    def calculate_total_instrumental_noise_electrons(self, integration_time: float) -> float:
-        """
-        Calculate total instrumental noise in electrons per pixel.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Total instrumental noise in electrons per pixel
-        """
-        total_noise_squared = 0.0
-        
-        sources_config = self.config.get("instrumental_sources", {})
-        
-        # Add dark current noise
-        if sources_config.get("dark_current", {}).get("enabled", True):
-            dark_noise = self.calculate_dark_current_electrons(integration_time)
-            total_noise_squared += dark_noise ** 2
-            logger.debug(f"Dark current noise: {dark_noise:.2f} e-/pixel")
-        
-        # Add read noise
-        if sources_config.get("read_noise", {}).get("enabled", True):
-            read_noise = self.calculate_read_noise_electrons()
-            total_noise_squared += read_noise ** 2
-            logger.debug(f"Read noise: {read_noise:.2f} e-/pixel")
-        
-        # Add other instrumental noise sources here as needed
-        # For example: thermal noise, quantization noise, etc.
-        
-        total_noise = np.sqrt(total_noise_squared)
-        
-        return total_noise
-    
-    def calculate_total_instrumental_noise_adu(self, integration_time: float) -> float:
-        """
-        Calculate total instrumental noise in ADU per pixel.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Total instrumental noise in ADU per pixel
-        """
-        gain = self.config["detector"]["gain"]  # e-/ADU
-        
-        # Calculate noise in electrons
-        noise_electrons = self.calculate_total_instrumental_noise_electrons(integration_time)
-        
-        # Convert to ADU
-        noise_adu = self.unit_converter.electrons_to_adu(noise_electrons, gain)
-        
-        return noise_adu
-    
-    def get_noise_breakdown_electrons(self, integration_time: float) -> Dict[str, float]:
-        """
-        Get breakdown of instrumental noise sources in electrons.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Dictionary mapping noise source names to their contributions
-        """
-        breakdown = {}
-        
-        sources_config = self.config.get("instrumental_sources", {})
-        
-        # Dark current
-        if sources_config.get("dark_current", {}).get("enabled", True):
-            breakdown["dark_current"] = self.calculate_dark_current_electrons(integration_time)
-        
-        # Read noise
-        if sources_config.get("read_noise", {}).get("enabled", True):
-            breakdown["read_noise"] = self.calculate_read_noise_electrons()
-        
-        return breakdown
-    
-    def get_noise_breakdown_adu(self, integration_time: float) -> Dict[str, float]:
-        """
-        Get breakdown of instrumental noise sources in ADU.
-        
-        Args:
-            integration_time: Integration time in seconds
-            
-        Returns:
-            Dictionary mapping noise source names to their contributions
-        """
-        gain = self.config["detector"]["gain"]  # e-/ADU
-        
-        breakdown_electrons = self.get_noise_breakdown_electrons(integration_time)
-        breakdown_adu = {}
-        
-        for source, noise_electrons in breakdown_electrons.items():
-            breakdown_adu[source] = self.unit_converter.electrons_to_adu(noise_electrons, gain)
-        
-        return breakdown_adu
-'''

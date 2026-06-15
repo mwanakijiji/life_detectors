@@ -133,14 +133,14 @@ class AstrophysicalSources:
         null = self.config.getboolean("nulling", "null")
         logger.info(f"Nulling of star: {null}")
         
-        wavelength = np.linspace(float(self.config['wavelength_range']['min']),
+        wavelength_incident_cube_points = np.linspace(float(self.config['wavelength_range']['min']),
                                float(self.config['wavelength_range']['max']),
-                               int(self.config['wavelength_range']['n_points'])) * u.um
+                               int(100)) * u.um
 
         if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
 
             # note distance is being set by the config file; this is just one object
-            flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength, distance_set=float(self.config["target"]["distance"]), null=null)
+            flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength_incident_cube_points, distance_set=float(self.config["target"]["distance"]), null=null)
 
         elif source_name == "exoplanet_model_10pc":
 
@@ -169,7 +169,7 @@ class AstrophysicalSources:
             flux_photons = flux_photons_10pc * (10.0 / float(self.config["target"]["distance"])) ** 2
 
             # interpolate
-            flux_incident = np.interp(x = wavelength, 
+            flux_incident = np.interp(x = wavelength_incident_cube_points, 
                                             xp = wavel, 
                                             fp = flux_photons)
 
@@ -179,7 +179,11 @@ class AstrophysicalSources:
             df = pd.read_csv(self.config['target']['psg_spectrum_file_name'], names=['wavel', 'flux_total', 'flux_noise', 'flux_planet'], skiprows=15, sep=r'\s+')
             
             logger.info(f"!!! --- OVERWRITING PSG PLANET SPECTRUM FILE WITH A BLACKBODY; FIX LATER --- !!!")
-            flux_incident = self._calculate_flux_from_spectrum(source_name=source_name, wavelength=wavelength, distance_set=float(system_params['Ds']), null=False)
+            flux_incident = self._calculate_flux_from_spectrum(
+                                                        source_name=source_name, 
+                                                        wavelength=wavelength_incident_cube_points, 
+                                                        distance_set=float(system_params['Ds']), 
+                                                        null=False)
 
 
             wavel = df['wavel'].values * u.micron
@@ -196,7 +200,7 @@ class AstrophysicalSources:
             flux_photons = flux_photons.to(u.ph / (u.micron * u.s * u.m**2))
 
             # incident flux from PSG spectrum
-            flux_psg_incident = np.interp(x = wavelength, 
+            flux_psg_incident = np.interp(x = wavelength_incident_cube_points, 
                                             xp = wavel, 
                                             fp = flux_photons)
 
@@ -206,14 +210,14 @@ class AstrophysicalSources:
             ## ## TODO: MAKE SURE SCALING, UNITS ARE RIGHT
             # get BB spectrum for making a rough rescaling of the PSG spectrum
             
-            flux_bb_incident = self._calculate_flux_from_spectrum(source_name="exoplanet_bb", wavelength=wavelength, null=False)
+            flux_bb_incident = self._calculate_flux_from_spectrum(source_name="exoplanet_bb", wavelength=wavelength_incident_cube_points, null=False)
             #flux_incident_junk = self._calculate_flux_from_spectrum(source_name="exoplanet_model_10pc", wavelength=wavelength, null=False)
 
             # integrate the BB spectrum over the wavelength grid
-            flux_incident_bb_integrated = np.trapz(y=flux_bb_incident, x=wavelength)
+            flux_incident_bb_integrated = np.trapz(y=flux_bb_incident, x=wavelength_incident_cube_points)
 
             # integrate the PSG spectrum over the wavelength grid
-            flux_incident_psg_integrated = np.trapz(y=flux_psg_incident, x=wavelength)
+            flux_incident_psg_integrated = np.trapz(y=flux_psg_incident, x=wavelength_incident_cube_points)
 
             # rescale the PSG spectrum to the BB spectrum
             ratio_incident_psg_over_bb = (flux_incident_psg_integrated / flux_incident_bb_integrated).value
@@ -225,7 +229,7 @@ class AstrophysicalSources:
             logger.warning(f"Spectrum not available for {source_name}")
             return np.array([])
 
-        incident_dict['wavel'] = wavelength
+        incident_dict['wavel'] = wavelength_incident_cube_points
         # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
         # = ph/um/m^2/sec
 
@@ -279,7 +283,7 @@ class AstrophysicalSources:
         sky_yy_arcsec = yy_arcsec
         
         # initialize canvases (wavelength x sky y x sky x)
-        n_wavel = int(self.config['wavelength_range']['n_points'])
+        n_wavel = int(0.5 * int(self.config['wavelength_range']['n_points'])) # the cubes should have half the number of wavelength points as the astrophysical spectra
         canvas_star_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
         canvas_planet_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
 

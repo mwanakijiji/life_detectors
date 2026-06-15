@@ -416,7 +416,7 @@ def run_single_calculation(config_path: str,
         logger.info("Generating on-sky scene...")
         astro_scene_perfect_no_screen = astrophysical_sources.generate_onsky_scene(incident_dict=sources_astroph, plot=plot)
 
-        # instantiate instrument effects
+        # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")
         instrument_dep_terms = instrumental.InstrumentDepTerms(
             config, 
@@ -429,7 +429,7 @@ def run_single_calculation(config_path: str,
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
         # make 1 full rotation
-        angles_deg = np.linspace(0, 360, num=int(config['observation']['N_angles']), endpoint=False)  # e.g. step=1 or 5
+        angles_deg = np.linspace(0, 360, num=int(config['observation']['N_angles']), endpoint=False)
         results = {}  # dict to hold results for each angle
 
         override_stellar_mask = bool(True)
@@ -439,7 +439,7 @@ def run_single_calculation(config_path: str,
         for angle_deg in angles_deg:
             # Reset mutable pipeline state
             instrument_dep_terms.sources_astroph = copy.deepcopy(sources_astroph_pristine)
-            instrument_dep_terms.prop_dict = {}
+            instrument_dep_terms.prop_dict = {} # dict to hold astrophysical terms as propagated through the instrument
 
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
@@ -448,11 +448,10 @@ def run_single_calculation(config_path: str,
 
             # rotate the transmission screens
             transmission_screens_only_rot = ndimage.rotate(transmission_screens[0:4,:,:], angle_deg, axes=(1,2), reshape=False) # rotate the screens, but not the sky coordinates
-            transmission_screens[0:4,:,:] = transmission_screens_only_rot
+            transmission_screens[0:4,:,:] = transmission_screens_only_rot # reasssign the rotated screens to the original transmission_screens
 
-            # pass astrophysical scene through transmission screens (and chop)
-            logger.info("Passing astrophysical flux through transmission screens...")
-
+            # pass astrophysical scene through transmission screens
+            logger.info("Passing astrophysical flux through transmission screens ...")
             instrument_dep_terms.pass_through_transmission_screens(
                 fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen, 
@@ -460,16 +459,19 @@ def run_single_calculation(config_path: str,
                 plot=plot)
 
             # Pass through telescope aperture
-            logger.info("Converting photons to photo-electrons...")
+            logger.info("Converting photons to photo-electrons ...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
-            # set instrumental noise terms
+            # set instrumental noise terms and update the OutputChannel objects
+            logger.info("Assigning intrinsic instrumental noise ...")
             instrument_dep_terms.calculate_instrinsic_instrumental_noise()
 
-            ## ## CONTINUE HERE: UPDATE THE CHANNELS WITH DISPERSED SIGNALS
+            # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
+            logger.info("Dispersing signals on channel detectors ...")
+            instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
-            # disperse signals on the detector (astrophysical signals should still be photons, not electrons)
-            instrument_dep_terms.disperse_signals_on_detector(plot=plot)
+            ## ## CONTINUE HERE
+            instrument_dep_terms.combine_astro_and_instrum_signals(())
 
             # on detector: convert quantities still in photons to electrons
             instrument_dep_terms.photons_to_e()
@@ -478,7 +480,7 @@ def run_single_calculation(config_path: str,
             ipdb.set_trace()
             instrument_dep_terms.chop_signal(fyi_angle=angle_deg, transmission_screens=transmission_screens, plot=plot)
 
-            # record condensed information at this angle (to avoid mem leak)
+            # record condensed information at this transmission screen angle (to avoid mem leak)
             # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
             results[angle_deg] = record_info_at_angle(
                 prop_dict = instrument_dep_terms.prop_dict,
