@@ -291,15 +291,17 @@ def modify_config_file_pl_system_params(
     return temp_config_path
 
 
-def run_single_calculation(config_path: str, 
-                            base_filename: str,
-                            sources_to_include: List[str], 
-                          qe: float,
-                          overwrite: bool = True, 
-                          plot: bool = False, 
-                          system_params: Optional[dict] = None, 
-                          lum_types: Optional[dict] = None,
-                          output_root: Optional[str] = None) -> bool:
+def run_single_calculation(
+    config_path: str,
+    base_filename: str,
+    sources_to_include: List[str],
+    qe: float,
+    overwrite: bool = True,
+    plot: bool = False,
+    system_params: Optional[dict] = None,
+    lum_types: Optional[dict] = None,
+    output_root: Optional[str] = None,
+) -> bool:
     """
     Run a single calculation with specified parameters.
     
@@ -434,7 +436,14 @@ def run_single_calculation(config_path: str,
 
         override_stellar_mask = bool(True)
         if override_stellar_mask:
-            input("! ------ Inserting a manual stellar mask for ALL outputs. Press Enter if you're OK with this ------- !")
+            try:
+                raw_response = input(
+                    "! ------ Inserting a manual stellar mask for ALL outputs. Proceed? (n -> discard manual mask) ------- ! "
+                )
+            except EOFError:
+                raw_response = "y"
+            response = str(raw_response).strip().lower()
+            override_stellar_mask = response in {"y", "yes", ""}
 
         for angle_deg in angles_deg:
             # Reset mutable pipeline state
@@ -471,7 +480,7 @@ def run_single_calculation(config_path: str,
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
             ## ## CONTINUE HERE
-            instrument_dep_terms.combine_astro_and_instrum_signals(())
+            instrument_dep_terms.combine_astro_and_instrum_signals()
 
             # on detector: convert quantities still in photons to electrons
             instrument_dep_terms.photons_to_e()

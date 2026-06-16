@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, asdict
 import logging
 import ipdb
 import astropy.units as u
+from astropy.table import QTable
 import matplotlib.pyplot as plt
 import astropy.io.fits as fits
 from astropy.visualization import ZScaleInterval, ImageNormalize
@@ -462,6 +463,24 @@ class InstrumentDepTerms:
             output_channel.bin_widths = bin_widths
 
 
+    def _build_base_astro_table(self, output_channel) -> QTable:
+        # builds a table that consolidates astrophysical signals, before including instrumental noise
+        qt = QTable()
+        qt['wavel_bin_num'] = np.arange(len(output_channel.bin_centers))
+        qt['wavel_bin_center'] = output_channel.bin_centers
+        qt['wavel_bin_width'] = output_channel.bin_widths
+        qt['n_pix_per_wavel_bin'] = np.sum(
+            output_channel.detector.footprint_cube, axis=(1, 2)
+        ) * u.pix
+        for source_name in self.sources_to_include:
+            if source_name not in output_channel.astroph_signal:
+                continue
+            sig = output_channel.astroph_signal[source_name]
+            qt[f'astro_{source_name}_flux_ph_sec_um'] = sig['flux_astro_1d_interpolated_ph_sec_um']
+            qt[f'astro_{source_name}_flux_ph_sec_wavel_bin'] = sig['flux_astro_1d_interpolated_ph_sec_wavel_bin']
+            qt[f'astro_{source_name}_flux_ph_sec_pixel'] = sig['flux_astro_1d_interpolated_ph_sec_pixel']
+        return qt
+
 
 
     def calculate_instrinsic_instrumental_noise(self):
@@ -514,6 +533,115 @@ class InstrumentDepTerms:
             output_channel.instrum_noise['read_noise_e_pix-1'] = read_noise_e_rms
 
         return 
+
+
+    def combine_astro_and_instrum_signals(self):
+        # combines astrophysical signals and instrumental noise
+
+        t_frame = float(self.config['observation']['t_int_frame']) * u.second
+        read_noise = self.sources_instrum['read_noise_e_pix-1']
+        dc_rates = self.sources_instrum['dark_current_e_pix-1_sec-1']  # (n_dc,)
+        gain = float(self.config["detector"]["gain"]) * u.electron / u.adu
+        e_per_ph = float(self.config["detector"]["ph_to_e"]) * u.electron / u.ph
+
+        # loop over output channels and make a set of tables (one for each value of dark current)
+        for output_name, output_channel in self.output_channels.items():
+
+            base = self._build_base_astro_table(output_channel) # build table that includes astrophysical signals
+            n_bins = len(output_channel.bin_centers)
+            tables_by_dc = {}
+
+            # loop over dark current values
+            for dc_rate in dc_rates: 
+                
+                logging.info(f'Combining astrophysical signals and instrumental noise for output {output_name} at dark current {dc_rate}')
+                qt = QTable(base.copy())
+                # metadata (scalar, for bookkeeping)
+                #qt.meta['dark_current_rate_e_pix_sec'] = dc_rate
+                # instrumental columns: constant across wavelength bins at this DC
+                qt['instrum_dark_current_e_pix_sec'] = dc_rate * np.ones(n_bins)
+                #qt['instrum_dark_current_e_pix'] = np.full(n_bins, dc_rate * t_frame)
+                qt['instrum_read_noise_e_pix'] = read_noise * np.ones(n_bins)
+                tables_by_dc[float(dc_rate.value)] = qt
+
+            output_channel.tables_by_dark_current_orig = tables_by_dc # _orig meaning that we have not modified the units here
+
+        # loop over each of the tables and make a new table that keeps some of the columns for bookkeeping,
+        # and then multiplies others by the appropriate factor to get the total signal in electrons
+        for output_name, output_channel in self.output_channels.items():
+            
+            for dc_rate, table in output_channel.tables_by_dark_current_orig.items():
+
+                final_table = QTable()
+                final_table['wavel_bin_num'] = table['wavel_bin_num']
+                final_table['wavel_bin_center'] = table['wavel_bin_center']
+                final_table['wavel_bin_width'] = table['wavel_bin_width']
+                final_table['n_pix_per_wavel_bin'] = table['n_pix_per_wavel_bin']
+                # total dark current within the wavelength bin for the entire integration
+                final_table['instrum_dark_current_for_wavel_bin_and_integration_adu_tot'] = table['instrum_dark_current_e_pix_sec'] * table['n_pix_per_wavel_bin'] * t_frame / gain
+                # total read noise within the wavelength bin for the entire integration
+                final_table['instrum_read_noise_for_wavel_bin_and_integration_adu_tot'] = table['instrum_read_noise_e_pix'] * table['n_pix_per_wavel_bin'] / gain
+
+                # loop over astrophysical sources:
+                for source_name in self.sources_to_include:
+                    astro_sig = output_channel.astroph_signal[source_name]
+                    final_table[f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
+
+                #########################################################################################################################
+                # START DEBUG PLOT
+                wavel_bin_center = final_table['wavel_bin_center']
+                wavel_bin_width = final_table['wavel_bin_width']
+                wavel_bin_edges = output_channel.bin_edges
+                #x_vals = wavel_bin_center.value if hasattr(wavel_bin_center, "value") else wavel_bin_center
+                #width_vals = wavel_bin_width.value if hasattr(wavel_bin_width, "value") else wavel_bin_width
+                #x_unit = wavel_bin_center.unit if hasattr(wavel_bin_center, "unit") else ""
+                #x_left = x_vals - 0.5 * width_vals
+                #x_right = x_vals + 0.5 * width_vals
+                #x_edges = np.concatenate([x_left, [x_right[-1]]])
+                #y_unit = ""
+
+                plt.close()
+                fig, ax = plt.subplots(figsize=(10, 5))
+                debug_cols = [
+                    'instrum_dark_current_for_wavel_bin_and_integration_adu_tot',
+                    'instrum_read_noise_for_wavel_bin_and_integration_adu_tot',
+                ]
+
+                for col_name in debug_cols:
+                    y_col = final_table[col_name]
+                    y_vals = y_col.value if hasattr(y_col, "value") else y_col
+                    ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
+                    if hasattr(y_col, "unit"):
+                        y_unit = y_col.unit
+
+                for source_name in self.sources_to_include:
+                    col_name = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
+                    if col_name in final_table.colnames:
+                        y_col = final_table[col_name]
+                        y_vals = y_col.value if hasattr(y_col, "value") else y_col
+                        ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
+                        if hasattr(y_col, "unit"):
+                            y_unit = y_col.unit
+
+                #ax.set_ylim(1e-2, 1e5)
+                ax.set_xlim(4.0, 18.5)
+                ax.set_title(f"Debug final_table: {output_name}, dc={dc_rate:.3f} e/pix/s")
+                ax.set_xlabel(f"Wavelength bin center ({wavel_bin_center.unit})")
+                ax.set_ylabel(f"Flux ({y_unit})")
+                ax.set_yscale('log')
+                ax.legend(fontsize=8, loc='best')
+                fig.tight_layout()
+                file_name_plot = (
+                    str(self.config['dirs']['save_s2n_data_unique_dir'])
+                    + f"debug_final_table_{output_name}_dc_{dc_rate:.3f}.png"
+                )
+                plt.show()
+                #fig.savefig(file_name_plot)
+                plt.close(fig)
+                logging.info(f"Saved debug final_table plot to {file_name_plot}")
+                ipdb.set_trace()
+                # END DEBUG PLOT
+                #########################################################################################################################
 
 
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False):
@@ -668,14 +796,15 @@ class InstrumentDepTerms:
                 transmission_instrument_response /= max_response
 
             # a small override mask is put over the star for now to avoid geometrical leakage ## ## TODO: remove this once the geometry is properly implemented
-            nulling_factor = float(self.config['nulling']['nulling_factor'])
-            logging.info(f'Star is manually being nulled to {nulling_factor}')
-            # mask the central NxN pixels
-            N_mask = 20
-            transmission_instrument_response[0, 
-                                            transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
-                                            transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
-                                            ] = nulling_factor ## ## TODO: IS THIS THE RIGHT LOGIC HERE? A 1E-5 NULL HERE WOULD MEAN ZERO TRANSMISSION OF THE STAR IN THE CHOPPED SIGNAL; IS THAT RIGHT?
+            if override_stellar_mask:
+                nulling_factor = float(self.config['nulling']['nulling_factor'])
+                logging.info(f'Star is manually being nulled to {nulling_factor}')
+                # mask the central NxN pixels
+                N_mask = 20
+                transmission_instrument_response[0, 
+                                                transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
+                                                transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
+                                                ] = nulling_factor ## ## TODO: IS THIS THE RIGHT LOGIC HERE? A 1E-5 NULL HERE WOULD MEAN ZERO TRANSMISSION OF THE STAR IN THE CHOPPED SIGNAL; IS THAT RIGHT?
 
             return transmission_instrument_response
 
@@ -805,24 +934,20 @@ class InstrumentDepTerms:
 
         # disperse in each channel
         for output_channel in self.output_channels.values():
-            ipdb.set_trace()
             if output_channel.detector is None:
                 output_channel.detector = Detector(config=self.config, num_wavel_bins=len(output_channel.bin_centers))
             logging.info(f"Dispersing signals on detector for {output_channel.name}")
             #output_channel.detector.disperse_signals(output_channel.signal_by_source)
-            ipdb.set_trace()
 
             # generate the spectral footprint (shape (n_bins, n_pix, n_pix)) and tack it to output_channel.detector.footprint_cube
             output_channel.detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + f'footprint_bool_{output_channel.name}.png', plot=True)
 
-            ipdb.set_trace()
             # dump the photons from each source in each wavelength bin into the output_channel.detector.footprint_cube
             # integration time for 1 frame
             #t_int = float(self.config["observation"]["t_int_obs_total"]) * u.second
             n_int_this_angle = int(self.config["observation"]["N_int_per_angle"]) # number of frames for each angle position ## ## TODO: Make this be able to be != 1
             logging.info(f'Number of frames at this angle position: {n_int_this_angle:d}')
 
-            ipdb.set_trace()
             # the number of pixels for each wavelength bin
             # (in practice the number of pixels is the same for all wavelength bins, but this can be updated later if the dispersion is not constant)
             #n_pix_array_reshaped = np.tile( np.sum(footprint_spec_cube[0,:,:]) * np.ones(len(wavel_bin_centers)), (len(D_tot), 1) ) * u.pix # shape (N_dark_current, N_wavel)
@@ -848,20 +973,18 @@ class InstrumentDepTerms:
                 # flatten the 3D flux cube into a 1D array (spatial information is lost)
                 flux_astro_1d_ph_sec_um = np.sum(self.prop_dict[source_name]['flux_cube_post_screen_post_aperture_ph_sec_um'][output_channel.name], axis=(1,2))
                 # interpolate the flux to fit the wavelength bins on the detector
-                flux_astro_1d_interpolated_ph_sec_um = np.interp(x = output_channel.bin_centers, xp = self.prop_dict[source_name]['wavel'], fp = flux_1d)
+                flux_astro_1d_interpolated_ph_sec_um = np.interp(x = output_channel.bin_centers, xp = self.prop_dict[source_name]['wavel'], fp = flux_astro_1d_ph_sec_um)
                 flux_astro_1d_interpolated_ph_sec_wavel_bin = flux_astro_1d_interpolated_ph_sec_um * output_channel.bin_widths
                 flux_astro_1d_interpolated_ph_sec_pixel = flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
 
                 #output_channel.signal_by_source = {}
                 output_channel.astroph_signal[source_name] = {
                     'wavel': output_channel.bin_centers,           # (n_bins,) Quantity
-                    'flux_astro_1d_interpolated_ph_sec_um': flux_astro_1d_interpolated_ph_sec_um.decompose,
-                    'flux_astro_1d_interpolated_ph_sec_wavel_bin': flux_astro_1d_interpolated_ph_sec_wavel_bin.decompose,
-                    'flux_astro_1d_interpolated_ph_sec_pixel': flux_astro_1d_interpolated_ph_sec_pixel.decompose,
-                    'n_pix_per_wavel_bin': n_pix_per_wavel_bin.decompose,                # (n_bins,) pix — from footprint
+                    'flux_astro_1d_interpolated_ph_sec_um': flux_astro_1d_interpolated_ph_sec_um.decompose(),
+                    'flux_astro_1d_interpolated_ph_sec_wavel_bin': flux_astro_1d_interpolated_ph_sec_wavel_bin.decompose(),
+                    'flux_astro_1d_interpolated_ph_sec_pixel': flux_astro_1d_interpolated_ph_sec_pixel.decompose(),
+                    'n_pix_per_wavel_bin': n_pix_per_wavel_bin.decompose(),                # (n_bins,) pix — from footprint
                 }
-            ipdb.set_trace()
-            print('hi')
 
         return
 
