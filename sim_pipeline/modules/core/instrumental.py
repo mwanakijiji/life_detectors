@@ -408,10 +408,11 @@ class OutputChannel:
     astroph_signal: dict = field(default_factory=dict)   # astrophysical signals for this channel
     snr: Optional[float] = None
     spec_R: float | None = None # spectral R
+    angle_deg: float | None = None # rotation angle of transmission screen
     bin_edges: np.ndarray | None = None # wavelength bins
     bin_centers: np.ndarray | None = None # wavelength bins
     bin_widths: np.ndarray | None = None # wavelength bins
-
+    tables_by_dark_current: dict[float, QTable] = field(default_factory=dict) # stores all the data relevant to S/N calculations downstream (one entry for each value of DC)
 
 class InstrumentDepTerms:
     # Provides the effects of the instrument (including astro flux passed through the telescope aperture)
@@ -542,7 +543,7 @@ class InstrumentDepTerms:
         read_noise = self.sources_instrum['read_noise_e_pix-1']
         dc_rates = self.sources_instrum['dark_current_e_pix-1_sec-1']  # (n_dc,)
         gain = float(self.config["detector"]["gain"]) * u.electron / u.adu
-        e_per_ph = float(self.config["detector"]["ph_to_e"]) * u.electron / u.ph
+        e_per_ph = float(self.config["detector"]["e_per_ph"]) * u.electron / u.ph
 
         # loop over output channels and make a set of tables (one for each value of dark current)
         for output_name, output_channel in self.output_channels.items():
@@ -572,6 +573,10 @@ class InstrumentDepTerms:
             
             for dc_rate, table in output_channel.tables_by_dark_current_orig.items():
 
+                # one table of signals for a permutation of 
+                # 1) output
+                # 2) dark current
+                # 3) rotation angle
                 final_table = QTable()
                 final_table['wavel_bin_num'] = table['wavel_bin_num']
                 final_table['wavel_bin_center'] = table['wavel_bin_center']
@@ -587,33 +592,24 @@ class InstrumentDepTerms:
                     astro_sig = output_channel.astroph_signal[source_name]
                     final_table[f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
 
-                #########################################################################################################################
-                # START DEBUG PLOT
+                # store the final table for this permutation of output, dark current, and rotation angle
+                output_channel.tables_by_dark_current[float(dc_rate)] = final_table
+
+                # plot of final signal in the detector
                 wavel_bin_center = final_table['wavel_bin_center']
                 wavel_bin_width = final_table['wavel_bin_width']
                 wavel_bin_edges = output_channel.bin_edges
-                #x_vals = wavel_bin_center.value if hasattr(wavel_bin_center, "value") else wavel_bin_center
-                #width_vals = wavel_bin_width.value if hasattr(wavel_bin_width, "value") else wavel_bin_width
-                #x_unit = wavel_bin_center.unit if hasattr(wavel_bin_center, "unit") else ""
-                #x_left = x_vals - 0.5 * width_vals
-                #x_right = x_vals + 0.5 * width_vals
-                #x_edges = np.concatenate([x_left, [x_right[-1]]])
-                #y_unit = ""
-
-                plt.close()
                 fig, ax = plt.subplots(figsize=(10, 5))
                 debug_cols = [
                     'instrum_dark_current_for_wavel_bin_and_integration_adu_tot',
                     'instrum_read_noise_for_wavel_bin_and_integration_adu_tot',
                 ]
-
                 for col_name in debug_cols:
                     y_col = final_table[col_name]
                     y_vals = y_col.value if hasattr(y_col, "value") else y_col
                     ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
                     if hasattr(y_col, "unit"):
                         y_unit = y_col.unit
-
                 for source_name in self.sources_to_include:
                     col_name = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
                     if col_name in final_table.colnames:
@@ -622,8 +618,6 @@ class InstrumentDepTerms:
                         ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
                         if hasattr(y_col, "unit"):
                             y_unit = y_col.unit
-
-                #ax.set_ylim(1e-2, 1e5)
                 ax.set_xlim(4.0, 18.5)
                 ax.set_title(f"Debug final_table: {output_name}, dc={dc_rate:.3f} e/pix/s")
                 ax.set_xlabel(f"Wavelength bin center ({wavel_bin_center.unit})")
@@ -635,14 +629,11 @@ class InstrumentDepTerms:
                     str(self.config['dirs']['save_s2n_data_unique_dir'])
                     + f"debug_final_table_{output_name}_dc_{dc_rate:.3f}.png"
                 )
-                plt.show()
-                #fig.savefig(file_name_plot)
+                #plt.show()
+                fig.savefig(file_name_plot)
                 plt.close(fig)
-                logging.info(f"Saved debug final_table plot to {file_name_plot}")
-                ipdb.set_trace()
-                # END DEBUG PLOT
-                #########################################################################################################################
-
+                logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
+         
 
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False):
         # phi_dc_vec_rad, theta_vec_2d_asec, 
@@ -989,6 +980,33 @@ class InstrumentDepTerms:
         return
 
 
+    def chop_signal(self, plot: bool = False):
+
+        self.post_chop_tables_by_dark_current = {}
+        for dc_rate, t3 in self.output_channels['output_3_dark'].tables_by_dark_current.items():
+            t1 = self.output_channels['output_1_bright'].tables_by_dark_current[dc_rate]
+            t2 = self.output_channels['output_2_bright'].tables_by_dark_current[dc_rate]
+            t4 = self.output_channels['output_4_dark'].tables_by_dark_current[dc_rate]
+            chopped = QTable()
+
+            # copy wavelength metadata once
+            for col in ('wavel_bin_num', 'wavel_bin_center', 'wavel_bin_width', 'n_pix_per_wavel_bin'):
+                chopped[col] = t3[col]
+
+            # keep outputs, but add the chopped signal
+            # consolidate signals from dark outputs, and the chopped signal
+            for col in t3.colnames:
+                if col.startswith(('astro_')):
+                    chopped[f'output_1_bright_{col}'] = t1[col]
+                    chopped[f'output_2_bright_{col}'] = t2[col]
+                    chopped[f'output_3_dark_{col}'] = t3[col]
+                    chopped[f'output_4_dark_{col}'] = t4[col]
+                    chopped[f'chopped_{col}'] = t3[col] - t4[col]
+
+            self.post_chop_tables_by_dark_current[dc_rate] = chopped
+
+
+    '''
     def chop_signal(self, fyi_angle, transmission_screens: np.ndarray, plot: bool = False):
         logger.info("Chopping signal between dark outputs...")
         ipdb.set_trace()
@@ -998,7 +1016,7 @@ class InstrumentDepTerms:
 
         chopped_transmission_screen_darks = transmission_screens[2,:,:] - transmission_screens[3,:,:]   
         if plot:
-            '''
+
             plt.clf()
             plt.figure(figsize=(6, 6))
             plt.imshow(chopped_transmission_screen_darks, origin='lower', cmap='gray')
@@ -1028,7 +1046,7 @@ class InstrumentDepTerms:
             fig.savefig(file_name_plot)
             plt.close(fig)
             logging.info(f"Saved plot of chopped dark transmission at angle {int(fyi_angle)} to {file_name_plot}")
-            '''
+
 
         return
 
@@ -1044,7 +1062,7 @@ class InstrumentDepTerms:
 
         # the chopped transmission screen (x, y) for now; update with wavelength axis later
         self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_transmission_ph_sec_um'] = chopped_dark_transmission
-
+    '''
 
     def pass_through_transmission_screens(self, fyi_angle, source_dict_pre_screen: dict, transmission_screens: np.ndarray, plot: bool = False):
         '''

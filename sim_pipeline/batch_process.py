@@ -26,8 +26,6 @@ import astropy.units as u
 from astropy.visualization import quantity_support
 import yaml
 
-from modules.core.instrumental import OutputChannel
-
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -35,260 +33,20 @@ sys.path.insert(0, str(project_root))
 
 from modules.core import calculator, astrophysical, instrumental
 from modules.utils import loader, validator
-from modules.utils.helpers import create_sample_data, ensure_plot_title_context
+from modules.utils.helpers import (
+    _normalize_output_root,
+    apply_output_root_override,
+    create_sample_data,
+    ensure_plot_title_context,
+    modify_config_file_pl_system_params,
+    modify_config_file_sweep,
+    record_info_at_angle,
+)
 from modules.data.units import UnitConverter
 from modules.utils import helpers
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
-
-DARK_OUTPUT_PANELS = [
-    ('output_3_dark', 'spectrum_output_3_dark'),
-    ('output_4_dark', 'spectrum_output_4_dark'),
-]
-
-
-OUTPUT_FLUX_KEYS = [
-    ('illumination_integrated_dark_3', 'output_3_dark', None),
-    ('illumination_integrated_dark_4', 'output_4_dark', None),
-    ('spectrum_output_1_bright', 'output_1_bright', (1, 2)),
-    ('spectrum_output_2_bright', 'output_2_bright', (1, 2)),
-    ('spectrum_output_3_dark', 'output_3_dark', (1, 2)),
-    ('spectrum_output_4_dark', 'output_4_dark', (1, 2)),
-    ('spectrum_chopped_dark_outputs', 'chopped_dark_outputs', (1, 2)),
-]
-
-
-
-def record_info_at_angle(
-    prop_dict: dict,
-    angle_deg: float,
-    save_dir: str,
-    *,
-    star_source: str = 'star',
-    planet_source: str = 'exoplanet_model_10pc',
-    plot: bool = True,
-) -> dict:
-    """
-    Snapshot prop_dict for one rotation angle and plot star vs planet spectra
-    for the two dark outputs.
-    """
-    angle_results = {}
-    for source_name, source_val in prop_dict.items():
-        cubes = source_val['flux_cube_post_screen_post_aperture_ph_sec_um']
-        source_snapshot = {'wavel': source_val['wavel']}
-
-        #OUTPUT_FLUX_KEYS = list(source_val['flux_cube_post_screen_post_aperture_ph_sec_um'].keys())
-        for result_key, output_name, sum_axes in OUTPUT_FLUX_KEYS:
-            cube = cubes[output_name]
-            source_snapshot[result_key] = (
-                np.sum(cube) if sum_axes is None else np.sum(cube, axis=sum_axes)
-            )
-
-        angle_results[source_name] = source_snapshot
-
-    logger.info(f"Recorded results for angle {angle_deg}.")
-
-
-    if plot: 
-
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
-        wavel = angle_results[star_source]['wavel']
-        flux_unit = angle_results[star_source]['spectrum_output_3_dark'].unit
-
-        for ax, (output_label, spectrum_key) in zip(axes, DARK_OUTPUT_PANELS):
-            ax.plot(wavel, angle_results[star_source][spectrum_key], label='star')
-            ax.plot(wavel, angle_results[planet_source][spectrum_key], label='planet')
-            ax.set_yscale('log')
-            ax.set_xlim(4.0, 18.0)
-            ax.set_ylim(1e-3, 1e9)
-            ax.axhline(y=1e-1, color='gray', linestyle='--')
-            ax.axhline(y=1e7, color='gray', linestyle='--')
-            ax.set_title(output_label)
-            ax.set_xlabel(f'Wavelength ({wavel.unit})')
-            ax.set_ylabel(f'Flux ({flux_unit})')
-            ax.legend()
-
-        fig.suptitle(f'Stellar and planet flux vs wavelength at angle {angle_deg}')
-        file_name_plot = (
-            f"{save_dir}stellar_and_planet_flux_vs_wavelength_at_angle_{angle_deg}.png"
-        )
-        fig.savefig(file_name_plot)
-        plt.close(fig)
-        logger.info(
-            f"Saved plot of stellar and planet flux vs wavelength at angle {angle_deg}: {file_name_plot}"
-        )
-
-    return angle_results
-
-
-def _normalize_output_root(output_root: str) -> str:
-    """Return an absolute output directory with a trailing separator."""
-    normalized = str(Path(output_root).expanduser().resolve())
-    return normalized if normalized.endswith(os.sep) else normalized + os.sep
-
-
-def apply_output_root_override(config_path: str, output_root: Optional[str]) -> str:
-    """
-    Override the batch output root in a config file.
-
-    The file is updated in place so downstream temporary config generation
-    inherits the run-specific root directory.
-    """
-    if not output_root:
-        return config_path
-
-    config = configparser.ConfigParser()
-    config.read(config_path)
-    if not config.has_section("dirs"):
-        config.add_section("dirs")
-
-    normalized_root = _normalize_output_root(output_root)
-    os.makedirs(normalized_root, exist_ok=True)
-    config.set("dirs", "save_s2n_data_unique_dir", normalized_root)
-
-    with open(config_path, "w") as f:
-        config.write(f)
-
-    logger.info(f"Using overridden output root: {normalized_root}")
-    return config_path
-
-def modify_config_file_sweep(config_path: str, qe: float, run_id: Optional[str] = None) -> str:
-    """
-    Create a modified configuration file with new n_int and output path values.
-    
-    Args:
-        config_path: Path to the original configuration file
-        
-    Returns:
-        Path to the temporary modified configuration file
-    """
-    # Load the original config
-    config = configparser.ConfigParser()
-    config.read(config_path)
-    
-
-    # Modify the values
-    config.set('detector', 'quantum_efficiency', str(qe))
-    #config.set('saving', 'save_s2n_data', output_path)
-    
-    # Create a temporary config file
-    temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
-    qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-    run_suffix = f"_{run_id}" if run_id else ""
-    temp_config_path = temp_config_dir + os.path.basename(config_path).replace('.ini', f'_temp_qe{qe_str}{run_suffix}.ini')
-    if not os.path.exists(temp_config_dir):
-        os.makedirs(temp_config_dir, exist_ok=True)
-    with open(temp_config_path, 'w') as f:
-        config.write(f)
-    
-    return temp_config_path
-
-
-def modify_config_file_pl_system_params(
-    config_path: str,
-    base_filename: str,
-    system_params: dict,
-    lum_types: dict,
-    run_id: Optional[str] = None,
-) -> str:
-    """
-    Create a modified configuration file which takes a planet from a population model and overwrites planetary system parameters from a config file.
-    
-    Args:
-        config_path: Path to the original configuration file, which will be modified here
-        base_filename: string to distinguish individual planets (index number from df of planet population data)
-        system_params: Optional[dict] = None: the planetary system parameters
-        lum_types: Optional dictionary mapping the luminosities to the stellar types
-        
-    Returns:
-        Path to the temporary modified configuration file
-    """
-
-    if system_params is not None:
-
-        # Load the original config
-        config = configparser.ConfigParser()
-        config.read(config_path)
-        
-        # Modify the values
-        config.set('target', 'distance', str(system_params['Ds'])) # distance to the star (pc)
-        config.set('target', 'rad_planet', str(system_params['Rp'])) # planet radius (Earth radii)
-        config.set('target', 'pl_temp', str(system_params['Tp'])) # planet temp (K)
-        config.set('target', 'rad_star', str(system_params['Rs'])) # stellar radius (solar radii)
-        config.set('target', 't_star', str(system_params['Ts'])) # stellar temperature (K)
-        config.set('target', 'z_exozodiacal', str(system_params['z'])) # stellar temperature (K)
-        config.set('target', 'lambda_rel_lon_los', str(system_params['eclip_lon'])) # ecliptic latitude (rad)
-        config.set('target', 'beta_lat_los', str(system_params['eclip_lat'])) # ecliptic longitude (rad)
-
-        # this is a kludge to map stellar-type/luminosity in case only the stellar type is input
-        config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()])) # stellar luminosity (L_sol) based on the type
-
-        config.set('target', 'psg_spectrum_file_name', str(system_params['abs_file_name_psg_spectrum'])) # NASA PSG spectrum file name
-        logging.info(f"NASA PSG spectrum file name: {system_params['abs_file_name_psg_spectrum']}")
-        
-        # for strings only
-        config.set('target', 'Stype', str(system_params['Stype']))
-        config.set('target', 'Nuniverse', str(system_params['Nuniverse']))
-        config.set('target', 'Nstar', str(system_params['Nstar']))
-        
-        # Create a temporary config file, set up directory to contain stuff
-
-        # Compose parts of the file name for readability
-        nuniverse_part = f"Nuniverse_{config['target']['Nuniverse']}"
-        nstar_part = f"Nstar_{config['target']['Nstar']}"
-        dist_part = f"dist_{config['target']['distance']}"
-        rp_part = f"Rp_{config['target']['rad_planet']}"
-        rs_part = f"Rs_{config['target']['rad_star']}"
-        ts_part = f"Ts_{config['target']['t_star']}"
-        l_part = f"L_{config['target']['L_star']}"
-        z_part = f"z_{config['target']['z_exozodiacal']}"
-        eclip_lon_part = f"eclip_lon_{config['target']['lambda_rel_lon_los']}"
-        eclip_lat_part = f"eclip_lat_{config['target']['beta_lat_los']}"
-        stype_part = f"Stype_{config['target']['Stype']}"
-
-        # use this string to 
-        # 1. make a subdir (which will contain all the files for the different values of QE, n_int)
-        # 2. name the files in the subdir as well
-        file_basename_string = (
-            f"temp_{base_filename}_"
-            f"{nuniverse_part}_"
-            f"{nstar_part}_"
-            f"{dist_part}_"
-            f"{rp_part}_"
-            f"{rs_part}_"
-            f"{ts_part}_"
-            f"{l_part}_"
-            f"{z_part}_"
-            f"{eclip_lon_part}_"
-            f"{eclip_lat_part}_"
-            f"{stype_part}"
-        )
-
-        # make a long string of all the system parameters for FYI plots
-        #ipdb.set_trace()
-        #ensure_plot_title_context(config)
-
-        # save all stuff (FYI plots, SNR results, etc.) in the subdir
-        #ipdb.set_trace()
-        config.set('dirs', 'save_s2n_data_unique_dir', config['dirs']['save_s2n_data_unique_dir'] + file_basename_string + '/')
-
-        #qe_str = f"{qe:.2f}".replace('.', 'p') # for making better string (since it's a decimal)
-        run_suffix = f"_{run_id}" if run_id else ""
-        temp_config_path = str(config['dirs']['save_s2n_data_unique_dir']) + file_basename_string + f'{run_suffix}.ini'
-
-        # Ensure the directory exists before writing the temporary config file
-        temp_config_dir = os.path.dirname(temp_config_path)
-        os.makedirs(temp_config_dir, exist_ok=True)
-        with open(temp_config_path, 'w') as f:
-            config.write(f)
-        logger.info(f"Created temporary config file for one planetary system: {temp_config_path}")
-
-    else:
-        # just return the original config path
-        return config_path
-    
-    return temp_config_path
 
 
 def run_single_calculation(
@@ -450,6 +208,16 @@ def run_single_calculation(
             instrument_dep_terms.sources_astroph = copy.deepcopy(sources_astroph_pristine)
             instrument_dep_terms.prop_dict = {} # dict to hold astrophysical terms as propagated through the instrument
 
+            # reset the OutputChannel objects for this new angle
+            for ch in instrument_dep_terms.output_channels.values():
+                ch.angle_deg = angle_deg
+                ch.instrum_noise.clear()
+                ch.astroph_signal.clear()
+                ch.tables_by_dark_current.clear()
+                if hasattr(ch, 'tables_by_dark_current_orig'):
+                    ch.tables_by_dark_current_orig.clear()
+            instrument_dep_terms.post_chop_tables_by_dark_current = {}
+
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
             # no rotation yet
@@ -479,24 +247,20 @@ def run_single_calculation(
             logger.info("Dispersing signals on channel detectors ...")
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
-            ## ## CONTINUE HERE
+            # pack the signals together (and convert photons to electrons)
             instrument_dep_terms.combine_astro_and_instrum_signals()
 
-            # on detector: convert quantities still in photons to electrons
-            instrument_dep_terms.photons_to_e()
 
             # chop the signal between dark outputs
-            ipdb.set_trace()
-            instrument_dep_terms.chop_signal(fyi_angle=angle_deg, transmission_screens=transmission_screens, plot=plot)
+            instrument_dep_terms.chop_signal(plot=plot)
 
             # record condensed information at this transmission screen angle (to avoid mem leak)
             # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
             results[angle_deg] = record_info_at_angle(
-                prop_dict = instrument_dep_terms.prop_dict,
-                angle_deg = angle_deg,
-                save_dir = str(config['dirs']['save_s2n_data_unique_dir']),
-                star_source = 'star',
-                planet_source = 'exoplanet_model_10pc',
+                angle_deg=angle_deg,
+                output_channels=instrument_dep_terms.output_channels,
+                post_chop_tables_by_dark_current=instrument_dep_terms.post_chop_tables_by_dark_current,
+                save_dir=str(config['dirs']['save_s2n_data_unique_dir']),
                 plot=plot,
             )
 

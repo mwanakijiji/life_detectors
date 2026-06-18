@@ -844,3 +844,248 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             plt.close()
             logger.info(f"Wrote plot {file_name_plot}")
         '''
+
+
+def record_info_at_angle(
+    *,
+    angle_deg: float,
+    output_channels: dict,
+    post_chop_tables_by_dark_current: dict,
+    save_dir: str,
+    plot: bool = True,
+) -> dict:
+    """
+    Save one HDF5 file for this rotation angle (Option A layout).
+
+    File structure::
+
+        angle_{angle}.hdf5
+          dc_{dc}/
+            output_1_bright   QTable, all columns from tables_by_dark_current
+            output_2_bright
+            output_3_dark
+            output_4_dark
+            chopped           QTable, all columns from post_chop_tables_by_dark_current
+    """
+    from astropy.table import QTable
+
+    file_name = f"{save_dir}angle_{angle_deg:g}.hdf5"
+    hdf5_paths = []
+    first_dataset = True
+
+    for dc_rate in post_chop_tables_by_dark_current:
+        dc_group = f"dc_{dc_rate:g}"
+
+        for ch_name, ch in output_channels.items():
+            out_tbl = ch.tables_by_dark_current[dc_rate].copy()
+            out_tbl.meta['angle_deg'] = float(angle_deg)
+            out_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
+            hdf5_path = f"{dc_group}/{ch_name}"
+            if first_dataset:
+                out_tbl.write(
+                    file_name,
+                    path=hdf5_path,
+                    serialize_meta=True,
+                    overwrite=True,
+                )
+                first_dataset = False
+            else:
+                out_tbl.write(
+                    file_name,
+                    path=hdf5_path,
+                    serialize_meta=True,
+                    append=True,
+                )
+            hdf5_paths.append(hdf5_path)
+            logger.info(f"Wrote {file_name}:{hdf5_path}")
+
+        chopped_tbl = post_chop_tables_by_dark_current[dc_rate].copy()
+        chopped_tbl.meta['angle_deg'] = float(angle_deg)
+        chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
+        hdf5_path = f"{dc_group}/chopped"
+        chopped_tbl.write(
+            file_name,
+            path=hdf5_path,
+            serialize_meta=True,
+            append=True,
+        )
+        hdf5_paths.append(hdf5_path)
+        logger.info(f"Wrote {file_name}:{hdf5_path}")
+
+    snapshot = {
+        'angle_deg': angle_deg,
+        'hdf5_file': file_name,
+        'hdf5_paths': hdf5_paths,
+        'dark_currents': list(post_chop_tables_by_dark_current.keys()),
+    }
+
+    logger.info(f"Recorded angle {angle_deg} to {file_name}")
+
+    if plot and post_chop_tables_by_dark_current:
+        dc_rate = next(iter(post_chop_tables_by_dark_current))
+        chopped_tbl = post_chop_tables_by_dark_current[dc_rate]
+        wavel_center = chopped_tbl['wavel_bin_center'].value
+        wavel_width = chopped_tbl['wavel_bin_width'].value
+        wavel_edges = np.empty(len(wavel_center) + 1)
+        wavel_edges[1:-1] = 0.5 * (wavel_center[:-1] + wavel_center[1:])
+        wavel_edges[0] = wavel_center[0] - 0.5 * wavel_width[0]
+        wavel_edges[-1] = wavel_center[-1] + 0.5 * wavel_width[-1]
+
+        fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
+        for col_name in chopped_tbl.colnames:
+            if not col_name.startswith('chopped_'):
+                continue
+            y_vals = chopped_tbl[col_name].value
+            ax.stairs(y_vals, edges=wavel_edges, label=col_name)
+
+        ax.set_yscale('log')
+        ax.set_xlim(4.0, 18.0)
+        ax.set_xlabel('Wavelength (um)')
+        ax.set_ylabel('Signal (ADU)')
+        ax.set_title(f'Chopped signals at angle {angle_deg}, dc={dc_rate:g} e/pix/s')
+        ax.legend(fontsize=8, loc='best')
+        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:g}.png"
+        fig.savefig(file_name_plot)
+        plt.close(fig)
+        logger.info(f"Saved plot of chopped signals at angle {angle_deg}: {file_name_plot}")
+
+    return snapshot
+
+
+def _normalize_output_root(output_root: str) -> str:
+    """Return an absolute output directory with a trailing separator."""
+    normalized = str(Path(output_root).expanduser().resolve())
+    return normalized if normalized.endswith(os.sep) else normalized + os.sep
+
+
+def apply_output_root_override(config_path: str, output_root: Optional[str]) -> str:
+    """
+    Override the batch output root in a config file.
+
+    The file is updated in place so downstream temporary config generation
+    inherits the run-specific root directory.
+    """
+    if not output_root:
+        return config_path
+
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    if not config.has_section("dirs"):
+        config.add_section("dirs")
+
+    normalized_root = _normalize_output_root(output_root)
+    os.makedirs(normalized_root, exist_ok=True)
+    config.set("dirs", "save_s2n_data_unique_dir", normalized_root)
+
+    with open(config_path, "w") as f:
+        config.write(f)
+
+    logger.info(f"Using overridden output root: {normalized_root}")
+    return config_path
+
+
+def modify_config_file_sweep(config_path: str, qe: float, run_id: Optional[str] = None) -> str:
+    """
+    Create a modified configuration file with new quantum efficiency value.
+
+    Returns:
+        Path to the temporary modified configuration file.
+    """
+    config = configparser.ConfigParser()
+    config.read(config_path)
+
+    config.set('detector', 'quantum_efficiency', str(qe))
+
+    temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
+    qe_str = f"{qe:.2f}".replace('.', 'p')
+    run_suffix = f"_{run_id}" if run_id else ""
+    temp_config_path = temp_config_dir + os.path.basename(config_path).replace(
+        '.ini', f'_temp_qe{qe_str}{run_suffix}.ini'
+    )
+    if not os.path.exists(temp_config_dir):
+        os.makedirs(temp_config_dir, exist_ok=True)
+    with open(temp_config_path, 'w') as f:
+        config.write(f)
+
+    return temp_config_path
+
+
+def modify_config_file_pl_system_params(
+    config_path: str,
+    base_filename: str,
+    system_params: dict,
+    lum_types: dict,
+    run_id: Optional[str] = None,
+) -> str:
+    """
+    Create a modified config for one planet from a population model.
+
+    Returns:
+        Path to the temporary modified configuration file.
+    """
+    if system_params is None:
+        return config_path
+
+    config = configparser.ConfigParser()
+    config.read(config_path)
+
+    config.set('target', 'distance', str(system_params['Ds']))
+    config.set('target', 'rad_planet', str(system_params['Rp']))
+    config.set('target', 'pl_temp', str(system_params['Tp']))
+    config.set('target', 'rad_star', str(system_params['Rs']))
+    config.set('target', 't_star', str(system_params['Ts']))
+    config.set('target', 'z_exozodiacal', str(system_params['z']))
+    config.set('target', 'lambda_rel_lon_los', str(system_params['eclip_lon']))
+    config.set('target', 'beta_lat_los', str(system_params['eclip_lat']))
+    config.set('target', 'L_star', str(lum_types[system_params['Stype'].lower()]))
+    config.set('target', 'psg_spectrum_file_name', str(system_params['abs_file_name_psg_spectrum']))
+    logger.info(f"NASA PSG spectrum file name: {system_params['abs_file_name_psg_spectrum']}")
+    config.set('target', 'Stype', str(system_params['Stype']))
+    config.set('target', 'Nuniverse', str(system_params['Nuniverse']))
+    config.set('target', 'Nstar', str(system_params['Nstar']))
+
+    nuniverse_part = f"Nuniverse_{config['target']['Nuniverse']}"
+    nstar_part = f"Nstar_{config['target']['Nstar']}"
+    dist_part = f"dist_{config['target']['distance']}"
+    rp_part = f"Rp_{config['target']['rad_planet']}"
+    rs_part = f"Rs_{config['target']['rad_star']}"
+    ts_part = f"Ts_{config['target']['t_star']}"
+    l_part = f"L_{config['target']['L_star']}"
+    z_part = f"z_{config['target']['z_exozodiacal']}"
+    eclip_lon_part = f"eclip_lon_{config['target']['lambda_rel_lon_los']}"
+    eclip_lat_part = f"eclip_lat_{config['target']['beta_lat_los']}"
+    stype_part = f"Stype_{config['target']['Stype']}"
+
+    file_basename_string = (
+        f"temp_{base_filename}_"
+        f"{nuniverse_part}_"
+        f"{nstar_part}_"
+        f"{dist_part}_"
+        f"{rp_part}_"
+        f"{rs_part}_"
+        f"{ts_part}_"
+        f"{l_part}_"
+        f"{z_part}_"
+        f"{eclip_lon_part}_"
+        f"{eclip_lat_part}_"
+        f"{stype_part}"
+    )
+
+    config.set(
+        'dirs',
+        'save_s2n_data_unique_dir',
+        config['dirs']['save_s2n_data_unique_dir'] + file_basename_string + '/',
+    )
+
+    run_suffix = f"_{run_id}" if run_id else ""
+    temp_config_path = (
+        str(config['dirs']['save_s2n_data_unique_dir']) + file_basename_string + f'{run_suffix}.ini'
+    )
+
+    temp_config_dir = os.path.dirname(temp_config_path)
+    os.makedirs(temp_config_dir, exist_ok=True)
+    with open(temp_config_path, 'w') as f:
+        config.write(f)
+    logger.info(f"Created temporary config file for one planetary system: {temp_config_path}")
+
+    return temp_config_path
