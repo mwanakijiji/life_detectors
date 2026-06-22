@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.visualization import quantity_support
 import yaml
+from astropy.table import QTable
+
 
 
 # Add the project root to the Python path
@@ -45,8 +47,140 @@ from modules.utils.helpers import (
 from modules.data.units import UnitConverter
 from modules.utils import helpers
 
+import h5py
+import glob
+
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
+
+def calculate_s2n_post_rotation(read_dir):
+    """
+    Calculate the S/N of the chopped dark outputs.
+
+    Args:
+        read_dir: dir containing the HDF5 files
+
+    Returns:
+        S_p_sqd_phi_mean: mean of the squared signal of the chopped dark outputs
+        S_p_3_sqd_phi_mean: mean of the squared signal of the chopped dark output 3
+        SNR_lambda_array: SNR for each wavelength bin
+        SNR_tot: total SNR
+    """
+    
+
+    hdf5_files = glob.glob(os.path.join(read_dir, '*.hdf5'))
+
+    # read in the HDF5 files (one file corresponds to one angle)
+    for hdf5_file in hdf5_files:
+        with h5py.File(hdf5_file, "r") as f:
+            for dc in f.keys():
+                for ch in f[dc].keys():
+                    if ch.endswith(".__table_column_meta__"):
+                        continue
+                    tbl = QTable.read(hdf5_file, path=f"{dc}/{ch}")
+
+                # calculate the S/N of the chopped dark outputs
+                # need S_p and S_p_3; see Dannert+ 2022 Eqn. 20
+                chopped = QTable.read(hdf5_file, path=f"{dc}/chopped")
+                S_p = chopped["chopped_astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
+                out3 = QTable.read(hdf5_file, path=f"{dc}/output_3_dark")
+                S_p_3 = out3["astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
+
+    ## ## CONTINUE HERE: calculate the S/N of the chopped dark outputs
+
+    '''
+    for angle in angles_sorted: # note pandas doesn't like units
+        # note units (see Dannert+ 2022 Eqn (17)); 
+        # results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] is already the same as the integral of ( transmission * flux * collecting_area ) over solid angle of the FOV. 
+        # ... we still need to multiply by 
+        #      t: integration time of one readout (corresponding to one angle)
+        #      eta: detector efficiency, in practice this is throughput * QE
+        # units are
+        # [t] * [eta] * [ results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] ] = s * 1 * ph / (micron s) = ph / micron
+        # 
+        t_times_eta = float(config['observation']['t_int_frame']) * float(config['detector']['quantum_efficiency'])
+        data_S_p[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta
+        data_S_p_3[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta
+        data_S_p_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta, 2)
+        data_S_p_3_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta, 2)
+    '''
+
+    # tack wavelength back on
+    #df_S_p['wavel'] = wavel
+    #df_S_p_3['wavel'] = wavel
+
+    #'wavel': wavel.value
+    df_S_p = pd.DataFrame(data_S_p)
+    df_S_p_sqd = pd.DataFrame(data_S_p_sqd)
+    df_S_p_3 = pd.DataFrame(data_S_p_3)
+    df_S_p_3_sqd = pd.DataFrame(data_S_p_3_sqd)
+
+    # now insert mean column, averaging over angles; Dannert+ 2022 Eqn. (19)
+    df_S_p_sqd['avg_S_p_sqd_phi'] = df_S_p_sqd.mean(axis=1)
+    #df_S_p_3 = pd.DataFrame(data_S_p_3)
+    df_S_p_3_sqd['avg_S_p_3_sqd_phi'] = df_S_p_3_sqd.mean(axis=1)
+    # now reconstitute units, which pandas does not like
+    ipdb.set_trace()
+    unit = results[angles_sorted[0]]['exoplanet_model_10pc']['spectrum_output_3_dark'].unit ** 2 # note the squared
+    S_p_sqd_phi_mean = df_S_p_sqd['avg_S_p_sqd_phi'].values * unit
+    S_p_3_sqd_phi_mean = df_S_p_3_sqd['avg_S_p_3_sqd_phi'].values * unit
+    
+    # SNR_lambda for each wavelength bin; see Dannert+ 2022 Eqn. (20)
+    # note integration is over the wavelength bin only; not the entire spectrum
+    ## ## TODO: make sure wavelength bin sizes are consistent with calcs further upstream
+    SNR_lambda_array = []
+
+    # find SNR for each wavelength bin for this rotation angle
+    for wavel_bin_num in range(len(wavel)-1):
+
+        print(f"wavel_bin_num: {wavel_bin_num}")
+        wavel_start = wavel[wavel_bin_num].value
+        wavel_stop = wavel[wavel_bin_num + 1].value
+        d_wavel = wavel_stop - wavel_start
+
+        wavel_range = np.array([wavel_start, wavel_stop]) ## ## TODO: make this denser later? np.linspace(wavel_start, wavel_stop, 100)
+
+        # use simple rectangles to integrate
+        term_1 = np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]) * d_wavel
+
+        term_2 = np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]) * d_wavel
+
+        term_3 = np.sqrt(2. * term_2)
+
+        #term_1 = np.trapz(y=np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
+        #term_2 = np.trapz(y=np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
+        #term_3 = np.sqrt(2. * term_2)
+    
+
+        # SNR for that wavelength bin
+        SNR_lambda = term_1 / term_3 ## ## TODO: update to include S_sym term
+        SNR_lambda_array.append(SNR_lambda.value)
+
+    SNR_lambda_array = u.Quantity(SNR_lambda_array)
+    SNR_tot = np.sqrt( 
+                    np.sum(np.power(SNR_lambda_array,2)) 
+                    )
+
+    ipdb.set_trace()
+    #abcissa_values = np.array(abcissa_values).flatten()
+    #ordinate_values = np.array(ordinate_values).flatten()
+    plt.clf()
+    with quantity_support():
+        plt.plot(abcissa_values, ordinate_values, linestyle='--', marker='o',
+                label='total planet signal (one dark output)')
+    plt.legend()
+    output_string = 'chopped_dark_outputs'
+    plt.title('Planet flux as function of rotation angle, ' + output_string + ' output')
+    plt.xlabel(f'Angle (deg)')
+    ipdb.set_trace()
+    plt.ylabel(f"Total flux ({instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um'][output_string].unit})")
+    file_name_plot = str(config['dirs']['save_s2n_data_unique_dir']) + f"planet_flux_as_function_of_rotation_angle.png"
+    plt.savefig(file_name_plot)
+    logging.info(f"Saved plot of planet flux as function of rotation angle to {file_name_plot}")
+    plt.show()
+
+    return
+
 
 
 def run_single_calculation(
@@ -54,6 +188,7 @@ def run_single_calculation(
     base_filename: str,
     sources_to_include: List[str],
     qe: float,
+    override_stellar_mask: bool = True,
     overwrite: bool = True,
     plot: bool = False,
     system_params: Optional[dict] = None,
@@ -78,46 +213,56 @@ def run_single_calculation(
         output_path: Path of the output FITS file
     """
 
-    if True:
-        # Build a per-run token so parallel jobs do not clobber temp files.
-        run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    # get config things sorted out
+    base_config = configparser.ConfigParser()
+    base_config.read(config_path)
+    generate_sims = loader.config_getboolean(base_config, "tasks", "generate_sims")
+    calculate_s2n = loader.config_getboolean(base_config, "tasks", "calculate_s2n_post_rotation")
 
-        # Create temporary config file with modified values: use new n_int, QE values
-        ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
-        temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe, run_id=run_id)
-        temp_config_path_nint_qe = apply_output_root_override(temp_config_path_nint_qe, output_root)
-        # modify again, for a given planetary system 
-        if system_params is not None:
-            temp_config_path = modify_config_file_pl_system_params(
-                config_path=temp_config_path_nint_qe,
-                base_filename=base_filename,
-                system_params=system_params,
-                lum_types=lum_types,
-                run_id=run_id,
-            )
-        else:
-            temp_config_path = temp_config_path_nint_qe
+    # Build a per-run token so parallel jobs do not clobber temp files.
+    run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
-        # First log entry: which config file we're using (original and temp)
-        logger.info(f"--------------------------------")
-        logger.info(f"Config path (base): {config_path}")
-        logger.info(f"Config path (temporary one for this case, for batch processing): {temp_config_path}")
+    # Create temporary config file with modified values: use new n_int, QE values
+    ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
+    temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe, run_id=run_id)
+    temp_config_path_nint_qe = apply_output_root_override(temp_config_path_nint_qe, output_root)
+    # modify again, for a given planetary system 
+    if system_params is not None:
+        temp_config_path = modify_config_file_pl_system_params(
+            config_path=temp_config_path_nint_qe,
+            base_filename=base_filename,
+            system_params=system_params,
+            lum_types=lum_types,
+            run_id=run_id,
+        )
+    else:
+        temp_config_path = temp_config_path_nint_qe
 
-        # Load config in two forms:
-        # - dict (for validation + directory creation)
-        # - ConfigParser (for downstream code that expects .has_section/.options)
-        # this is necessary for vestigial reasons while using only one load_config() function
-        config_dict = loader.load_config(config_file=temp_config_path, makedirs=True)
-        validator.validate_config(config_dict)
-        config = configparser.ConfigParser()
-        config.read(temp_config_path)
-        ensure_plot_title_context(config)
+    # First log entry: which config file we're using (original and temp)
+    logger.info(f"--------------------------------")
+    logger.info(f"Config path (base): {config_path}")
+    logger.info(f"Config path (temporary one for this case, for batch processing): {temp_config_path}")
 
-        # Make the overwriteable scratch FITS file unique per run.
-        if config.has_section("saving") and config.has_option("saving", "save_s2n_data_temp"):
-            temp_fits_path = config.get("saving", "save_s2n_data_temp")
-            temp_root, temp_ext = os.path.splitext(temp_fits_path)
-            config.set("saving", "save_s2n_data_temp", f"{temp_root}_{run_id}{temp_ext}")
+    # Load config in two forms:
+    # - dict (for validation + directory creation)
+    # - ConfigParser (for downstream code that expects .has_section/.options)
+    # this is necessary for vestigial reasons while using only one load_config() function
+    config_dict = loader.load_config(config_file=temp_config_path, makedirs=True)
+    validator.validate_config(config_dict)
+    config = configparser.ConfigParser()
+    config.read(temp_config_path)
+    ensure_plot_title_context(config)
+
+    # Make the overwriteable scratch FITS file unique per run.
+    if config.has_section("saving") and config.has_option("saving", "save_s2n_data_temp"):
+        temp_fits_path = config.get("saving", "save_s2n_data_temp")
+        temp_root, temp_ext = os.path.splitext(temp_fits_path)
+        config.set("saving", "save_s2n_data_temp", f"{temp_root}_{run_id}{temp_ext}")
+
+    # should we simulate the observations and generate the HDF5 files?
+    if generate_sims:
+
+        logger.info("Generating simulations.")
 
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits
@@ -192,17 +337,6 @@ def run_single_calculation(
         angles_deg = np.linspace(0, 360, num=int(config['observation']['N_angles']), endpoint=False)
         results = {}  # dict to hold results for each angle
 
-        override_stellar_mask = bool(True)
-        if override_stellar_mask:
-            try:
-                raw_response = input(
-                    "! ------ Inserting a manual stellar mask for ALL outputs. Proceed? (n -> discard manual mask) ------- ! "
-                )
-            except EOFError:
-                raw_response = "y"
-            response = str(raw_response).strip().lower()
-            override_stellar_mask = response in {"y", "yes", ""}
-
         for angle_deg in angles_deg:
             # Reset mutable pipeline state
             instrument_dep_terms.sources_astroph = copy.deepcopy(sources_astroph_pristine)
@@ -254,9 +388,9 @@ def run_single_calculation(
             # chop the signal between dark outputs
             instrument_dep_terms.chop_signal(plot=plot)
 
-            # record condensed information at this transmission screen angle (to avoid mem leak)
+            # write condensed information at this transmission screen angle (to avoid mem leak)
             # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
-            results[angle_deg] = record_info_at_angle(
+            record_info_at_angle(
                 angle_deg=angle_deg,
                 output_channels=instrument_dep_terms.output_channels,
                 post_chop_tables_by_dark_current=instrument_dep_terms.post_chop_tables_by_dark_current,
@@ -264,125 +398,37 @@ def run_single_calculation(
                 plot=plot,
             )
 
-            '''
+    else:
+        logger.info("Skipping simulation and calculating S/N from HDF5 files...")
 
-            
-            # Calculate S/N
-            logger.info("Calculating signal-to-noise ratio...")
-            noise_calc = calculator.NoiseCalculator(
-                config,
-                sources_all=instrument_dep_terms, 
-                sources_to_include=sources_to_include
-            )
-            
-            # This will automatically save the FITS file 
-            s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
-            
-            #logger.info(f"Successfully completed calculation with n_int={n_int}")
-            logger.info(f"Results saved to: {output_fits_file_abs_path}")
-            ipdb.set_trace()
-            '''
+        '''
 
-        # calculate the S/N of the chopped dark outputs; need S_p and S_p_3; see Dannert+ 2022 Eqn. 20
-
-        # build a pandas dataframe of the chopped signal (and keep wavelength)
-        angles_sorted = sorted(results.keys())
-        wavel = results[angles_sorted[0]]['exoplanet_model_10pc']['wavel']
-        data_S_p = {} # modulated signal between dark outputs 3 and 4
-        data_S_p_3 = {} # signal from dark output 3
-        data_S_p_sqd = {} # squared
-        data_S_p_3_sqd = {}
-
-        for angle in angles_sorted: # note pandas doesn't like units
-            # note units (see Dannert+ 2022 Eqn (17)); 
-            # results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] is already the same as the integral of ( transmission * flux * collecting_area ) over solid angle of the FOV. 
-            # ... we still need to multiply by 
-            #      t: integration time of one readout (corresponding to one angle)
-            #      eta: detector efficiency, in practice this is throughput * QE
-            # units are
-            # [t] * [eta] * [ results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'] ] = s * 1 * ph / (micron s) = ph / micron
-            # 
-            t_times_eta = float(config['observation']['t_int_frame']) * float(config['detector']['quantum_efficiency'])
-            data_S_p[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta
-            data_S_p_3[f'angle_{int(angle)}_deg'] = results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta
-            data_S_p_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_chopped_dark_outputs'].value * t_times_eta, 2)
-            data_S_p_3_sqd[f'angle_{int(angle)}_deg'] = np.power(results[angle]['exoplanet_model_10pc']['spectrum_output_3_dark'].value * t_times_eta, 2)
-
-        # tack wavelength back on
-        #df_S_p['wavel'] = wavel
-        #df_S_p_3['wavel'] = wavel
-
-        #'wavel': wavel.value
-        df_S_p = pd.DataFrame(data_S_p)
-        df_S_p_sqd = pd.DataFrame(data_S_p_sqd)
-        df_S_p_3 = pd.DataFrame(data_S_p_3)
-        df_S_p_3_sqd = pd.DataFrame(data_S_p_3_sqd)
-
-        # now insert mean column, averaging over angles; Dannert+ 2022 Eqn. (19)
-        df_S_p_sqd['avg_S_p_sqd_phi'] = df_S_p_sqd.mean(axis=1)
-        #df_S_p_3 = pd.DataFrame(data_S_p_3)
-        df_S_p_3_sqd['avg_S_p_3_sqd_phi'] = df_S_p_3_sqd.mean(axis=1)
-        # now reconstitute units, which pandas does not like
-        ipdb.set_trace()
-        unit = results[angles_sorted[0]]['exoplanet_model_10pc']['spectrum_output_3_dark'].unit ** 2 # note the squared
-        S_p_sqd_phi_mean = df_S_p_sqd['avg_S_p_sqd_phi'].values * unit
-        S_p_3_sqd_phi_mean = df_S_p_3_sqd['avg_S_p_3_sqd_phi'].values * unit
         
-        # SNR_lambda for each wavelength bin; see Dannert+ 2022 Eqn. (20)
-        # note integration is over the wavelength bin only; not the entire spectrum
-        ## ## TODO: make sure wavelength bin sizes are consistent with calcs further upstream
-        SNR_lambda_array = []
-
-        # find SNR for each wavelength bin for this rotation angle
-        for wavel_bin_num in range(len(wavel)-1):
-
-            print(f"wavel_bin_num: {wavel_bin_num}")
-            wavel_start = wavel[wavel_bin_num].value
-            wavel_stop = wavel[wavel_bin_num + 1].value
-            d_wavel = wavel_stop - wavel_start
-
-            wavel_range = np.array([wavel_start, wavel_stop]) ## ## TODO: make this denser later? np.linspace(wavel_start, wavel_stop, 100)
-
-            # use simple rectangles to integrate
-            term_1 = np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]) * d_wavel
-
-            term_2 = np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]) * d_wavel
-
-            term_3 = np.sqrt(2. * term_2)
-
-            #term_1 = np.trapz(y=np.sqrt(S_p_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
-            #term_2 = np.trapz(y=np.sqrt(S_p_3_sqd_phi_mean[wavel_bin_num]), dx=d_wavel)
-            #term_3 = np.sqrt(2. * term_2)
-       
-
-            # SNR for that wavelength bin
-            SNR_lambda = term_1 / term_3 ## ## TODO: update to include S_sym term
-            SNR_lambda_array.append(SNR_lambda.value)
-
-        SNR_lambda_array = u.Quantity(SNR_lambda_array)
-        SNR_tot = np.sqrt( 
-                        np.sum(np.power(SNR_lambda_array,2)) 
-                        )
-
-        ipdb.set_trace()
-        #abcissa_values = np.array(abcissa_values).flatten()
-        #ordinate_values = np.array(ordinate_values).flatten()
-        plt.clf()
-        with quantity_support():
-            plt.plot(abcissa_values, ordinate_values, linestyle='--', marker='o',
-                    label='total planet signal (one dark output)')
-        plt.legend()
-        output_string = 'chopped_dark_outputs'
-        plt.title('Planet flux as function of rotation angle, ' + output_string + ' output')
-        plt.xlabel(f'Angle (deg)')
-        ipdb.set_trace()
-        plt.ylabel(f"Total flux ({instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um'][output_string].unit})")
-        file_name_plot = str(config['dirs']['save_s2n_data_unique_dir']) + f"planet_flux_as_function_of_rotation_angle.png"
-        plt.savefig(file_name_plot)
-        logging.info(f"Saved plot of planet flux as function of rotation angle to {file_name_plot}")
-        plt.show()
+        # Calculate S/N
+        logger.info("Calculating signal-to-noise ratio...")
+        noise_calc = calculator.NoiseCalculator(
+            config,
+            sources_all=instrument_dep_terms, 
+            sources_to_include=sources_to_include
+        )
         
-        return True
+        # This will automatically save the FITS file 
+        s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
+        
+        #logger.info(f"Successfully completed calculation with n_int={n_int}")
+        logger.info(f"Results saved to: {output_fits_file_abs_path}")
+        ipdb.set_trace()
+        '''
+
+    ipdb.set_trace()
+    if calculate_s2n:
+        logger.info("Calculating S/N from HDF5 files.")
+        calculate_s2n_post_rotation(config['dirs']['save_s2n_data_unique_dir'])
+
+    else:
+        logger.info("Not calculating S/N from HDF5 files.")
+        
+    return True
 
 
 def batch_qe_nint_process(base_config_path: str, 
@@ -418,6 +464,18 @@ def batch_qe_nint_process(base_config_path: str,
 
     # initialize for checking if all calculations for the QE, n_int run were successful
     success_all = True
+
+    # make a manual mask over the star?
+    override_stellar_mask = bool(True)
+    if override_stellar_mask:
+        try:
+            raw_response = input(
+                "! ------ Inserting a manual stellar mask for ALL outputs. Proceed? (n -> discard manual mask) ------- ! "
+            )
+        except EOFError:
+            raw_response = "y"
+        response = str(raw_response).strip().lower()
+        override_stellar_mask = response in {"y", "yes", ""}
     
     for qe in qe_values:
         # Create output filename
@@ -431,19 +489,21 @@ def batch_qe_nint_process(base_config_path: str,
         logging.info(f"Parameter qe = {qe}")
 
         # run single calculation, for range of rotation angles
+        # this could involve either or both of:
+        # 1. generating simulations and writing out the HDF5 files
+        # 2. calculating the S/N from the HDF5 files
         success = run_single_calculation(
             config_path=base_config_path,
             base_filename = base_filename,
             sources_to_include=sources_to_include,
             qe=qe,
+            override_stellar_mask=override_stellar_mask,
             overwrite=overwrite,
             plot=plot,
             system_params=system_params, 
             lum_types=lum_types,
             output_root=output_root,
         )
-
-        ipdb.set_trace()
                     
         if success:
             logging.info(f"  ✓ Success for the following planetary system parameters:")

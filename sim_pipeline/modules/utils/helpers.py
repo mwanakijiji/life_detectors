@@ -25,6 +25,7 @@ import os
 import copy
 import yaml
 from pathlib import Path
+from astropy.table import QTable
 
 
 logger = logging.getLogger(__name__)
@@ -855,7 +856,7 @@ def record_info_at_angle(
     plot: bool = True,
 ) -> dict:
     """
-    Save one HDF5 file for this rotation angle (Option A layout).
+    Save one HDF5 file for this rotation angle.
 
     File structure::
 
@@ -867,7 +868,6 @@ def record_info_at_angle(
             output_4_dark
             chopped           QTable, all columns from post_chop_tables_by_dark_current
     """
-    from astropy.table import QTable
 
     file_name = f"{save_dir}angle_{angle_deg:g}.hdf5"
     hdf5_paths = []
@@ -949,7 +949,7 @@ def record_info_at_angle(
         plt.close(fig)
         logger.info(f"Saved plot of chopped signals at angle {angle_deg}: {file_name_plot}")
 
-    return snapshot
+    return
 
 
 def _normalize_output_root(output_root: str) -> str:
