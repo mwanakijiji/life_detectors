@@ -19,6 +19,8 @@ import pandas as pd
 import numpy as np
 import uuid
 import copy
+import h5py
+import glob
 from datetime import datetime
 from scipy import ndimage
 import matplotlib.pyplot as plt
@@ -26,9 +28,6 @@ import astropy.units as u
 from astropy.visualization import quantity_support
 import yaml
 from astropy.table import QTable
-
-
-
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -48,8 +47,7 @@ from modules.utils.helpers import (
 from modules.data.units import UnitConverter
 from modules.utils import helpers
 
-import h5py
-import glob
+
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
@@ -70,23 +68,101 @@ def calculate_s2n_post_rotation(read_dir):
     
 
     hdf5_files = glob.glob(os.path.join(read_dir, '*.hdf5'))
+    by_dc = {}
 
-    # read in the HDF5 files (one file corresponds to one angle)
+    ipdb.set_trace()
+    # read in one HDF5 file per angle
     for hdf5_file in hdf5_files:
+        angle = float(Path(hdf5_file).stem.removeprefix("angle_"))
+        
         with h5py.File(hdf5_file, "r") as f:
-            for dc in f.keys():
-                for ch in f[dc].keys():
+            # for all DC values
+            for dc_rate in f.keys():
+                # for all outputs
+                for ch in f[dc_rate].keys():
                     if ch.endswith(".__table_column_meta__"):
                         continue
-                    tbl = QTable.read(hdf5_file, path=f"{dc}/{ch}")
+                    tbl = QTable.read(hdf5_file, path=f"{dc_rate}/{ch}")
 
                 # calculate the S/N of the chopped dark outputs
                 # need S_p and S_p_3; see Dannert+ 2022 Eqn. 20
-                chopped = QTable.read(hdf5_file, path=f"{dc}/chopped")
+                chopped = QTable.read(hdf5_file, path=f"{dc_rate}/chopped")
                 S_p = chopped["chopped_astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
-                out3 = QTable.read(hdf5_file, path=f"{dc}/output_3_dark")
+                out3 = QTable.read(hdf5_file, path=f"{dc_rate}/output_3_dark")
                 S_p_3 = out3["astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
+                wavel = chopped["wavel_bin_center"].value
+                wavel_bin_edges = chopped.meta["wavel_bin_edges"]
+                
 
+                slot = by_dc.setdefault(dc_rate, {"wavel": wavel, "S_p": {}, "S_p_3": {}})
+                slot["S_p"][angle] = S_p
+                slot["S_p_3"][angle] = S_p_3
+                slot["wavel_bin_width"] = chopped["wavel_bin_width"] ## ## TODO: use the proper bin edges
+
+    for dc_rate, slot in by_dc.items():
+        angles = sorted(slot["S_p"].keys())
+        # (n_bins, n_angles) — use .value if columns are Quantity
+
+        cols_S_p = []
+        cols_S_p_3 = []
+        for a in angles:
+            cols_S_p.append(np.asarray(slot["S_p"][a])) # units are lost here, but will be restored later
+            cols_S_p_3.append(np.asarray(slot["S_p_3"][a])) # units are lost here, but will be restored later
+        S_p_arr = np.column_stack(cols_S_p)
+        S_p_sqd_arr = np.power(S_p_arr, 2)
+        S_p_3_arr = np.column_stack(cols_S_p_3)
+
+        S_p_sqd_arr_mean = S_p_sqd_arr.mean(axis=1) * slot["S_p"][a].unit # Dannert+ 2022 Eqn. (19)
+        S_p_3_sqd_arr_mean = S_p_3_arr.mean(axis=1) * slot["S_p_3"][a].unit # Dannert+ 2022 Eqn. (19)
+        S_sym_3 = 0 # placeholder ## ## TODO: implement this
+
+        SNR_lambda_array = []
+        for wavel_bin_num in range(len(slot["wavel_bin_width"])): 
+            #wavel_start = slot["wavel_bin_edges"][wavel_bin_num].value
+            #wavel_stop = slot["wavel_bin_edges"][wavel_bin_num + 1].value
+
+            
+
+            d_wavel = slot["wavel_bin_width"][wavel_bin_num]
+
+            # Dannert+ 2022 Eqn. (19)-(20): sqrt of angle-averaged squared signals per bin
+            S_p_rms_phi = np.sqrt(S_p_sqd_arr_mean[wavel_bin_num])
+            S_p_3_rms_phi = np.sqrt(S_p_3_sqd_arr_mean[wavel_bin_num])
+
+            numerator_ = S_p_rms_phi * d_wavel
+            noise_term = S_sym_3 + S_p_3_rms_phi ## ## CONTINUE HERE; INSERT INSTRUMENTAL TERMS
+            denominator_ = np.sqrt(2 * noise_term * d_wavel)
+
+            SNR_lambda = numerator_ / denominator_
+            SNR_lambda_array.append(SNR_lambda.value)
+
+        SNR_tot = np.sqrt(np.sum(np.power(SNR_lambda_array, 2)))
+        print(f'SNR_tot for DC {dc_rate}: {SNR_tot}')
+
+        # plot SNR 
+        plt.clf()
+        plt.stairs(SNR_lambda_array, edges=wavel_bin_edges.value)
+        plt.xlim([4, 18.5])
+        plt.yscale('log')
+        plt.grid(True)
+        plt.xlabel(f'Wavelength ({slot["wavel_bin_width"][wavel_bin_num].unit})')
+        plt.ylabel('SNR')
+        plt.title(f'SNR for DC {dc_rate}\nSNR_tot: {SNR_tot}')
+        plt.show()
+
+        
+
+        #numerator_ = np.sqrt(S_p_sqd_arr_mean) * slot["wavel_bin_width"] # effectively an integral over in Dannert+ 2022 Eqn. (20)
+        ipdb.set_trace()
+    
+
+
+
+
+    ipdb.set_trace()
+    # now find S/N by using all observing angles
+
+    ipdb.set_trace()
     ## ## CONTINUE HERE: calculate the S/N of the chopped dark outputs
 
     '''
@@ -110,11 +186,15 @@ def calculate_s2n_post_rotation(read_dir):
     #df_S_p['wavel'] = wavel
     #df_S_p_3['wavel'] = wavel
 
+    ipdb.set_trace()
+
+    # find the quadratic mean of the modulated signal S_p (Dannert+ 2022 Eqn. (19))
+
     #'wavel': wavel.value
-    df_S_p = pd.DataFrame(data_S_p)
-    df_S_p_sqd = pd.DataFrame(data_S_p_sqd)
-    df_S_p_3 = pd.DataFrame(data_S_p_3)
-    df_S_p_3_sqd = pd.DataFrame(data_S_p_3_sqd)
+    df_S_p = pd.DataFrame(S_p, columns=["S_p"])
+    df_S_p_sqd = pd.DataFrame(np.power(S_p, 2), columns=["S_p_sqd"])
+    df_S_p_3 = pd.DataFrame(S_p_3, columns=["S_p_3"])
+    df_S_p_3_sqd = pd.DataFrame(np.power(S_p_3, 2), columns=["S_p_3_sqd"])
 
     # now insert mean column, averaging over angles; Dannert+ 2022 Eqn. (19)
     df_S_p_sqd['avg_S_p_sqd_phi'] = df_S_p_sqd.mean(axis=1)
@@ -421,7 +501,6 @@ def run_single_calculation(
         ipdb.set_trace()
         '''
 
-    ipdb.set_trace()
     if calculate_s2n:
         logger.info("Calculating S/N from HDF5 files.")
         calculate_s2n_post_rotation(config['dirs']['save_s2n_data_unique_dir'])

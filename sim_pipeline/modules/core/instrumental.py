@@ -470,6 +470,7 @@ class InstrumentDepTerms:
         qt['wavel_bin_num'] = np.arange(len(output_channel.bin_centers))
         qt['wavel_bin_center'] = output_channel.bin_centers
         qt['wavel_bin_width'] = output_channel.bin_widths
+        qt.meta['wavel_bin_edges'] = output_channel.bin_edges
         qt['n_pix_per_wavel_bin'] = np.sum(
             output_channel.detector.footprint_cube, axis=(1, 2)
         ) * u.pix
@@ -591,6 +592,8 @@ class InstrumentDepTerms:
                 for source_name in self.sources_to_include:
                     astro_sig = output_channel.astroph_signal[source_name]
                     final_table[f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
+
+                final_table.meta.update(table.meta)
 
                 # store the final table for this permutation of output, dark current, and rotation angle
                 output_channel.tables_by_dark_current[float(dc_rate)] = final_table
@@ -1003,6 +1006,7 @@ class InstrumentDepTerms:
                     chopped[f'output_4_dark_{col}'] = t4[col]
                     chopped[f'chopped_{col}'] = t3[col] - t4[col]
 
+            chopped.meta.update(t3.meta)
             self.post_chop_tables_by_dark_current[dc_rate] = chopped
 
 
