@@ -25,7 +25,7 @@ def parse_args():
     )
     parser.add_argument(
         "--config-planet-population",
-        default="config/planet_population_10_M_stars.ini",
+        default="config/planet_population_earth_10pc_only.ini",
         help="Planet population config file.",
     )
     parser.add_argument(

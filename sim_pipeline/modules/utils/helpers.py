@@ -134,11 +134,56 @@ def build_system_params_title(config) -> str:
     return "\n".join(lines)
 
 
+def build_observation_detector_title(config) -> str:
+    lines = []
+
+    t_int_frame = _config_get(config, "observation", "t_int_frame")
+    if t_int_frame is not None:
+        lines.append(f"t_int_frame = {float(t_int_frame)} s")
+
+    n_angles = _config_get(config, "observation", "N_angles")
+    if n_angles is not None:
+        lines.append(f"N_angles = {int(float(n_angles))}")
+
+    n_int_per_angle = _config_get(config, "observation", "N_int_per_angle")
+    if n_int_per_angle is not None:
+        lines.append(f"N_int_per_angle = {int(float(n_int_per_angle))}")
+
+    t_int_total = t_int_frame * n_angles * n_int_per_angle
+    if t_int_total is not None:
+        lines.append(f"t_int_total = {float(t_int_total):.0f} s")
+
+    qe = _config_get(config, "detector", "quantum_efficiency")
+
+    if qe is not None:
+        lines.append(f"QE = {float(config['detector']['quantum_efficiency'])}")
+
+    dark_current_sweep = _config_get(config, "detector", "dark_current")
+    if dark_current_sweep is not None:
+        lines.append(f"dark current sweep = {dark_current_sweep} e-/pix/s")
+
+    read_noise = _config_get(config, "detector", "read_noise")
+    if read_noise is not None:
+        lines.append(f"read noise = {read_noise} e- rms")
+
+    gain = _config_get(config, "detector", "gain")
+    if gain is not None:
+        lines.append(f"gain = {float(gain)} e-/ADU")
+
+    spec_res = _config_get(config, "detector", "spec_res")
+    if spec_res is not None:
+        lines.append(f"spec_res R = {float(spec_res)}")
+
+
+    return "\n".join(lines)
+
+
 def ensure_plot_title_context(config) -> str:
     existing = _get_plot_title_context(config)
     if existing:
         return existing
-    built = build_system_params_title(config)
+    parts = [build_system_params_title(config), build_observation_detector_title(config)]
+    built = "\n".join(part for part in parts if part)
     _config_set_plot_title_context(config, built)
     return built
 
@@ -209,10 +254,11 @@ def get_sweep_range(obs: dict, prefix: str) -> list[float]:
 
     The stop value is included by extending the range by one step.
     """
-    start = float(obs[f'{prefix}_start'])
-    stop = float(obs[f'{prefix}_stop'])
-    step = float(obs[f'{prefix}_step'])
-    return np.arange(start, stop + step, step).tolist()
+    start_ = float(obs[f'{prefix}_start'])
+    stop_ = float(obs[f'{prefix}_stop'])
+    step_ = float(obs[f'{prefix}_step'])
+
+    return np.arange(start_, stop_, step_).tolist()
 
 def validate_file_path(filepath: Union[str, Path]) -> bool:
     """
@@ -847,16 +893,17 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
         '''
 
 
-def record_info_at_angle(
+def record_info_at_angle_and_qe(
     *,
     angle_deg: float,
+    qe: float,
     output_channels: dict,
     post_chop_tables_by_dark_current: dict,
     save_dir: str,
     plot: bool = True,
 ) -> dict:
     """
-    Save one HDF5 file for this rotation angle.
+    Save one HDF5 file for this rotation angle and QE
 
     File structure::
 
@@ -875,12 +922,16 @@ def record_info_at_angle(
 
     for dc_rate in post_chop_tables_by_dark_current:
         dc_group = f"dc_{dc_rate:g}"
+        qe_group = f"qe_{qe:.2f}"
+        dc_qe_str = f"{dc_group}_{qe_group}"
 
+        # write out the tables for each output channel
         for ch_name, ch in output_channels.items():
             out_tbl = ch.tables_by_dark_current[dc_rate].copy()
             out_tbl.meta['angle_deg'] = float(angle_deg)
             out_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
-            hdf5_path = f"{dc_group}/{ch_name}"
+            out_tbl.meta['qe'] = float(qe)
+            hdf5_path = dc_qe_str + f"/{ch_name}"
             if first_dataset:
                 out_tbl.write(
                     file_name,
@@ -899,10 +950,11 @@ def record_info_at_angle(
             hdf5_paths.append(hdf5_path)
             logger.info(f"Wrote {file_name}:{hdf5_path}")
 
+        # now include the chopped signal
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate].copy()
         chopped_tbl.meta['angle_deg'] = float(angle_deg)
         chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
-        hdf5_path = f"{dc_group}/chopped"
+        hdf5_path = hdf5_path = dc_qe_str + "/chopped"
         chopped_tbl.write(
             file_name,
             path=hdf5_path,
@@ -942,12 +994,12 @@ def record_info_at_angle(
         ax.set_xlim(4.0, 18.0)
         ax.set_xlabel('Wavelength (um)')
         ax.set_ylabel('Signal (ADU)')
-        ax.set_title(f'Chopped signals at angle {angle_deg}, dc={dc_rate:g} e/pix/s')
+        ax.set_title(f'Chopped signals at angle {angle_deg}, dc={dc_rate:g} e/pix/s, QE {qe:.2f}')
         ax.legend(fontsize=8, loc='best')
-        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:g}.png"
+        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:g}_QE_{qe:.2f}.png"
         fig.savefig(file_name_plot)
         plt.close(fig)
-        logger.info(f"Saved plot of chopped signals at angle {angle_deg}: {file_name_plot}")
+        logger.info(f"Saved plot of chopped signals at angle {angle_deg}, QE {qe:.2f}: {file_name_plot}")
 
     return
 

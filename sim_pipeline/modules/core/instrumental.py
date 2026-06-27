@@ -499,7 +499,7 @@ class InstrumentDepTerms:
         #read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
 
         read_noise_str = self.config["detector"]["read_noise"]
-        read_noise_e_rms = np.fromstring(read_noise_str, sep=',') * u.electron / u.pix # in case it's an array
+        read_noise_e_rms = np.fromstring(read_noise_str, sep=',') * u.electron / u.pix # sep in case it's an array
         self.sources_instrum['read_noise_e_pix-1'] = read_noise_e_rms
         logging.info(f'Read noise is {read_noise_e_rms} rms')
         #self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
@@ -541,7 +541,7 @@ class InstrumentDepTerms:
         # combines astrophysical signals and instrumental noise
 
         t_frame = float(self.config['observation']['t_int_frame']) * u.second
-        read_noise = self.sources_instrum['read_noise_e_pix-1']
+        read_noise_scalar = self.sources_instrum['read_noise_e_pix-1'] # just one value here
         dc_rates = self.sources_instrum['dark_current_e_pix-1_sec-1']  # (n_dc,)
         gain = float(self.config["detector"]["gain"]) * u.electron / u.adu
         e_per_ph = float(self.config["detector"]["e_per_ph"]) * u.electron / u.ph
@@ -554,24 +554,43 @@ class InstrumentDepTerms:
             tables_by_dc = {}
 
             # loop over dark current values
-            for dc_rate in dc_rates: 
+            for dc_rate_this in dc_rates: 
                 
-                logging.info(f'Combining astrophysical signals and instrumental noise for output {output_name} at dark current {dc_rate}')
+                logging.info(f'Combining astrophysical signals and instrumental noise for output {output_name} at dark current {dc_rate_this}')
                 qt = QTable(base.copy())
                 # metadata (scalar, for bookkeeping)
                 #qt.meta['dark_current_rate_e_pix_sec'] = dc_rate
                 # instrumental columns: constant across wavelength bins at this DC
-                qt['instrum_dark_current_e_pix_sec'] = dc_rate * np.ones(n_bins)
+                #qt['instrum_dark_current_e_pix_sec'] = dc_rate * np.ones(n_bins)
                 #qt['instrum_dark_current_e_pix'] = np.full(n_bins, dc_rate * t_frame)
-                qt['instrum_read_noise_e_pix'] = read_noise * np.ones(n_bins)
-                tables_by_dc[float(dc_rate.value)] = qt
+                #qt['instrum_read_noise_e_pix'] = read_noise * np.ones(n_bins)
+                qt['t_int_frame'] = t_frame # integration time of one frame ## ## TODO: enable multiple reads
+                qt['qe'] = float(self.config['detector']['quantum_efficiency'])
+                tables_by_dc[float(dc_rate_this.value)] = qt
 
             output_channel.tables_by_dark_current_orig = tables_by_dc # _orig meaning that we have not modified the units here
+
+            ##########################################
+            # begin debug: summary function
+            for name, ch in self.output_channels.items():
+                print(f"\n=== {name} ===")
+                print(f"  angle_deg: {ch.angle_deg}")
+                print(f"  spec_R: {ch.spec_R}")
+                print(f"  n_bins: {len(ch.bin_centers) if ch.bin_centers is not None else None}")
+                print(f"  instrum_noise keys: {list(ch.instrum_noise.keys())}")
+                print(f"  astroph_signal keys: {list(ch.astroph_signal.keys())}")
+                print(f"  tables_by_dark_current DC rates: {list(ch.tables_by_dark_current.keys())}")
+                for dc, tbl in ch.tables_by_dark_current.items():
+                    print(f"    dc={dc:g}: {len(tbl)} rows, columns:")
+                    for col in tbl.colnames:
+                        print(f"      - {col}")
+            # end debug: summary function
+            ##########################################
 
         # loop over each of the tables and make a new table that keeps some of the columns for bookkeeping,
         # and then multiplies others by the appropriate factor to get the total signal in electrons
         for output_name, output_channel in self.output_channels.items():
-            
+
             for dc_rate, table in output_channel.tables_by_dark_current_orig.items():
 
                 # one table of signals for a permutation of 
@@ -584,9 +603,15 @@ class InstrumentDepTerms:
                 final_table['wavel_bin_width'] = table['wavel_bin_width']
                 final_table['n_pix_per_wavel_bin'] = table['n_pix_per_wavel_bin']
                 # total dark current within the wavelength bin for the entire integration
-                final_table['instrum_dark_current_for_wavel_bin_and_integration_adu_tot'] = table['instrum_dark_current_e_pix_sec'] * table['n_pix_per_wavel_bin'] * t_frame / gain
+
+                # 'dark current' is an additive pedestal value, not an rms term
+                # 'dark current rms' is what we calculate here by taking the square root, so that we can propagate the noise as if dark-subtraction were already being carried out
+                # dark current 'pedestal' to make clear that this is not an rms term, but a constant offset
+                # total dark current for wavelength bin: multiply rate of single pixel by sqrt(N_pix) for N_pix in the wavelength bin
+                final_table['instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot'] = np.sqrt((dc_rate * u.electron/u.pix) * table['n_pix_per_wavel_bin'] * t_frame).value*u.electron / gain 
                 # total read noise within the wavelength bin for the entire integration
-                final_table['instrum_read_noise_for_wavel_bin_and_integration_adu_tot'] = table['instrum_read_noise_e_pix'] * table['n_pix_per_wavel_bin'] / gain
+                # the .value*u.pix is to avoid resulting in sqrt(pix)
+                final_table['instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot'] = read_noise_scalar * np.sqrt(table['n_pix_per_wavel_bin']).value*u.pix / gain
 
                 # loop over astrophysical sources:
                 for source_name in self.sources_to_include:
@@ -604,8 +629,8 @@ class InstrumentDepTerms:
                 wavel_bin_edges = output_channel.bin_edges
                 fig, ax = plt.subplots(figsize=(10, 5))
                 debug_cols = [
-                    'instrum_dark_current_for_wavel_bin_and_integration_adu_tot',
-                    'instrum_read_noise_for_wavel_bin_and_integration_adu_tot',
+                    'instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot',
+                    'instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot',
                 ]
                 for col_name in debug_cols:
                     y_col = final_table[col_name]
@@ -971,6 +996,11 @@ class InstrumentDepTerms:
                 flux_astro_1d_interpolated_ph_sec_wavel_bin = flux_astro_1d_interpolated_ph_sec_um * output_channel.bin_widths
                 flux_astro_1d_interpolated_ph_sec_pixel = flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
 
+                # multiply by the detector QE
+                flux_astro_1d_interpolated_ph_sec_pixel *= float(self.config['detector']['quantum_efficiency'])
+                flux_astro_1d_interpolated_ph_sec_wavel_bin *= float(self.config['detector']['quantum_efficiency'])
+                flux_astro_1d_interpolated_ph_sec_um *= float(self.config['detector']['quantum_efficiency'])
+
                 #output_channel.signal_by_source = {}
                 output_channel.astroph_signal[source_name] = {
                     'wavel': output_channel.bin_centers,           # (n_bins,) Quantity
@@ -1005,8 +1035,17 @@ class InstrumentDepTerms:
                     chopped[f'output_3_dark_{col}'] = t3[col]
                     chopped[f'output_4_dark_{col}'] = t4[col]
                     chopped[f'chopped_{col}'] = t3[col] - t4[col]
+                if col.startswith(('instrum_')):
+                    # copy over instrumental terms from the dark outputs
+                    chopped[f'instrum_output_3_dark_{col}'] = t3[col]
+                    chopped[f'instrum_output_4_dark_{col}'] = t4[col]
+                    if 'dark_current' in col:
+                        chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2) ## ## TODO: MAKE SURE THIS IS CORRECT
+                    if 'read_noise' in col:
+                        chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2) ## ## TODO: MAKE SURE THIS IS CORRECT
 
             chopped.meta.update(t3.meta)
+
             self.post_chop_tables_by_dark_current[dc_rate] = chopped
 
 
