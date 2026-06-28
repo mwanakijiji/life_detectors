@@ -128,6 +128,12 @@ def calculate_s2n_post_rotation(read_dir, config):
 
         S_p_sqd_arr_mean = S_p_sqd_arr.mean(axis=1) * (slot["S_p"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
         S_p_3_sqd_arr_mean = S_p_3_arr.mean(axis=1) * (slot["S_p_3"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
+
+        #N_sym_adu = 0 * u.adu # symmetric sources
+        #gain = float(config['detector']['gain'])
+        #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(N_e) / gain
+
+
         S_sym_3 = 0 * u.adu # placeholder ## ## TODO: implement this
 
         #dark_noise_var = slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"].var(axis=1)
@@ -399,7 +405,10 @@ def run_single_calculation(
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
             # no rotation yet
-            transmission_screens = instrument_dep_terms.generate_instrument_transmission(override_stellar_mask=override_stellar_mask, plot=plot)
+            transmission_screens = instrument_dep_terms.generate_instrument_transmission(
+                override_stellar_mask = override_stellar_mask, 
+                plot = plot
+                )
 
             # rotate the transmission screens
             transmission_screens_only_rot = ndimage.rotate(transmission_screens[0:4,:,:], angle_deg, axes=(1,2), reshape=False) # rotate the screens, but not the sky coordinates
@@ -411,7 +420,8 @@ def run_single_calculation(
                 fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen, 
                 transmission_screens = transmission_screens, 
-                plot=plot)
+                plot=plot
+                )
 
             # Pass through telescope aperture
             logger.info("Passing through telescope aperture (incl. telescope throughput)...")
