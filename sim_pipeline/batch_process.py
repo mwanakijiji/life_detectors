@@ -20,6 +20,7 @@ import numpy as np
 import uuid
 import copy
 import h5py
+import time
 import glob
 from datetime import datetime
 from scipy import ndimage
@@ -413,7 +414,7 @@ def run_single_calculation(
                 plot=plot)
 
             # Pass through telescope aperture
-            logger.info("Converting photons to photo-electrons ...")
+            logger.info("Passing through telescope aperture (incl. telescope throughput)...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
             # set instrumental noise terms and update the OutputChannel objects
@@ -532,6 +533,7 @@ def batch_qe_nint_process(base_config_path: str,
         # this could involve either or both of:
         # 1. generating simulations and writing out the HDF5 files
         # 2. calculating the S/N from the HDF5 files
+        time_0 = time.time()
         success = run_single_calculation(
             config_path=base_config_path,
             base_filename = base_filename,
@@ -544,6 +546,8 @@ def batch_qe_nint_process(base_config_path: str,
             lum_types=lum_types,
             output_root=output_root,
         )
+        time_1 = time.time()
+        logging.info(f"Time taken for run_single_calculation(): {time_1 - time_0:.2f} seconds")
                     
         if success:
             logging.info(f"  ✓ Success for the following planetary system parameters:")
@@ -745,7 +749,7 @@ def parameter_sweep(
 
     # parameter sweep
     obs = config_sweep["observation"]
-    ipdb.set_trace()
+
     qe_values = helpers.get_sweep_range(obs, "qe")
 
     # get the astrophysical sources to include from the config file
