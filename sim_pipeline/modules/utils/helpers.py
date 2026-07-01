@@ -149,7 +149,7 @@ def build_observation_detector_title(config) -> str:
     if n_int_per_angle is not None:
         lines.append(f"N_int_per_angle = {int(float(n_int_per_angle))}")
 
-    t_int_total = t_int_frame * n_angles * n_int_per_angle
+    t_int_total = float(t_int_frame) * float(n_angles) * float(n_int_per_angle)
     if t_int_total is not None:
         lines.append(f"t_int_total = {float(t_int_total):.0f} s")
 
@@ -706,6 +706,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         #r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test =  I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
         #test2 = r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
+
         integrand = np.array( [radius * np.pi * I_disk_lambda_r(radius, r0, alpha, z, Sigma_m_0, wavel_array) for radius in r_array] ) # this loses units in np.array() operation
         # factor of pi steradians comes from integrating over dtheta (one hemisphere of the disk)
         
@@ -742,8 +743,13 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
 
     T_array = T_temp(r=r_array)
 
-    # units W / um
-    luminosity_energy_disk_lambda = I_disk_lambda(r_array=r_array, r0=r0, alpha=alpha, z=z, Sigma_m_0=Sigma_m_0, wavel_array=wavelength_um)
+    # units W / um 
+    luminosity_energy_disk_lambda = I_disk_lambda(r_array=r_array, 
+                                                r0=r0, 
+                                                alpha=alpha, 
+                                                z=z, 
+                                                Sigma_m_0=Sigma_m_0, 
+                                                wavel_array=wavelength_um)
 
     # convert to photons
     # units 1 / (um sec)
@@ -840,7 +846,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
             "luminosity_photons": luminosity_photons_planet,
             "luminosity_photons_units": str(luminosity_photons_planet.unit)
         },
-            "exozodiacal_spectrum.txt": {
+        "exozodiacal_spectrum.txt": {
             "description": "Exozodiacal dust spectrum",
             "wavelength_um": wavelength_um,
             "luminosity_energy": luminosity_energy_exozodi,
@@ -1009,6 +1015,9 @@ def _normalize_output_root(output_root: str) -> str:
     normalized = str(Path(output_root).expanduser().resolve())
     return normalized if normalized.endswith(os.sep) else normalized + os.sep
 
+def enable_plot_units():
+    """Let matplotlib label axes from astropy Quantity units."""
+    quantity_support()
 
 def apply_output_root_override(config_path: str, output_root: Optional[str]) -> str:
     """

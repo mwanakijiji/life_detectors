@@ -87,6 +87,7 @@ class NoiseCalculator:
         # Generate wavelength grid
         #self.wavelength = self._generate_wavelength_grid()
 
+    '''
     def s2n_val(self, wavel_bin_centers, del_lambda_array, n_pix_array, addl_systematics_vector: np.ndarray = None, plot: bool = False) -> np.ndarray:
         """ _star_planet_only
         Vectorized S/N function
@@ -154,35 +155,35 @@ class NoiseCalculator:
         null = np.asarray(float(self.config['nulling']['nulling_factor']))
         
         # Handle the case where read_noise may be a comma-separated list (array) or a single value
-        '''
-        read_noise_str = self.config['detector']['read_noise']
-        try:
-            R_vals = np.fromstring(read_noise_str, sep=',')
-            if R_vals.size == 1:
-                R = R_vals[0] * u.electron
-            else:
-                R = R_vals * u.electron
-        except Exception:
-            R = float(read_noise_str) * u.electron
-        '''
+
+        #read_noise_str = self.config['detector']['read_noise']
+        #try:
+        #    R_vals = np.fromstring(read_noise_str, sep=',')
+        #    if R_vals.size == 1:
+        #        R = R_vals[0] * u.electron
+        #    else:
+        #        R = R_vals * u.electron
+        #except Exception:
+        #    R = float(read_noise_str) * u.electron
+
         R = self.sources_all.sources_instrum['read_noise_e_pix-1']
         D_rate = self.sources_all.sources_instrum['dark_current_e_pix-1_sec-1']
         D_tot = self.sources_all.sources_instrum['dark_current_e_pix-1']
         # Handle the case where dark_current may be a comma-separated list (array) or a single value
-        '''
-        dark_current_str = self.config['detector']['dark_current']
-        try:
-            # Try to parse as array (comma-separated)
-            D_vals = np.fromstring(dark_current_str, sep=',')
-            if D_vals.size == 1:
-                D = D_vals[0] * u.electron / (u.pix * u.second)
-            else:
-                D = D_vals * u.electron / (u.pix * u.second)
-        except Exception:
-            # Fallback: try to parse as float
-            D = float(dark_current_str) * u.electron / (u.pix * u.second)
-        '''
-        
+    '''
+
+        #dark_current_str = self.config['detector']['dark_current']
+        #try:
+        #    # Try to parse as array (comma-separated)
+        #    D_vals = np.fromstring(dark_current_str, sep=',')
+        #    if D_vals.size == 1:
+        #        D = D_vals[0] * u.electron / (u.pix * u.second)
+        #    else:
+        #        D = D_vals * u.electron / (u.pix * u.second)
+        #except Exception:
+        #    # Fallback: try to parse as float
+        #    D = float(dark_current_str) * u.electron / (u.pix * u.second)
+    '''
         eta_qm = np.asarray(float(self.config['detector']['quantum_efficiency']))
         eta_t = np.asarray(float(self.config['telescope']['eta_t']))
 
@@ -210,10 +211,10 @@ class NoiseCalculator:
         term_1 = np.sqrt(n_int)
 
         # numerator
-        term_2 = eta_t * eta_qm * t_int * del_Np_prime_del_t
+        term_2 = eta_t * eta_qm * t_int_total * del_Np_prime_del_t
 
         # first term under square root in the denominator
-        term_3 = eta_t * eta_qm * t_int * (del_Np_prime_del_t_reshaped + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t_reshaped)
+        term_3 = eta_t * eta_qm * t_int_total * (del_Np_prime_del_t_reshaped + del_Nez_prime_del_t + del_Nz_prime_del_t + null * del_Ns_prime_del_t_reshaped)
 
         if np.all(np.round(n_pix_array.value-np.roll(n_pix_array.value, 1), 3) == np.zeros(n_pix_array.shape) * u.pix):
             # if all values in the array are the same (i.e., dispersion is oversimplified as a constant)
@@ -223,7 +224,7 @@ class NoiseCalculator:
             exit()
 
         # second term under square root in the denominator
-        term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int * D_rate_reshaped)
+        term_4 = n_pix * (( R_reshaped**2/(u.electron / u.pix) ) + t_int_total * D_rate_reshaped)
 
         # includes addl systematics term
         ## ## TODO: MAKE THIS MORE SOPHISTICATED; WITH COVARIANCE MATRIX ETC
@@ -313,7 +314,7 @@ class NoiseCalculator:
             plt.close()
 
         return s2n_tot #, var_to_return
-
+    '''
 
     def s2n_e(self, file_name_fits_unique, plot: bool = False):
         '''
@@ -377,12 +378,12 @@ class NoiseCalculator:
         addl_systematics_vector_dark_3 = detector_dark_3.convert_2d_systematics_to_1d_vector()
         addl_systematics_vector_dark_4 = detector_dark_4.convert_2d_systematics_to_1d_vector()
 
-        ipdb.set_trace()
+        #ipdb.set_trace()
         
         # Now the calculation will broadcast to (N_dark_current, N_wavel)
         # return S/N; and the variable values that are either the dark current or read noise (whichever has length >1)
-        ipdb.set_trace()
-        s2n_dark_3 = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array, addl_systematics_vector=addl_systematics_vector_dark_3)
+        #ipdb.set_trace()
+        #s2n_dark_3 = self.s2n_val(wavel_bin_centers=bin_centers, del_lambda_array=bin_widths, n_pix_array=n_pix_array, addl_systematics_vector=addl_systematics_vector_dark_3)
 
 
     

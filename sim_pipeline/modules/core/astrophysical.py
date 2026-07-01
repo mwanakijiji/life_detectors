@@ -27,6 +27,155 @@ from ..utils.helpers import format_plot_title, parse_sky_position_arcsec_yx
 logger = logging.getLogger(__name__)
 
 
+def _box_kernel(n_pix: int, idx_y: int, idx_x: int, half_pix: int) -> np.ndarray:
+    """Normalized square kernel centered on (idx_y, idx_x), clipped to the scene."""
+    y0 = max(0, idx_y - half_pix)
+    y1 = min(n_pix, idx_y + half_pix + 1)
+    x0 = max(0, idx_x - half_pix)
+    x1 = min(n_pix, idx_x + half_pix + 1)
+    kernel = np.zeros((n_pix, n_pix))
+    kernel[y0:y1, x0:x1] = 1.0
+    kernel /= kernel.sum()
+    return kernel
+
+
+def _exozodi_kernel(n_pix: int, 
+                    idx_y: int, 
+                    idx_x: int, 
+                    pix_size_arcsec: float,
+                    dist_pc: float,
+                    r0_au = 1 * u.au, 
+                    alpha = 0.34, 
+                    z_exozodiacal = 1, 
+                    Sigma_m_0 = 7.12e-08) -> np.ndarray:
+    '''
+    Conical exozodi kernel
+
+    INPUTS:
+        n_pix: number of pixels in the scene
+        idx_y: y index of the center of the disk
+        idx_x: x index of the center of the disk
+        pix_size_mas: pixel size in arcseconds
+        dist_pc: distance to the target in parsecs
+        r0_au: reference radius in AU
+        alpha: power law index
+        z: number of zodis
+        Sigma_m_0: normalization factor
+
+    RETURNS:
+        kernel: 2D array of the exozodi
+    '''
+
+    # Ref.: Kennedy+ 2015 ApJSS 216:23, Eqn. (3)
+    # Sigma_m(r) = z * Sigma_m_0 * (r/r0)^(-alpha)
+
+    # note that a single spectrum is just spread across this resolved shape according to surface
+    # density, for simplicity at the moment
+
+    ## ## TODO: peg exozodi parameters to the model that generates the spectrum
+
+    r0_arsec = (r0_au / dist_pc).value * u.arcsec
+
+    # make a slice representing au from the center of the disk
+    kernel = np.zeros((n_pix, n_pix))
+
+    #n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+    axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
+    sky_xx_arcsec, sky_yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
+
+    # distances in arcsec from the center of the disk in pixels
+    distances_arcsec = np.sqrt(sky_xx_arcsec**2 + sky_yy_arcsec**2)
+
+    # surface density profile
+    Sigma_m_2d = (z_exozodiacal * Sigma_m_0 * np.divide(distances_arcsec, r0_arsec) **(-alpha)).value
+
+    kernel = np.copy(Sigma_m_2d)
+    kernel /= kernel.sum()
+
+    return kernel
+
+
+def _zodiacal_kernel(n_pix: int, pix_size_arcsec: float) -> np.ndarray:
+    '''
+    Zodiacal background kernel
+    '''
+    kernel = np.ones((n_pix, n_pix))
+    kernel /= kernel.sum()
+
+    return kernel
+
+
+def generate_star_scene(
+    flux_star: u.Quantity,
+    n_pix: int,
+    idx_y_star: int,
+    idx_x_star: int,
+    half_pix: int,
+) -> u.Quantity:
+    """
+    Spread star flux onto a 3D on-sky canvas (n_wavel, n_pix, n_pix).
+
+    Returns a Quantity with the same units as flux_star, typically ph/(um m^2 s).
+    """
+    kernel_star = _box_kernel(n_pix, idx_y_star, idx_x_star, half_pix)
+
+    return flux_star[:, None, None] * kernel_star[None, :, :]
+
+
+def generate_exoplanet_scene(
+    flux_planet: u.Quantity,
+    n_pix: int,
+    idx_y_planet: int,
+    idx_x_planet: int,
+    half_pix: int,
+) -> u.Quantity:
+    """
+    Spread exoplanet flux onto a 3D on-sky canvas (n_wavel, n_pix, n_pix).
+
+    Returns a Quantity with the same units as flux_planet, typically ph/(um m^2 s).
+    """
+
+    kernel_planet = _box_kernel(n_pix, idx_y_planet, idx_x_planet, half_pix)
+
+    return flux_planet[:, None, None] * kernel_planet[None, :, :]
+
+
+def generate_exozodi_scene(
+    flux_exozodi: u.Quantity,
+    n_pix: int,
+    idx_y_exozodi: int,
+    idx_x_exozodi: int,
+    pix_size_arcsec: float,
+    dist_pc: float,
+    z_exozodiacal: float,
+    ) -> u.Quantity:
+    '''
+    Spread exozodi flux onto a 3D on-sky canvas (n_wavel, n_pix, n_pix).
+    '''
+
+    kernel_exozodi = _exozodi_kernel(dist_pc=dist_pc, 
+                                        n_pix=n_pix, 
+                                        idx_y=idx_y_exozodi, 
+                                        idx_x=idx_x_exozodi, 
+                                        pix_size_arcsec=pix_size_arcsec, 
+                                        z_exozodiacal=z_exozodiacal)
+
+    return flux_exozodi[:, None, None] * kernel_exozodi[None, :, :]
+
+
+def generate_zodiacal_scene(flux_zodiacal: u.Quantity, 
+                            n_pix: int, 
+                            pix_size_arcsec: float) -> u.Quantity:
+    '''
+    Spread zodiacal flux onto a 3D on-sky canvas (n_wavel, n_pix, n_pix).
+    '''
+
+    # kernel is just a simple screen
+    kernel_zodiacal = _zodiacal_kernel(n_pix=n_pix, pix_size_arcsec=pix_size_arcsec)
+
+    return flux_zodiacal[:, None, None] * kernel_zodiacal[None, :, :]
+
+
 class AstrophysicalSources:
     """
     Calculates photon flux from astrophysical sources (incl. noise)
@@ -114,6 +263,7 @@ class AstrophysicalSources:
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     
 
+    
     def calculate_incident_flux(self, source_name: str, plot: bool = False, system_params: dict = None) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
@@ -151,7 +301,7 @@ class AstrophysicalSources:
             # this is a model spectrum from a file with different units, formatting
             file_name_exoplanet_model_10pc = self.config['astrophysical_sources_library']['exoplanet_model_10pc']
             df = pd.read_csv(file_name_exoplanet_model_10pc, delim_whitespace=True, names=['wavelength', 'flux', 'err_flux'])
-            logger.info(f"Loaded model exoplanetspectrum for {source_name}: {file_name_exoplanet_model_10pc}")
+            logger.info(f"Loaded model exoplanet spectrum for {source_name}: {file_name_exoplanet_model_10pc}")
 
             wavel = df['wavelength'].values * u.micron
             flux_nu_10pc = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)
@@ -281,11 +431,6 @@ class AstrophysicalSources:
         xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing='xy')
         sky_xx_arcsec = xx_arcsec
         sky_yy_arcsec = yy_arcsec
-        
-        # initialize canvases (wavelength x sky y x sky x)
-        n_wavel = int(0.5 * int(self.config['wavelength_range']['n_points'])) # the cubes should have half the number of wavelength points as the astrophysical spectra
-        canvas_star_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
-        canvas_planet_3D = np.zeros((n_wavel, n_pix, n_pix), dtype=float)
 
         # point sources only for now
         ## ## TODO: ADD RESOLVED SOURCES
@@ -308,6 +453,9 @@ class AstrophysicalSources:
         # check consistency in units
         flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
         flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
+        flux_exozodi = incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
+        flux_zodiacal = incident_dict['zodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
+
         if flux_star.unit != flux_planet.unit:
             raise ValueError(
                 f"Star/planet flux units differ: {flux_star.unit} vs {flux_planet.unit}"
@@ -320,43 +468,36 @@ class AstrophysicalSources:
         idx_x_star = (np.abs(sky_xx_arcsec[0, :] - x_star_arcsec)).argmin()
         idx_y_planet = (np.abs(sky_yy_arcsec[:, 0] - y_planet_arcsec)).argmin()
         idx_x_planet = (np.abs(sky_xx_arcsec[0, :] - x_planet_arcsec)).argmin()
+        idx_y_exozodi = idx_y_star # exozodi is centered on the star
+        idx_x_exozodi = idx_x_star
 
-        # kernel which will be broadcast across wavelength axis
-        '''
-        # 1 pixel only
-        kernel_star = np.zeros((n_pix, n_pix))
-        kernel_star[idx_y_star, idx_x_star] = 1.0
-        canvas_star_3D = flux_star[:, None, None] * kernel_star[None, :, :]
-        '''
+        # make star and planet small boxes (so I can see them)
+        half_pix = int(self.config['onsky_scene']['half_pix'])
+        canvas_star_3D = generate_star_scene(
+            flux_star, n_pix, idx_y_star, idx_x_star, half_pix
+        )
+        canvas_planet_3D = generate_exoplanet_scene(
+            flux_planet, n_pix, idx_y_planet, idx_x_planet, half_pix
+        )
 
-        # a box of pixels (so I can actually see it)
-        half_pix = 2
-        y0 = max(0, idx_y_star - half_pix)
-        y1 = min(n_pix, idx_y_star + half_pix + 1)
-        x0 = max(0, idx_x_star - half_pix)
-        x1 = min(n_pix, idx_x_star + half_pix + 1)
-        kernel_star = np.zeros((n_pix, n_pix))
-        kernel_star[y0:y1, x0:x1] = 1.0
-        kernel_star /= kernel_star.sum()   # keep total flux conserved
-        canvas_star_3D = flux_star[:, None, None] * kernel_star[None, :, :]
+        dist_pc = float(self.config['target']['distance']) * u.pc
+        pix_size_arcsec = (float(self.config['onsky_scene']['pix_size_mas']) / 1000.0) * u.arcsec
+        z_exozodiacal = float(self.config['target']['z_exozodiacal'])
 
-        # shape (n_wavel, n_pix, n_pix), unit ph/(um m^2 s)
-        '''
-        # 1 pixel only
-        kernel_planet = np.zeros((n_pix, n_pix))
-        kernel_planet[idx_y_planet, idx_x_planet] = 1.0
-        canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
-        '''
-        y0 = max(0, idx_y_planet - half_pix)
-        y1 = min(n_pix, idx_y_planet + half_pix + 1)
-        x0 = max(0, idx_x_planet - half_pix)
-        x1 = min(n_pix, idx_x_planet + half_pix + 1)
-        kernel_planet = np.zeros((n_pix, n_pix))
-        kernel_planet[y0:y1, x0:x1] = 1.0
-        kernel_planet /= kernel_planet.sum()   # keep total flux conserved
-        canvas_planet_3D = flux_planet[:, None, None] * kernel_planet[None, :, :]
+        # render the exozodiacal disk
+        canvas_exozodiacal_3D = generate_exozodi_scene(
+            flux_exozodi, n_pix, idx_y_exozodi, idx_x_exozodi, pix_size_arcsec, dist_pc, z_exozodiacal
+        )
 
-        source_collapsed_scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
+        # render the zodiacal background
+        canvas_zodiacal_3D = generate_zodiacal_scene(
+            flux_zodiacal, n_pix, pix_size_arcsec
+        )
+        ipdb.set_trace()
+
+        for source_name in sources_to_include:
+            ## ## CONTINUE HERE
+        source_collapsed_scene_no_screen = canvas_star_3D + canvas_planet_3D + canvas_exozodiacal_3D  # Quantity + Quantity
 
         dict_source_layered_scene = {'star': canvas_star_3D, 'exoplanet_model_10pc': canvas_planet_3D}
 

@@ -369,7 +369,9 @@ def run_single_calculation(
         
         # put all the objects into the scene
         logger.info("Generating on-sky scene...")
-        astro_scene_perfect_no_screen = astrophysical_sources.generate_onsky_scene(incident_dict=sources_astroph, plot=plot)
+        astro_scene_perfect_no_screen = astrophysical_sources.generate_onsky_scene(
+                                                                    incident_dict=sources_astroph, 
+                                                                    plot=plot)
 
         # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")

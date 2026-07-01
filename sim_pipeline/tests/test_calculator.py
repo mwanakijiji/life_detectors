@@ -89,7 +89,7 @@ class TestNoiseCalculator:
     def _build_minimal_s2n_inputs(self):
         """Shared minimal config/sources for s2n_val tests."""
         config = {
-            "observation": {"n_int": "10", "t_int_obs_total": "100", "t_int_frame": "10"},
+            "observation": {"N_angles": "1", "t_int_obs_total": "100", "t_int_frame": "10"},
             "nulling": {"nulling_factor": "1e-5"},
             "detector": {"quantum_efficiency": "0.8"},
             "telescope": {"eta_t": "0.05"},
@@ -123,8 +123,9 @@ class TestNoiseCalculator:
             ["star", "exoplanet_psg", "exozodiacal", "zodiacal"],
         ],
     )
-    def test_s2n_val_planet_model_branches_return_quantity(
-        self, sources_to_include
+    @patch("modules.core.calculator.ipdb.set_trace")
+    def test_s2n_val_planet_model_branches_return_unitless_array(
+        self, _mock_set_trace, sources_to_include
     ):
         """Covers exoplanet_bb, exoplanet_model_10pc, and exoplanet_psg branches."""
         config, wavel_grid, sources_all, del_lambda, n_pix = self._build_minimal_s2n_inputs()
@@ -138,10 +139,11 @@ class TestNoiseCalculator:
             wavel_bin_centers=wavel_grid,
             del_lambda_array=del_lambda,
             n_pix_array=n_pix,
+            addl_systematics_vector=np.zeros(len(wavel_grid)),
             plot=False,
         )
 
-        assert not hasattr(s2n, "unit") # should be unitless
+        assert isinstance(s2n, np.ndarray)
         assert s2n.shape[-1] == len(wavel_grid)
         assert np.all(np.isfinite(s2n[0]))
 

@@ -25,6 +25,8 @@ from astropy.visualization import ZScaleInterval, ImageNormalize
 import yaml
 from pathlib import Path
 import logging
+from modules.utils.helpers import enable_plot_units
+
 
 
 from ..data.units import UnitConverter
@@ -819,11 +821,11 @@ class InstrumentDepTerms:
                 nulling_factor = float(self.config['nulling']['nulling_factor'])
                 logging.info(f'Star is manually being nulled to {nulling_factor}')
                 # mask the central NxN pixels
-                N_mask = 20
+                N_mask = int(2) + int(2) * int(self.config['onsky_scene']['half_pix']) # extra 2 to make sure we cover the resolved star
                 transmission_instrument_response[0, 
                                                 transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
                                                 transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
-                                                ] = nulling_factor ## ## TODO: IS THIS THE RIGHT LOGIC HERE? A 1E-5 NULL HERE WOULD MEAN ZERO TRANSMISSION OF THE STAR IN THE CHOPPED SIGNAL; IS THAT RIGHT?
+                                                ] = nulling_factor
 
             return transmission_instrument_response
 
@@ -1142,6 +1144,7 @@ class InstrumentDepTerms:
         # integrate over 2D sky to get total flux from each source
         # update the sources
         source_integrated_dict_post_screen = {}
+        ipdb.set_trace()
         for source_name, source_val in source_dict_post_screen.items():
             # source_val has 4 different screens, so integrate them separately
             self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
@@ -1155,7 +1158,7 @@ class InstrumentDepTerms:
 
             if plot:
 
-                # flux vs wavelength depending on screen
+                # flux vs wavelength post-screen, separated by screen
                 plt.clf()
                 plt.figure(figsize=(12, 4))
                 for transmission_screen_name in transmission_screen_order:
@@ -1225,6 +1228,29 @@ class InstrumentDepTerms:
                     plt.close(fig)
                     logging.info(f"Saved plot of source, transmission, source * transmission triptych at angle {int(fyi_angle)} to {file_name_plot}")
 
+        if plot: # pragma: no cover
+
+            # pre-screen, pre-aperture incident fluxes
+            plt.clf()
+            plt.figure(figsize=(8, 8))
+
+            for source_name in self.sources_to_include:
+                plt.plot(
+                    self.sources_astroph[source_name]['wavel'], 
+                    self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'], 
+                    label=source_name)
+            plt.yscale('log')
+            plt.xlim([4, 18]) # for comparison with Dannert
+            plt.ylim([1e-3, 1e10]) # for comparison with Dannert
+            plt.xlabel(f"Wavelength ({self.sources_astroph[source_name]['wavel'].unit})")
+            plt.ylabel(f"Flux (" + str(self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'].unit) + ")")
+            plt.legend()
+            plt.title(format_plot_title("Photoelectrons, pre-aperture (no nulling yet)", self.config), loc='left')
+            plt.tight_layout()
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.png"
+            plt.savefig(file_name_plot)
+            logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
+
         return
 
 
@@ -1235,60 +1261,78 @@ class InstrumentDepTerms:
         transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark']
         collecting_area = compute_collecting_area_m2(self.config) * u.m**2
 
+        # telescope throughput
+        eta_t = float(self.config['telescope']['eta_t'])
+
+        # apply throughput and collecting area to the flux
         for source_name, source_val in self.sources_astroph.items():
 
             post_aperture_flux_by_output = {
-                output_name: np.multiply(collecting_area, source_val['flux_cube_post_screen_ph_sec_um'][output_name])
+                output_name: eta_t * np.multiply(collecting_area, source_val['flux_cube_post_screen_ph_sec_um'][output_name])
                 for output_name in transmission_screen_order
             }
 
+            # note telescope throughput is incorporated at the stage of passing through the aperture
+            ## ## TODO; make a separate module for throughput, and add other terms (telescope background, etc.)
             self.prop_dict[source_name] = {
                 'wavel': source_val['wavel'],
                 'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
                 'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output, # includes chop signal if enabled
             }
 
-        '''
+
         # overplot all the sources
         if plot: # pragma: no cover
-            # pre-aperture fluxes
-            plt.clf()
-            plt.figure(figsize=(8, 8))
-            for source_name, source_val in self.prop_dict.items():
-                if source_name in self.sources_to_include:
-                    plt.plot(source_val['wavel'], source_val['flux_pre_aperture_ph_sec_m2_um'], label=source_name)
-            plt.yscale('log')
-            plt.xlim([4, 18]) # for comparison with Dannert
-            plt.ylim([1e-3, 1e10]) # for comparison with Dannert
-            plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
-            for source_name, source_val in self.prop_dict.items():
-                plt.ylabel(f"Flux (" + str(source_val['flux_pre_aperture_ph_sec_m2_um'].unit) + ")")
-            plt.legend()
-            plt.title(format_plot_title("Photoelectrons, pre-aperture (no nulling yet)", self.config), loc='left')
-            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_pre_aperture.png"
-            plt.tight_layout()
-            plt.savefig(file_name_plot)
-            logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
 
-            # post-aperture fluxes
-            plt.clf()
-            plt.figure(figsize=(8, 8))
-            for source_name, source_val in self.prop_dict.items():
-                if source_name in self.sources_to_include:
-                    plt.plot(source_val['wavel'], source_val['flux_post_aperture_ph_sec_um'], label=source_name)
-            plt.yscale('log')
-            plt.xlim([4, 18]) # for comparison with Dannert
-            plt.ylim([1e-3, 1e10]) # for comparison with Dannert
-            plt.xlabel(f"Wavelength ({source_val['wavel'].unit})")
-            plt.ylabel(f"Flux (" + str(source_val['flux_post_aperture_ph_sec_um'].unit) + ")")
-            plt.legend()
-            plt.title(format_plot_title("Photoelectrons, post-aperture", self.config), loc='left')
-            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"photoelectrons_all_sources_post_aperture.png"
-            plt.tight_layout()
-            plt.savefig(file_name_plot)
-            logging.info("Saved plot of incident flux post-aperture to " + file_name_plot)
-        '''
+            def _plot_integrated_flux_by_output(cube_key, title, file_stem):
+                save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+                for output_name in transmission_screen_order:
+                    fig, ax = plt.subplots(figsize=(10, 12))
+                    flux_unit = None
+                    wavel_unit = None
+                    for source_name, source_val in self.prop_dict.items():
+                        if source_name not in self.sources_to_include:
+                            continue
+                        flux_integrated = np.sum(
+                            source_val[cube_key][output_name], axis=(1, 2)
+                        )
+                        ax.plot(
+                            source_val['wavel'],
+                            flux_integrated,
+                            label=source_name,
+                        )
+                        if flux_unit is None:
+                            flux_unit = flux_integrated.unit
+                            wavel_unit = source_val['wavel'].unit
+                    ax.set_yscale('log')
+                    ax.set_xlim([4, 18])  # for comparison with Dannert
+                    ax.set_ylim([1e-3, 1e10])  # for comparison with Dannert
+                    ax.set_xlabel(f'Wavelength ({wavel_unit})')
+                    ax.set_ylabel(f'Flux ({flux_unit})')
+                    ax.legend(fontsize=8, loc='best')
+                    ax.set_title(
+                        format_plot_title(f'{title} — {output_name}', self.config),
+                        loc='left',
+                        fontsize=8,
+                    )
+                    file_name = f'{file_stem}_{output_name}.png'
+                    fig.tight_layout()
+                    fig.savefig(save_dir + file_name)
+                    plt.close(fig)
+                    logging.info(f'Saved plot to {save_dir}{file_name}')
 
+            _plot_integrated_flux_by_output(
+                'flux_cube_post_screen_pre_aperture_ph_sec_m2_um',
+                'Post-screen, pre-aperture flux (all sources)',
+                'flux_all_sources_post_screen_pre_aperture',
+            )
+
+            _plot_integrated_flux_by_output(
+                'flux_cube_post_screen_post_aperture_ph_sec_um',
+                'Post-screen, post-aperture flux (all sources)',
+                'flux_all_sources_post_screen_post_aperture',
+            )
+            ipdb.set_trace()
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 
         return
