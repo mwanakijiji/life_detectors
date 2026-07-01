@@ -1144,7 +1144,6 @@ class InstrumentDepTerms:
         # integrate over 2D sky to get total flux from each source
         # update the sources
         source_integrated_dict_post_screen = {}
-        ipdb.set_trace()
         for source_name, source_val in source_dict_post_screen.items():
             # source_val has 4 different screens, so integrate them separately
             self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
@@ -1332,7 +1331,6 @@ class InstrumentDepTerms:
                 'Post-screen, post-aperture flux (all sources)',
                 'flux_all_sources_post_screen_post_aperture',
             )
-            ipdb.set_trace()
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 
         return

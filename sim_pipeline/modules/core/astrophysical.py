@@ -14,10 +14,12 @@ import logging
 import ipdb
 import configparser
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 from astropy import units as u
 import astropy.constants as const
 import pandas as pd
 from astropy.io import fits
+from astropy.visualization import ZScaleInterval
 
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
@@ -89,6 +91,9 @@ def _exozodi_kernel(n_pix: int,
     # surface density profile
     Sigma_m_2d = (z_exozodiacal * Sigma_m_0 * np.divide(distances_arcsec, r0_arsec) **(-alpha)).value
 
+    # pixel at distance zero is a nan; just make it the max value
+    Sigma_m_2d[~np.isfinite(Sigma_m_2d)] = np.max(Sigma_m_2d[np.isfinite(Sigma_m_2d)])
+
     kernel = np.copy(Sigma_m_2d)
     kernel /= kernel.sum()
 
@@ -118,6 +123,7 @@ def generate_star_scene(
     Returns a Quantity with the same units as flux_star, typically ph/(um m^2 s).
     """
     kernel_star = _box_kernel(n_pix, idx_y_star, idx_x_star, half_pix)
+    ipdb.set_trace()
 
     return flux_star[:, None, None] * kernel_star[None, :, :]
 
@@ -450,19 +456,21 @@ class AstrophysicalSources:
             self.config['onsky_scene']['pos_planet_arcsec']
         )
 
-        # check consistency in units
-        flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
-        flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
-        flux_exozodi = incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
-        flux_zodiacal = incident_dict['zodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
-
-        if flux_star.unit != flux_planet.unit:
-            raise ValueError(
-                f"Star/planet flux units differ: {flux_star.unit} vs {flux_planet.unit}"
-            )
-        else:
-            FLUX_UNIT = flux_star.unit
-            logger.info(f"Constructing scene. Star/planet flux units are consistent: {flux_star.unit}")
+        # make flux vectors and check consistency in units
+        flux_dict = {}
+        for source_name in incident_dict.keys():
+            flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um'] # to check units
+            flux_dict[source_name] = incident_dict[source_name]['pre_screen_astro_flux_ph_sec_m2_um']
+            if flux_dict[source_name].unit != flux_star.unit:
+                raise ValueError(
+                    f"{source_name} flux units differ: {flux_dict[source_name].unit} vs {flux_star.unit}"
+                )
+            else:
+                logger.info(f"Constructing scene. {source_name} flux units are consistent: {flux_dict[source_name].unit}")
+        #flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
+        #flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
+        #flux_exozodi = incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
+        #flux_zodiacal = incident_dict['zodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
 
         idx_y_star = (np.abs(sky_yy_arcsec[:, 0] - y_star_arcsec)).argmin()
         idx_x_star = (np.abs(sky_xx_arcsec[0, :] - x_star_arcsec)).argmin()
@@ -473,35 +481,88 @@ class AstrophysicalSources:
 
         # make star and planet small boxes (so I can see them)
         half_pix = int(self.config['onsky_scene']['half_pix'])
-        canvas_star_3D = generate_star_scene(
-            flux_star, n_pix, idx_y_star, idx_x_star, half_pix
-        )
-        canvas_planet_3D = generate_exoplanet_scene(
-            flux_planet, n_pix, idx_y_planet, idx_x_planet, half_pix
-        )
-
         dist_pc = float(self.config['target']['distance']) * u.pc
         pix_size_arcsec = (float(self.config['onsky_scene']['pix_size_mas']) / 1000.0) * u.arcsec
         z_exozodiacal = float(self.config['target']['z_exozodiacal'])
+        canvas_3D_dict = {}
 
-        # render the exozodiacal disk
-        canvas_exozodiacal_3D = generate_exozodi_scene(
-            flux_exozodi, n_pix, idx_y_exozodi, idx_x_exozodi, pix_size_arcsec, dist_pc, z_exozodiacal
-        )
+        for source_name in incident_dict.keys():
+            if source_name == 'star':
+                canvas_3D_dict[source_name] = generate_star_scene(
+                    flux_dict[source_name], n_pix, idx_y_star, idx_x_star, half_pix
+                )
+            elif source_name == 'exoplanet_model_10pc':
+                canvas_3D_dict[source_name] = generate_exoplanet_scene(
+                    flux_dict[source_name], n_pix, idx_y_planet, idx_x_planet, half_pix
+                )
+            elif source_name == 'exozodiacal':
+                canvas_3D_dict[source_name] = generate_exozodi_scene(
+                    flux_dict[source_name], n_pix, idx_y_exozodi, idx_x_exozodi, pix_size_arcsec, dist_pc, z_exozodiacal
+                )
+            elif source_name == 'zodiacal':
+                canvas_3D_dict[source_name] = generate_zodiacal_scene(
+                    flux_dict[source_name], n_pix, pix_size_arcsec
+                )
 
-        # render the zodiacal background
-        canvas_zodiacal_3D = generate_zodiacal_scene(
-            flux_zodiacal, n_pix, pix_size_arcsec
-        )
+        # collapse the sources into a single cube (wavel, y, x)
+        source_collapsed_scene_no_screen = None
+        for source_array in canvas_3D_dict.values():
+            if source_collapsed_scene_no_screen is None:
+                source_collapsed_scene_no_screen = source_array.copy()
+            else:
+                source_collapsed_scene_no_screen += source_array
         ipdb.set_trace()
 
-        for source_name in sources_to_include:
-            ## ## CONTINUE HERE
-        source_collapsed_scene_no_screen = canvas_star_3D + canvas_planet_3D + canvas_exozodiacal_3D  # Quantity + Quantity
+        dict_source_layered_scene = canvas_3D_dict # vestigial
 
-        dict_source_layered_scene = {'star': canvas_star_3D, 'exoplanet_model_10pc': canvas_planet_3D}
+        # Prepare list of all per-source 3D cubes
+        scene_cubes = list(canvas_3D_dict.values())
+        scene_names = list(canvas_3D_dict.keys())
+        # The total/collapsed scene as the last plot
+        n_rows = 1
+        n_cols = len(scene_cubes) + 1
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5), squeeze=False)
+        # Compute the 2D collapsed maps and store for the summary
+        for i, (source_cube, name) in enumerate(zip(scene_cubes, scene_names)):
+            ax = axes[0, i]
+            summed = np.sum(source_cube, axis=0)
+            ipdb.set_trace()
+            im = ax.imshow(
+                summed.value,
+                origin='lower',
+                norm=LogNorm(),
+                aspect='equal',
+                interpolation='none'
+            )
+            ax.set_title(f"{name}")
+            try:
+                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            except:
+                logger.warning(f"No colorbar for {name}")
+        # Last subplot: sum across total/collapsed scene (z-scaled)
+        ax = axes[0, -1]
+        total_summed = np.sum(source_collapsed_scene_no_screen, axis=0)
+        total_data = np.asarray(total_summed.value, dtype=float)
+        vmin, vmax = ZScaleInterval().get_limits(total_data)
+        im = ax.imshow(
+            total_data,
+            origin='lower',
+            vmin=vmin,
+            vmax=vmax,
+            aspect='equal',
+            interpolation='none',
+        )   
+        ax.set_title("Total (z-scale)")
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        plt.tight_layout()
+        plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
+        plt.subplots_adjust(top=0.85)
+        #plt.show()
+        file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"/scene_no_screen_fyi.png"
+        plt.savefig(file_name_plot, bbox_inches='tight')
+        logger.info(f"FYI scene plot written to {file_name_plot}")
+        plt.close(fig)
 
-        #scene_no_screen = canvas_star_3D + canvas_planet_3D   # Quantity + Quantity
 
         def _cube_values(q):
             '''
