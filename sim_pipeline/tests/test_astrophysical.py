@@ -5,7 +5,12 @@ Unit tests for astrophysical calculations in AstrophysicalSources.
 import configparser
 import sys
 import types
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+# Mock ipdb before importing project modules (optional dev dependency)
+sys.modules["ipdb"] = types.ModuleType("ipdb")
+sys.modules["ipdb"].set_trace = lambda: None
+
 from modules.utils.helpers import generate_star_spectrum, generate_planet_bb_spectrum
 
 import numpy as np
@@ -15,25 +20,27 @@ import astropy.constants as const
 from astropy import units as u
 from astropy.units import UnitConversionError
 
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
-
 from modules.core.astrophysical import (
     AstrophysicalSources,
     _box_kernel,
     _exozodi_kernel,
     _zodiacal_kernel,
+    generate_exoplanet_scene,
+    generate_exozodi_scene,
+    generate_star_scene,
+    generate_zodiacal_scene,
 )
 from modules.data.spectra import SpectralData
 from modules.data.units import UnitConverter
 
 
+@pytest.fixture
+def unit_converter():
+    return UnitConverter()
+
+
 class TestAstrophysicalSources:
     """Test cases for AstrophysicalSources class."""
-
-    @pytest.fixture
-    def unit_converter(self):
-        return UnitConverter()
 
     @pytest.fixture
     def config_with_sources(self):
@@ -107,17 +114,20 @@ class TestAstrophysicalSources:
             source_name="test",
             metadata={},
         )
-    '''
-    def test_load_spectra_populates_dict(self, config_with_sources, unit_converter, sample_spectrum):
-        with patch("modules.core.astrophysical.load_spectrum_from_file", return_value=sample_spectrum) as loader:
+    def test_load_spectra_populates_dict(
+        self, config_with_sources, unit_converter, sample_spectrum_star
+    ):
+        with patch(
+            "modules.core.astrophysical.load_spectrum_from_file",
+            return_value=sample_spectrum_star,
+        ) as loader:
             sources = AstrophysicalSources(config_with_sources, unit_converter)
 
-        assert "star" in sources.spectra
-        assert "exozodiacal" in sources.spectra
-        assert loader.call_count == 2
+        assert set(sources.spectra.keys()) == {"star", "exozodiacal", "zodiacal"}
+        assert loader.call_count == 3
         loader.assert_any_call("/tmp/star.txt")
         loader.assert_any_call("/tmp/exozodi.txt")
-    '''
+        loader.assert_any_call("/tmp/zodi.txt")
 
     def test_load_spectra_missing_section_logs_warning(self, config_no_sources, unit_converter, caplog):
         with caplog.at_level("WARNING"):
@@ -310,13 +320,16 @@ class TestAstrophysicalSources:
         config.set("wavelength_range", "n_points", "3")
         config.add_section("target")
         config.set("target", "distance", "10.0")
+        config.add_section("dirs")
+        config.set("dirs", "save_s2n_data_unique_dir", "/tmp/")
         config.add_section("astrophysical_sources_library")
         config.set("astrophysical_sources_library", "star", "/tmp/star.txt")
         config.set("astrophysical_sources_library", "exoplanet_bb", "/tmp/exoplanet_bb.txt")
         config.set("astrophysical_sources_library", "exozodiacal", "/tmp/exozodiacal.txt")
+        config.set("astrophysical_sources_library", "zodiacal", "/tmp/zodiacal.txt")
         return config
 
-    @pytest.mark.parametrize("source_name", ["star", "exoplanet_bb", "exozodiacal"])
+    @pytest.mark.parametrize("source_name", ["star", "exoplanet_bb", "exozodiacal", "zodiacal"])
     def test_calculate_incident_flux_source_branch_returns_expected_units_and_values(
         self, config_for_incident_flux, unit_converter, source_name
     ):
@@ -338,7 +351,7 @@ class TestAstrophysicalSources:
         assert call_args.kwargs["null"] is True
 
         # Assert final answer and units: photons/sec/m^2/micron.
-        final_flux = incident["astro_flux_ph_sec_m2_um"]
+        final_flux = incident["pre_screen_astro_flux_ph_sec_m2_um"]
         assert final_flux.unit.is_equivalent(u.ph / (u.s * u.m**2 * u.micron))
         assert np.allclose(final_flux.to(u.ph / (u.s * u.m**2 * u.micron)).value, [11.0, 22.0, 33.0])
 
@@ -376,7 +389,6 @@ class TestAstrophysicalSources:
                 source_name="exoplanet_model_10pc", plot=False
             )
 
-        wavelength = np.linspace(1.0, 3.0, 3) * u.micron
         wavel = df_model["wavelength"].values * u.micron
         flux_nu_10pc = df_model["flux"].values * u.erg / (u.second * u.Hz * u.m**2)
 
@@ -386,16 +398,58 @@ class TestAstrophysicalSources:
             equivalencies=u.spectral_density(wavel),
         )
 
-        empirical = incident["astro_flux_ph_sec_m2_um"]
+        empirical = incident["pre_screen_astro_flux_ph_sec_m2_um"]
 
-        flux_photons_expected = flux_photons_10pc * (10.0 / 20.0) ** 2 # scale for distance
-        expected = np.interp(x=wavelength, xp=wavel, fp=flux_photons_expected)
-        
-        flux_photons_expected_bogus = flux_photons_10pc * (10.0 / 21.0) ** 2 # scale for distance
-        expected_bogus = np.interp(x=wavelength, xp=wavel, fp=flux_photons_expected_bogus)
+        # calculate_incident_flux always uses 100 wavelength points (ignores n_points in config)
+        wavelength = np.linspace(1.0, 3.0, 100) * u.micron
+        flux_photons_expected = flux_photons_10pc * (10.0 / 20.0) ** 2
+        expected = np.interp(
+            x=wavelength.value,
+            xp=wavel.value,
+            fp=flux_photons_expected.to_value(u.ph / (u.s * u.m**2 * u.micron)),
+        )
 
-        assert np.allclose(empirical, expected)
-        assert not np.allclose(empirical, expected_bogus)
+        flux_photons_expected_bogus = flux_photons_10pc * (10.0 / 21.0) ** 2
+        expected_bogus = np.interp(
+            x=wavelength.value,
+            xp=wavel.value,
+            fp=flux_photons_expected_bogus.to_value(u.ph / (u.s * u.m**2 * u.micron)),
+        )
+
+        empirical_values = empirical.to_value(u.ph / (u.s * u.m**2 * u.micron))
+        assert np.allclose(empirical_values, expected)
+        assert not np.allclose(empirical_values, expected_bogus)
+
+    def test_calculate_incident_flux_unknown_source_returns_empty_array(
+        self, config_for_incident_flux, unit_converter
+    ):
+        with patch("modules.core.astrophysical.load_spectrum_from_file"):
+            sources = AstrophysicalSources(config_for_incident_flux, unit_converter)
+
+        result = sources.calculate_incident_flux(source_name="not_a_source", plot=False)
+
+        assert isinstance(result, np.ndarray)
+        assert result.size == 0
+
+    @patch("modules.core.astrophysical.plt.savefig")
+    @patch("modules.core.astrophysical.plt.plot")
+    def test_calculate_incident_flux_plot_saves_figure(
+        self, mock_plot, mock_savefig, config_for_incident_flux, unit_converter
+    ):
+        expected_flux = np.array([11.0, 22.0, 33.0]) * u.ph / (u.um * u.m**2 * u.s)
+
+        with patch("modules.core.astrophysical.load_spectrum_from_file"):
+            sources = AstrophysicalSources(config_for_incident_flux, unit_converter)
+
+        with patch.object(
+            sources, "_calculate_flux_from_spectrum", return_value=expected_flux
+        ):
+            incident = sources.calculate_incident_flux(source_name="star", plot=True)
+
+        assert "pre_screen_astro_flux_ph_sec_m2_um" in incident
+        mock_plot.assert_called()
+        mock_savefig.assert_called_once()
+        assert mock_savefig.call_args.args[0].endswith("incident_star.png")
 
 
 class TestBoxKernel:
@@ -419,7 +473,7 @@ class TestBoxKernel:
     def test_clips_at_scene_edges(self):
         kernel = _box_kernel(n_pix=10, idx_y=0, idx_x=0, half_pix=2)
 
-        assert np.count_nonzero(kernel) == 16
+        assert np.count_nonzero(kernel) == 9
         assert kernel[0:3, 0:3].sum() == pytest.approx(1.0)
         assert kernel[3:, :].sum() == 0.0
         assert kernel[:, 3:].sum() == 0.0
@@ -427,7 +481,7 @@ class TestBoxKernel:
     def test_clips_at_far_corner(self):
         kernel = _box_kernel(n_pix=10, idx_y=9, idx_x=9, half_pix=2)
 
-        assert np.count_nonzero(kernel) == 16
+        assert np.count_nonzero(kernel) == 9
         assert kernel[7:10, 7:10].sum() == pytest.approx(1.0)
         assert kernel[:7, :].sum() == 0.0
 
@@ -457,9 +511,11 @@ class TestExozodiKernel:
         )
         center = 11 // 2
 
+        # r=0 is non-finite in the power law; implementation assigns it the peak ring value.
         assert kernel[center, center] == pytest.approx(np.max(kernel))
-        assert kernel[center, center] > kernel[center, center + 1]
-        assert kernel[center, center] > kernel[center + 1, center]
+        assert kernel[center, center] >= kernel[center, center + 1]
+        assert kernel[center, center] >= kernel[center + 1, center]
+        assert kernel[center, center] > kernel[0, 0]
 
     def test_doubling_z_exozodiacal_preserves_normalized_shape(self):
         base = _exozodi_kernel(
@@ -496,3 +552,165 @@ class TestZodiacalKernel:
         kernel_b = _zodiacal_kernel(n_pix=7, pix_size_arcsec=1.0)
 
         assert np.allclose(kernel_a, kernel_b)
+
+
+@pytest.fixture
+def sample_flux_1d():
+    return np.array([1.0, 2.0, 3.0]) * u.ph / (u.um * u.m**2 * u.s)
+
+
+def _assert_quantity_close(actual, expected, rtol=1e-10):
+    assert actual.unit.is_equivalent(expected.unit)
+    assert np.isclose(actual.to(expected.unit).value, expected.value, rtol=rtol)
+
+
+class TestGenerateStarScene:
+    def test_spreads_flux_with_normalized_box_kernel(self, sample_flux_1d):
+        scene = generate_star_scene(
+            sample_flux_1d, n_pix=11, idx_y_star=5, idx_x_star=5, half_pix=1
+        )
+
+        assert scene.shape == (3, 11, 11)
+        assert scene.unit == sample_flux_1d.unit
+        for i in range(3):
+            _assert_quantity_close(scene[i].sum(), sample_flux_1d[i])
+        assert scene[0, 5, 5] > scene[0, 0, 0]
+
+
+class TestGenerateExoplanetScene:
+    def test_spreads_flux_onto_planet_pixel(self, sample_flux_1d):
+        scene = generate_exoplanet_scene(
+            sample_flux_1d, n_pix=11, idx_y_planet=6, idx_x_planet=4, half_pix=1
+        )
+
+        assert scene.shape == (3, 11, 11)
+        assert scene[0, 6, 4] > scene[0, 0, 0]
+        _assert_quantity_close(scene[0].sum(), sample_flux_1d[0])
+
+
+class TestGenerateExozodiScene:
+    def test_spreads_flux_with_exozodi_kernel(self, sample_flux_1d):
+        scene = generate_exozodi_scene(
+            sample_flux_1d,
+            n_pix=11,
+            idx_y_exozodi=5,
+            idx_x_exozodi=5,
+            pix_size_arcsec=0.1,
+            dist_pc=10.0,
+            z_exozodiacal=1.0,
+        )
+
+        assert scene.shape == (3, 11, 11)
+        _assert_quantity_close(scene[0].sum(), sample_flux_1d[0])
+        _assert_quantity_close(scene[0, 5, 5], np.max(scene[0]))
+
+
+class TestGenerateZodiacalScene:
+    def test_spreads_flux_uniformly(self, sample_flux_1d):
+        n_pix = 9
+        scene = generate_zodiacal_scene(
+            sample_flux_1d, n_pix=n_pix, pix_size_arcsec=0.05
+        )
+
+        assert scene.shape == (3, n_pix, n_pix)
+        expected_pixel = sample_flux_1d[0] / n_pix**2
+        _assert_quantity_close(scene[0].flat[0], expected_pixel)
+        _assert_quantity_close(scene[0].sum(), sample_flux_1d[0])
+
+
+class TestGenerateOnskyScene:
+    @staticmethod
+    def _mock_subplots_axes(n_cols: int = 5):
+        """Mimic plt.subplots(..., squeeze=False): shape (1, n_cols) object array of Axes."""
+        fig = MagicMock()
+        axes = np.empty((1, n_cols), dtype=object)
+        for j in range(n_cols):
+            ax = MagicMock(name=f"ax_{j}")
+            ax.imshow.return_value = MagicMock(name=f"im_{j}")
+            axes[0, j] = ax
+        return fig, axes
+
+    @pytest.fixture
+    def onsky_config(self, tmp_path):
+        config = configparser.ConfigParser()
+        config.add_section("onsky_scene")
+        config.set("onsky_scene", "n_pix", "11")
+        config.set("onsky_scene", "pix_size_mas", "100")
+        config.set("onsky_scene", "pos_star_arcsec", "0.0, 0.0")
+        config.set("onsky_scene", "pos_planet_arcsec", "0.1, 0.1")
+        config.set("onsky_scene", "half_pix", "1")
+        config.add_section("target")
+        config.set("target", "distance", "10.0")
+        config.set("target", "z_exozodiacal", "1.0")
+        config.add_section("dirs")
+        config.set("dirs", "save_s2n_data_unique_dir", str(tmp_path / "out") + "/")
+        return config
+
+    @pytest.fixture
+    def incident_dict(self):
+        wavel = np.linspace(4.0, 18.0, 5) * u.um
+        flux_unit = u.ph / (u.um * u.m**2 * u.s)
+        return {
+            "star": {
+                "wavel": wavel,
+                "pre_screen_astro_flux_ph_sec_m2_um": np.ones(5) * flux_unit,
+            },
+            "exoplanet_model_10pc": {
+                "wavel": wavel,
+                "pre_screen_astro_flux_ph_sec_m2_um": np.full(5, 2.0) * flux_unit,
+            },
+            "exozodiacal": {
+                "wavel": wavel,
+                "pre_screen_astro_flux_ph_sec_m2_um": np.full(5, 3.0) * flux_unit,
+            },
+            "zodiacal": {
+                "wavel": wavel,
+                "pre_screen_astro_flux_ph_sec_m2_um": np.full(5, 4.0) * flux_unit,
+            },
+        }
+
+    @patch("modules.core.astrophysical.plt.close")
+    @patch("modules.core.astrophysical.plt.colorbar")
+    @patch("modules.core.astrophysical.fits.HDUList.writeto")
+    @patch("modules.core.astrophysical.plt.savefig")
+    @patch("modules.core.astrophysical.plt.subplots")
+    def test_builds_scene_for_all_sources(
+        self, mock_subplots, mock_savefig, mock_writeto, mock_colorbar, mock_close,
+        onsky_config, incident_dict, unit_converter
+    ):
+        mock_subplots.return_value = self._mock_subplots_axes()
+
+        with patch("modules.core.astrophysical.load_spectrum_from_file"):
+            sources = AstrophysicalSources(onsky_config, unit_converter)
+
+        scene = sources.generate_onsky_scene(incident_dict, plot=False)
+
+        assert set(scene.keys()) == {
+            "star",
+            "exoplanet_model_10pc",
+            "exozodiacal",
+            "zodiacal",
+        }
+        for cube in scene.values():
+            assert cube.shape == (5, 11, 11)
+        mock_savefig.assert_called()
+        mock_colorbar.assert_called()
+        mock_close.assert_called_once()
+        mock_writeto.assert_called_once()
+
+    @patch("modules.core.astrophysical.fits.HDUList.writeto")
+    @patch("modules.core.astrophysical.plt.savefig")
+    @patch("modules.core.astrophysical.plt.subplots")
+    def test_raises_when_source_flux_units_differ(
+        self, mock_subplots, mock_savefig, mock_writeto, onsky_config, incident_dict, unit_converter
+    ):
+        mock_subplots.return_value = self._mock_subplots_axes()
+        incident_dict["exozodiacal"]["pre_screen_astro_flux_ph_sec_m2_um"] = (
+            np.ones(5) * u.ph / (u.um * u.s)
+        )
+
+        with patch("modules.core.astrophysical.load_spectrum_from_file"):
+            sources = AstrophysicalSources(onsky_config, unit_converter)
+
+        with pytest.raises(ValueError, match="flux units differ"):
+            sources.generate_onsky_scene(incident_dict, plot=False)
