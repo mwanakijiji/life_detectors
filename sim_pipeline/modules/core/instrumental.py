@@ -609,7 +609,7 @@ class InstrumentDepTerms:
                 # 'dark current' is an additive pedestal value, not an rms term
                 # 'dark current rms' is what we calculate here by taking the square root, so that we can propagate the noise as if dark-subtraction were already being carried out
                 # dark current 'pedestal' to make clear that this is not an rms term, but a constant offset
-                # total dark current for wavelength bin: multiply rate of single pixel by sqrt(N_pix) for N_pix in the wavelength bin
+                # total dark current for wavelength bin: multiply rate of single pixel by sqrt(dc_rate × N_pix × t_frame) for N_pix in the wavelength bin
                 final_table['instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot'] = np.sqrt((dc_rate * u.electron/u.pix) * table['n_pix_per_wavel_bin'] * t_frame).value*u.electron / gain 
                 # total read noise within the wavelength bin for the entire integration
                 # the .value*u.pix is to avoid resulting in sqrt(pix)
@@ -815,6 +815,7 @@ class InstrumentDepTerms:
                     max_field_amplitude += field_amplitude
                 max_response = max_field_amplitude**2
                 transmission_instrument_response /= max_response
+                logging.info(f'Normalized transmission instrument response to unity, based on way bookkeeping is done downstream')
 
             # a small override mask is put over the star for now to avoid geometrical leakage ## ## TODO: remove this once the geometry is properly implemented
             if override_stellar_mask:
@@ -1239,6 +1240,7 @@ class InstrumentDepTerms:
                     self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'], 
                     label=source_name)
             plt.yscale('log')
+            plt.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)  # Add grid pattern to plot
             plt.xlim([4, 18]) # for comparison with Dannert
             plt.ylim([1e-3, 1e10]) # for comparison with Dannert
             plt.xlabel(f"Wavelength ({self.sources_astroph[source_name]['wavel'].unit})")

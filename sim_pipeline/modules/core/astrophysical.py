@@ -123,7 +123,6 @@ def generate_star_scene(
     Returns a Quantity with the same units as flux_star, typically ph/(um m^2 s).
     """
     kernel_star = _box_kernel(n_pix, idx_y_star, idx_x_star, half_pix)
-    ipdb.set_trace()
 
     return flux_star[:, None, None] * kernel_star[None, :, :]
 
@@ -511,7 +510,6 @@ class AstrophysicalSources:
                 source_collapsed_scene_no_screen = source_array.copy()
             else:
                 source_collapsed_scene_no_screen += source_array
-        ipdb.set_trace()
 
         dict_source_layered_scene = canvas_3D_dict # vestigial
 
@@ -526,7 +524,6 @@ class AstrophysicalSources:
         for i, (source_cube, name) in enumerate(zip(scene_cubes, scene_names)):
             ax = axes[0, i]
             summed = np.sum(source_cube, axis=0)
-            ipdb.set_trace()
             im = ax.imshow(
                 summed.value,
                 origin='lower',
@@ -557,7 +554,6 @@ class AstrophysicalSources:
         plt.tight_layout()
         plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
         plt.subplots_adjust(top=0.85)
-        #plt.show()
         file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"/scene_no_screen_fyi.png"
         plt.savefig(file_name_plot, bbox_inches='tight')
         logger.info(f"FYI scene plot written to {file_name_plot}")

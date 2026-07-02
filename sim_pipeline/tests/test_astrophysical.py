@@ -18,7 +18,12 @@ from astropy.units import UnitConversionError
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.core.astrophysical import AstrophysicalSources
+from modules.core.astrophysical import (
+    AstrophysicalSources,
+    _box_kernel,
+    _exozodi_kernel,
+    _zodiacal_kernel,
+)
 from modules.data.spectra import SpectralData
 from modules.data.units import UnitConverter
 
@@ -391,3 +396,103 @@ class TestAstrophysicalSources:
 
         assert np.allclose(empirical, expected)
         assert not np.allclose(empirical, expected_bogus)
+
+
+class TestBoxKernel:
+    def test_centered_kernel_shape_and_normalization(self):
+        kernel = _box_kernel(n_pix=10, idx_y=5, idx_x=5, half_pix=1)
+
+        assert kernel.shape == (10, 10)
+        assert kernel.sum() == pytest.approx(1.0)
+        assert np.count_nonzero(kernel) == 9
+        assert np.all(kernel[4:7, 4:7] == pytest.approx(1.0 / 9.0))
+        assert kernel[0, 0] == 0.0
+
+    def test_box_side_length_is_two_half_pix_plus_one_when_unclipped(self):
+        kernel = _box_kernel(n_pix=100, idx_y=50, idx_x=50, half_pix=2)
+
+        assert np.count_nonzero(kernel) == 25
+        assert kernel[48:53, 48:53].sum() == pytest.approx(1.0)
+        assert kernel[47, 50] == 0.0
+        assert kernel[53, 50] == 0.0
+
+    def test_clips_at_scene_edges(self):
+        kernel = _box_kernel(n_pix=10, idx_y=0, idx_x=0, half_pix=2)
+
+        assert np.count_nonzero(kernel) == 16
+        assert kernel[0:3, 0:3].sum() == pytest.approx(1.0)
+        assert kernel[3:, :].sum() == 0.0
+        assert kernel[:, 3:].sum() == 0.0
+
+    def test_clips_at_far_corner(self):
+        kernel = _box_kernel(n_pix=10, idx_y=9, idx_x=9, half_pix=2)
+
+        assert np.count_nonzero(kernel) == 16
+        assert kernel[7:10, 7:10].sum() == pytest.approx(1.0)
+        assert kernel[:7, :].sum() == 0.0
+
+
+class TestExozodiKernel:
+    def test_shape_and_normalization(self):
+        kernel = _exozodi_kernel(
+            n_pix=11,
+            idx_y=5,
+            idx_x=5,
+            pix_size_arcsec=0.05,
+            dist_pc=10.0,
+        )
+
+        assert kernel.shape == (11, 11)
+        assert kernel.sum() == pytest.approx(1.0)
+        assert np.all(kernel >= 0.0)
+
+    def test_center_is_peak_and_radial_falloff(self):
+        kernel = _exozodi_kernel(
+            n_pix=11,
+            idx_y=5,
+            idx_x=5,
+            pix_size_arcsec=0.1,
+            dist_pc=10.0,
+            alpha=0.34,
+        )
+        center = 11 // 2
+
+        assert kernel[center, center] == pytest.approx(np.max(kernel))
+        assert kernel[center, center] > kernel[center, center + 1]
+        assert kernel[center, center] > kernel[center + 1, center]
+
+    def test_doubling_z_exozodiacal_preserves_normalized_shape(self):
+        base = _exozodi_kernel(
+            n_pix=9,
+            idx_y=4,
+            idx_x=4,
+            pix_size_arcsec=0.1,
+            dist_pc=10.0,
+            z_exozodiacal=1,
+        )
+        scaled = _exozodi_kernel(
+            n_pix=9,
+            idx_y=4,
+            idx_x=4,
+            pix_size_arcsec=0.1,
+            dist_pc=10.0,
+            z_exozodiacal=2,
+        )
+
+        assert np.allclose(base, scaled)
+
+
+class TestZodiacalKernel:
+    def test_uniform_normalized_kernel(self):
+        n_pix = 13
+        kernel = _zodiacal_kernel(n_pix=n_pix, pix_size_arcsec=0.05)
+
+        assert kernel.shape == (n_pix, n_pix)
+        assert kernel.sum() == pytest.approx(1.0)
+        assert np.all(kernel == pytest.approx(1.0 / n_pix**2))
+
+    def test_pix_size_does_not_affect_kernel(self):
+        kernel_a = _zodiacal_kernel(n_pix=7, pix_size_arcsec=0.01)
+        kernel_b = _zodiacal_kernel(n_pix=7, pix_size_arcsec=1.0)
+
+        assert np.allclose(kernel_a, kernel_b)

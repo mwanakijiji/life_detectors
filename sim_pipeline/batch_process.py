@@ -112,6 +112,21 @@ def calculate_s2n_post_rotation(read_dir, config):
                 slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][angle] = chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"]
                 slot["wavel_bin_width"] = chopped["wavel_bin_width"] ## ## TODO: use the proper bin edges
 
+                keystrings_all = ['3', 'dark']
+                slot.setdefault('sources_sym', {})
+                for signal_name in chopped.colnames:
+                    if all(keystring in signal_name for keystring in keystrings_all) and ('_star' in signal_name):
+                        source_name = 'star'
+                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_exozodiacal' in signal_name):
+                        source_name = 'exozodiacal'
+                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_zodiacal' in signal_name):
+                        source_name = 'zodiacal'
+                    else:
+                        continue
+                    slot['sources_sym'].setdefault(source_name, {'Ssym_dark_3': {}, 'Ssym_dark_4': {}})
+                    slot['sources_sym'][source_name]['Ssym_dark_3'][angle] = chopped[signal_name]
+                    slot['sources_sym'][source_name]['Ssym_dark_4'][angle] = chopped[signal_name.replace('3', '4')]
+
     for dc_qe_str, slot in by_dc_qe.items():
         angles = sorted(slot["S_p"].keys())
         N_angles = len(angles)
@@ -125,18 +140,29 @@ def calculate_s2n_post_rotation(read_dir, config):
         S_p_arr = np.column_stack(cols_S_p)
         S_p_sqd_arr = np.power(S_p_arr, 2)
         S_p_3_arr = np.column_stack(cols_S_p_3)
+        S_p_3_sqd_arr = np.power(S_p_3_arr, 2)
 
         S_p_sqd_arr_mean = S_p_sqd_arr.mean(axis=1) * (slot["S_p"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
-        S_p_3_sqd_arr_mean = S_p_3_arr.mean(axis=1) * (slot["S_p_3"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
+        S_p_3_sqd_arr_mean = S_p_3_sqd_arr.mean(axis=1) * (slot["S_p_3"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
 
         #N_sym_adu = 0 * u.adu # symmetric sources
         #gain = float(config['detector']['gain'])
         #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(N_e) / gain
 
-
-        S_sym_3 = 0 * u.adu # placeholder ## ## TODO: implement this
-
-        #dark_noise_var = slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"].var(axis=1)
+        # symmetric noise sources (angle-averaged shot noise; Dannert+ 2022 Eqn. 19)
+        gain = float(config['detector']['gain'])  # e-/ADU
+        sources_sym = slot.get('sources_sym', {})
+        S_sym_noise_var = None
+        for source_name, source_dict in sources_sym.items():
+            cols_sigma_sq = []
+            for a in angles:
+                S3 = source_dict['Ssym_dark_3'][a]
+                S4 = source_dict['Ssym_dark_4'][a]
+                N_e = (S3 + S4) * gain  # note not S3**2 + S4**4, because we are doing sqrt(S3)**2 etc.
+                cols_sigma_sq.append(np.power(np.sqrt(N_e.value) / gain, 2))
+            sigma_sq_mean = np.mean(np.column_stack(cols_sigma_sq), axis=1)
+            S_sym_noise_var = sigma_sq_mean if S_sym_noise_var is None else S_sym_noise_var + sigma_sq_mean
+        S_sym_3 = np.sqrt(S_sym_noise_var) * u.adu if S_sym_noise_var is not None else np.zeros(len(slot["wavel_bin_width"])) * u.adu
 
         SNR_lambda_array = []
         for wavel_bin_num in range(len(slot["wavel_bin_width"])):
@@ -157,6 +183,9 @@ def calculate_s2n_post_rotation(read_dir, config):
             # again, so 2*sqrt(N_angles) etc. because the net read noise for this wavelength bin is from the chopped signal; also consider independent of viewing angle 
             S_read_noise_var = N_angles * np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num], 2)
             S_instrumental_var = S_dark_noise_var + S_read_noise_var
+
+            S_sym_3_var_this = N_angles * np.power(S_sym_3[wavel_bin_num], 2)
+            S_sym_3_this = np.sqrt(S_sym_3_var_this)
             
             # instrumental systematics
             # readout noise per pixel times the number of pixels
@@ -172,11 +201,13 @@ def calculate_s2n_post_rotation(read_dir, config):
             # note that integration over wavelengths of this wavelength bin is already included (i.e., they are bin totals),
             # since the signals were already multiplied by the wavelength bin further upstream
             numerator_ = S_p_rms_phi                                    # ADU
-            astro_noise = np.sqrt(2) * (S_sym_3 + S_p_3_rms_phi)     # ADU  (matches your LaTeX integrand if already bin totals)
+            astro_noise = np.sqrt(2) * (S_sym_3_this + S_p_3_rms_phi)     # ADU  (matches your LaTeX integrand if already bin totals)
             denominator_ = np.sqrt(astro_noise**2 + S_instrumental_var)  # ADU
 
             SNR_lambda = numerator_ / denominator_
             SNR_lambda_array.append(SNR_lambda.value)
+
+        ipdb.set_trace()
 
         SNR_tot = np.sqrt(np.sum(np.power(SNR_lambda_array, 2)))
         print(f'SNR_tot for DC {dc_qe_str}: {SNR_tot}')
@@ -188,7 +219,7 @@ def calculate_s2n_post_rotation(read_dir, config):
         qe_val = float(config['detector']['quantum_efficiency'])
 
         # plot SNR 
-        fig = plt.figure(figsize=(8, 8), constrained_layout=True)
+        fig = plt.figure(figsize=(8, 8), constrained_layout=True) # pragma: no cover
         plt.clf()
         plt.stairs(SNR_lambda_array, edges=wavel_bin_edges.value)
         plt.xlim([4, 18.5])
