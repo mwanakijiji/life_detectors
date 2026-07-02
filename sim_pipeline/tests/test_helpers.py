@@ -3,28 +3,45 @@ Unit tests for modules.utils.helpers.
 """
 
 import configparser
-import pytest
-import modules.utils.helpers as helpers
-import numpy as np
-from astropy import units as u
-import pandas as pd
-import astropy.constants as const
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import astropy.constants as const
+import numpy as np
+import pandas as pd
+import pytest
+import yaml
+from astropy import units as u
+from astropy.table import QTable
+
+import modules.utils.helpers as helpers
 from modules.utils.helpers import (
     _config_get,
     _config_set_plot_title_context,
     _get_plot_title_context,
+    _normalize_output_root,
+    apply_output_root_override,
+    build_observation_detector_title,
     build_system_params_title,
+    compute_collecting_area_m2,
+    create_sample_data,
     ensure_plot_title_context,
     format_plot_title,
-    get_sweep_range, 
-    validate_file_path,
-    generate_star_spectrum,
-    generate_planet_bb_spectrum,
-    generate_zodiacal_spectrum,
     generate_exozodiacal_spectrum,
-    create_sample_data,
+    generate_planet_bb_spectrum,
+    generate_star_spectrum,
+    generate_zodiacal_spectrum,
+    get_sweep_range,
+    merge_psg_spectra_to_planet_population,
+    modify_config_file_sweep,
+    parse_sky_position_arcsec_yx,
+    plot_planet_population_sample,
+    record_info_at_angle_and_qe,
+    validate_file_path,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
 
 
 class TestConfigHelpers:
@@ -89,9 +106,35 @@ class TestTitleBuilders:
         out = build_system_params_title(cfg)
         assert "collecting area = 25.00 m^2" in out
         assert "telescope throughput = 0.05" in out
-        assert "nulling transmission = 1.0e-05" in out
+        assert "stellar nulling = True, nulling transmission = 1.0e-05" in out
         assert "distance = 10.0 pc" in out
         assert "pl_temp = 288.0 K" in out
+
+    def test_build_observation_detector_title_contains_expected_lines(self):
+        cfg = {
+            "observation": {
+                "t_int_frame": "10",
+                "N_angles": "4",
+                "N_int_per_angle": "5",
+            },
+            "detector": {
+                "quantum_efficiency": "0.8",
+                "dark_current": "0.0, 0.1",
+                "read_noise": "5",
+                "gain": "2",
+                "spec_res": "20",
+            },
+        }
+        out = build_observation_detector_title(cfg)
+        assert "t_int_frame = 10.0 s" in out
+        assert "N_angles = 4" in out
+        assert "N_int_per_angle = 5" in out
+        assert "t_int_total = 200 s" in out
+        assert "QE = 0.8" in out
+        assert "dark current sweep = 0.0, 0.1 e-/pix/s" in out
+        assert "read noise = 5 e- rms" in out
+        assert "gain = 2.0 e-/ADU" in out
+        assert "spec_res R = 20.0" in out
 
     def test_ensure_plot_title_context_reuses_existing(self):
         cfg = {"plotting": {"title_context": "already here"}}
@@ -103,10 +146,17 @@ class TestTitleBuilders:
         cfg = {
             "telescope": {"collecting_area": "25.0"},
             "target": {"distance": "10"},
+            "observation": {
+                "t_int_frame": "1",
+                "N_angles": "1",
+                "N_int_per_angle": "1",
+            },
+            "detector": {"quantum_efficiency": "0.8"},
         }
         out = ensure_plot_title_context(cfg)
         assert "collecting area = 25.00 m^2" in out
         assert "distance = 10.0 pc" in out
+        assert "QE = 0.8" in out
         assert cfg["plotting"]["title_context"] == out
 
     def test_format_plot_title_with_and_without_context(self):
@@ -123,26 +173,188 @@ class TestTitleBuilders:
 
 
 class TestSweepRange:
-    def test_get_sweep_range_includes_stop_with_step_extension(self, monkeypatch):
-        monkeypatch.setattr(helpers.ipdb, "set_trace", lambda: None)
+    def test_get_sweep_range_half_open_interval(self):
         obs = {
             "n_int_start": "1000",
             "n_int_stop": "3000",
             "n_int_step": "1000",
         }
         out = get_sweep_range(obs, "n_int")
-        assert out == [1000.0, 2000.0, 3000.0]
+        assert out == [1000.0, 2000.0]
 
-    def test_get_sweep_range_non_divisible_stop_behavior(self, monkeypatch):
-        monkeypatch.setattr(helpers.ipdb, "set_trace", lambda: None)
+    def test_get_sweep_range_non_divisible_stop_excludes_stop(self):
         obs = {
             "qe_start": "0.1",
             "qe_stop": "0.35",
             "qe_step": "0.1",
         }
         out = get_sweep_range(obs, "qe")
-        # np.arange(start, stop + step, step) includes values up to <= stop+step
-        assert out == [0.1, 0.2, 0.30000000000000004, 0.4]
+        assert out == [0.1, 0.2, 0.30000000000000004]
+
+
+class TestParseSkyPosition:
+    def test_parse_valid_position(self):
+        assert parse_sky_position_arcsec_yx("1.5, -2.0") == (1.5, -2.0)
+
+    def test_parse_rejects_wrong_number_of_values(self):
+        with pytest.raises(ValueError, match="Expected two comma-separated values"):
+            parse_sky_position_arcsec_yx("1.0")
+
+
+class TestComputeCollectingAreaM2:
+    def test_matches_aperture_yaml_and_mirror_diameter(self):
+        with open(APERTURE_YAML) as f:
+            n_apertures = len(yaml.safe_load(f)["apertures"])
+        diameter_m = 2.0
+        config = {
+            "telescope": {
+                "aperture_array_config_file_name": str(APERTURE_YAML),
+                "single_mirror_diameter": str(diameter_m),
+            }
+        }
+        expected = n_apertures * np.pi * (0.5 * diameter_m) ** 2
+        assert compute_collecting_area_m2(config) == pytest.approx(expected)
+
+
+class TestMergePsgSpectra:
+    def test_left_joins_psg_response_files_by_planet_id(self, tmp_path):
+        (tmp_path / "psg_cfg_00000015.response").write_text("dummy")
+        (tmp_path / "psg_cfg_00000042.response").write_text("dummy")
+        df = pd.DataFrame({"id": [15, 42, 99]})
+        params = {"dir_file_name_psg_spectra": {"dir_name": str(tmp_path)}}
+
+        merged = merge_psg_spectra_to_planet_population(df, params)
+
+        assert len(merged) == 3
+        assert merged.loc[merged["id"] == 15, "abs_file_name_psg_spectrum"].notna().all()
+        assert merged.loc[merged["id"] == 42, "abs_file_name_psg_spectrum"].notna().all()
+        assert merged.loc[merged["id"] == 99, "abs_file_name_psg_spectrum"].isna().all()
+
+
+class TestPlotPlanetPopulationSample:
+    @patch("modules.utils.helpers.plt.close")
+    def test_saves_scatter_matrix_for_small_population(self, _mock_close, tmp_path):
+        df = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+        out_path = tmp_path / "scatter.png"
+
+        plot_planet_population_sample(df, ["a", "b"], str(out_path))
+
+        assert out_path.exists()
+        assert out_path.stat().st_size > 0
+
+
+class TestApplyOutputRootOverride:
+    def test_normalize_output_root_adds_trailing_separator(self, tmp_path):
+        normalized = _normalize_output_root(str(tmp_path))
+        assert normalized.endswith("/")
+        assert Path(normalized.rstrip("/")).resolve() == tmp_path.resolve()
+
+    def test_apply_output_root_override_updates_config_file(self, tmp_path):
+        config_path = tmp_path / "main_config.ini"
+        output_root = tmp_path / "run_out"
+        cfg = configparser.ConfigParser()
+        cfg.add_section("dirs")
+        cfg.set("dirs", "save_s2n_data_unique_dir", "/old/path/")
+        with open(config_path, "w") as f:
+            cfg.write(f)
+
+        result_path = apply_output_root_override(str(config_path), str(output_root))
+
+        assert result_path == str(config_path)
+        updated = configparser.ConfigParser()
+        updated.read(config_path)
+        saved = updated["dirs"]["save_s2n_data_unique_dir"]
+        assert saved.startswith(str(output_root.resolve()))
+        assert saved.endswith("/")
+        assert output_root.exists()
+
+    def test_apply_output_root_override_noop_when_missing(self, tmp_path):
+        config_path = tmp_path / "main_config.ini"
+        config_path.write_text("[dirs]\nsave_s2n_data_unique_dir = /keep/\n")
+        assert apply_output_root_override(str(config_path), None) == str(config_path)
+
+
+class TestModifyConfigFileSweep:
+    @pytest.fixture
+    def minimal_config_path(self, tmp_path):
+        config_path = tmp_path / "main_config.ini"
+        cfg = configparser.ConfigParser()
+        cfg.add_section("detector")
+        cfg.set("detector", "quantum_efficiency", "0.8")
+        cfg.set("detector", "read_noise", "6")
+        with open(config_path, "w") as f:
+            cfg.write(f)
+        return str(config_path)
+
+    def test_writes_temp_config_under_parameter_sweeps(self, minimal_config_path):
+        result = modify_config_file_sweep(minimal_config_path, qe=0.87)
+
+        assert Path(result).is_file()
+        assert "parameter_sweeps" in result
+        assert result.endswith("main_config_temp_qe0p87.ini")
+
+    def test_updates_quantum_efficiency_in_output_file(self, minimal_config_path):
+        result = modify_config_file_sweep(minimal_config_path, qe=0.65)
+
+        updated = configparser.ConfigParser()
+        updated.read(result)
+        assert updated.get("detector", "quantum_efficiency") == "0.65"
+        assert updated.get("detector", "read_noise") == "6"
+
+    def test_appends_run_id_to_filename_when_provided(self, minimal_config_path):
+        result = modify_config_file_sweep(
+            minimal_config_path, qe=0.7, run_id="run42"
+        )
+
+        assert result.endswith("main_config_temp_qe0p70_run42.ini")
+
+
+class TestRecordInfoAtAngleAndQe:
+    def test_writes_hdf5_groups_for_each_dark_current(self, tmp_path):
+        save_dir = str(tmp_path) + "/"
+        n_bins = 2
+        wavel = np.array([5.0, 10.0]) * u.um
+        width = np.array([0.5, 0.5]) * u.um
+
+        def _table(signal):
+            return QTable(
+                {
+                    "wavel_bin_center": wavel,
+                    "wavel_bin_width": width,
+                    "signal_adu": np.ones(n_bins) * signal * u.adu,
+                }
+            )
+
+        channel = MagicMock()
+        channel.tables_by_dark_current = {0.0: _table(1.0), 0.1: _table(2.0)}
+        output_channels = {
+            "output_1_bright": channel,
+            "output_2_bright": channel,
+            "output_3_dark": channel,
+            "output_4_dark": channel,
+        }
+        post_chop = {
+            0.0: _table(3.0),
+            0.1: _table(4.0),
+        }
+        post_chop[0.0]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
+        post_chop[0.1]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
+
+        record_info_at_angle_and_qe(
+            angle_deg=45.0,
+            qe=0.7,
+            output_channels=output_channels,
+            post_chop_tables_by_dark_current=post_chop,
+            save_dir=save_dir,
+            plot=False,
+        )
+
+        hdf5_path = tmp_path / "angle_45.hdf5"
+        assert hdf5_path.exists()
+        restored = QTable.read(hdf5_path, path="dc_0_qe_0.70/output_1_bright")
+        assert len(restored) == n_bins
+        assert restored.meta["angle_deg"] == 45.0
+        assert restored.meta["qe"] == 0.7
 
 
 def test_validate_file_path_cases(tmp_path):
