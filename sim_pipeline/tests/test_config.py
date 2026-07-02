@@ -126,17 +126,20 @@ class TestSetupLogging:
         root.setLevel(logging.WARNING)
 
     def test_returns_log_file_path(self, tmp_path):
-        """Returns path to log file with detectorsim_YYYYMMDD_HHMMSS.log pattern."""
+        """Returns path to log file with detectorsim_YYYYMMDD_HHMMSS_<tag>.log pattern."""
         log_dir = tmp_path / "logs"
-        result = setup_logging(str(log_dir))
+        result = setup_logging(str(log_dir), tag="config_test")
         assert result.endswith(".log")
         assert "detectorsim_" in result
-        assert re.match(r"detectorsim_\d{8}_\d{6}\.log$", os.path.basename(result))
+        assert re.match(
+            r"detectorsim_\d{8}_\d{6}_config_test\.log$",
+            os.path.basename(result),
+        )
 
     def test_log_file_created_and_writable(self, tmp_path):
         """Log file is created and messages can be written to it."""
         log_dir = tmp_path / "logs"
-        log_path = setup_logging(str(log_dir))
+        log_path = setup_logging(str(log_dir), tag="config_write_test")
         assert os.path.isfile(log_path)
         logging.getLogger().info("test message")
         for handler in logging.getLogger().handlers:

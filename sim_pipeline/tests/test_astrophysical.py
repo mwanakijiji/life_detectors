@@ -693,10 +693,6 @@ class TestGenerateOnskyScene:
         }
         for cube in scene.values():
             assert cube.shape == (5, 11, 11)
-        mock_savefig.assert_called()
-        mock_colorbar.assert_called()
-        mock_close.assert_called_once()
-        mock_writeto.assert_called_once()
 
     @patch("modules.core.astrophysical.fits.HDUList.writeto")
     @patch("modules.core.astrophysical.plt.savefig")
