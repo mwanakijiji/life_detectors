@@ -1149,6 +1149,7 @@ class InstrumentDepTerms:
         source_dict_post_screen = {}
         for source_name, source_val in source_dict_pre_screen.items():
             source_dict_post_screen[source_name] = {}
+
             for transmission_screen_name in transmission_screen_order:
                 source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
                 # collapse the sources into a single 3D array (wavel, x, y), for plotting
@@ -1275,7 +1276,7 @@ class InstrumentDepTerms:
             plt.savefig(file_name_plot)
             logging.info("Saved plot of incident flux pre-aperture to " + file_name_plot)
 
-        return
+        return transmission_screens
 
 
     def pass_through_aperture(self, plot: bool = False):

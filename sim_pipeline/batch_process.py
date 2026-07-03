@@ -128,45 +128,60 @@ def calculate_s2n_post_rotation(read_dir, config):
                     slot['sources_sym'][source_name]['Ssym_dark_4'][angle] = chopped[signal_name.replace('3', '4')]
 
     for dc_qe_str, slot in by_dc_qe.items():
+        gain = float(config['detector']['gain']) * u.electron / u.adu  # e-/ADU
         angles = sorted(slot["S_p"].keys())
         N_angles = len(angles)
         # (n_bins, n_angles) — use .value if columns are Quantity
 
-        cols_S_p = []
-        cols_S_p_3 = []
+        cols_S_p_adu = []
+        cols_S_p_3_adu = []
+        cols_S_p_elec = []
+        cols_S_p_3_elec = []
         for a in angles:
-            cols_S_p.append(np.asarray(slot["S_p"][a])) # units are lost here, but will be restored later
-            cols_S_p_3.append(np.asarray(slot["S_p_3"][a])) # units are lost here, but will be restored later
-        S_p_arr = np.column_stack(cols_S_p)
-        S_p_sqd_arr = np.power(S_p_arr, 2)
-        S_p_3_arr = np.column_stack(cols_S_p_3)
-        S_p_3_sqd_arr = np.power(S_p_3_arr, 2)
+            # get photoelectron quantities to find S/N
+            ## ## TODO: if not 1 electron per photon, this breaks reasoning
+            cols_S_p_adu.append(np.asarray(slot["S_p"][a])) # adu units are lost here, but will be restored later
+            cols_S_p_3_adu.append(np.asarray(slot["S_p_3"][a])) # adu units are lost here, but will be restored later
+            cols_S_p_elec.append(np.asarray(slot["S_p"][a] * gain) ) # photoelectrons units are lost here, but will be restored later
+            cols_S_p_3_elec.append(np.asarray(slot["S_p_3"][a]* gain) ) # photoelectrons units are lost here, but will be restored later
+        S_p_arr_elec = np.column_stack(cols_S_p_elec) * u.electron
+        S_p_sqd_arr_elec = np.power(S_p_arr_elec, 2)
+        S_p_3_arr_elec = np.column_stack(cols_S_p_3_elec) * u.electron
+        S_p_3_sqd_arr_elec = np.power(S_p_3_arr_elec, 2)
 
-        S_p_sqd_arr_mean = S_p_sqd_arr.mean(axis=1) * (slot["S_p"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
-        S_p_3_sqd_arr_mean = S_p_3_sqd_arr.mean(axis=1) * (slot["S_p_3"][a].unit)**2 # Dannert+ 2022 Eqn. (19)
+        S_p_sqd_arr_mean_elec = S_p_sqd_arr_elec.mean(axis=1) # Dannert+ 2022 Eqn. (20)
+        S_p_3_sqd_arr_mean_elec = S_p_3_sqd_arr_elec.mean(axis=1)  # Dannert+ 2022 Eqn. (20)
 
         #N_sym_adu = 0 * u.adu # symmetric sources
         #gain = float(config['detector']['gain'])
         #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(sigma_sym_noise) / gain
 
         # symmetric noise sources (angle-averaged shot noise; Dannert+ 2022 Eqn. 20)
-        gain = float(config['detector']['gain'])  # e-/ADU
         sources_sym = slot.get('sources_sym', {})
-        S_sym_noise_var = None
+        S_sym_noise_var_3_elec = None
         logging.info(f'Astrophysical sources considered to be symmetric: {[source_name for source_name in sources_sym.keys()]}')
         for source_name, source_dict in sources_sym.items():
-            cols_sigma_sq = []
+            cols_sym_sigma_elec = [] # will contain the noise of symmetric sources for each angle
             for a in angles:
-                S3 = source_dict['Ssym_dark_3'][a]
-                S4 = source_dict['Ssym_dark_4'][a]
-                sigma_sym_noise_this_angle = (S3 + S4) * gain  # note not S3**2 + S4**4, because we are doing sqrt(S3)**2 etc. to get the photon noise
-                cols_sigma_sq.append(np.power(np.sqrt(sigma_sym_noise_this_angle.value) / gain, 2))
-            sigma_sq_mean = np.mean(np.column_stack(cols_sigma_sq), axis=1)
-            S_sym_noise_var = sigma_sq_mean if S_sym_noise_var is None else S_sym_noise_var + sigma_sq_mean # add chopped photon noise from all the astrophysical sources
-        S_sym_3 = np.sqrt(S_sym_noise_var) * u.adu if S_sym_noise_var is not None else np.zeros(len(slot["wavel_bin_width"])) * u.adu
-        S_sym_3_var = np.power(S_sym_3, 2)
+                # absolute signal from S3 (in photoelectrons) is the same as the noise var of output 3
+                # note just using S3 here; effect of S4 (which is symmetric) is included downstream with sqrt(2)
+                sym_noise_var_this_source_this_angle_dark_3_elec = source_dict['Ssym_dark_3'][a] * gain
+                # for averaging symmetric noise vars across angles (kind of redundant, because the symmetric sources are not expected to change)
+                cols_sym_sigma_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron) 
+            # symmetric noise var averaged across angles for this source
+            sym_sigma_mean_3_elec = np.mean(np.column_stack(cols_sym_sigma_elec), axis=1)
+            # symmetric noise var averaged across angles for this source
+            sym_noise_var_mean_3_elec = np.mean(np.power(np.column_stack(cols_sym_sigma_elec), 2).value * u.electron, axis=1)
+            # add chopped photon noise from all the astrophysical sources in quadrature
+            S_sym_noise_var_3_elec = sym_noise_var_mean_3_elec if S_sym_noise_var_3_elec is None else S_sym_noise_var_3_elec + sym_noise_var_mean_3_elec
+        # noise sigma and var from all symmetric sources
+        if S_sym_noise_var_3_elec.unit == u.electron:
+            S_sym_3_sigma_elec = np.sqrt(S_sym_noise_var_3_elec.value) * u.electron if S_sym_noise_var_3_elec is not None else np.zeros(len(slot["wavel_bin_width"])) * u.electron
+        else:
+            logger.error('Unit inconsistency!')
+            exit()
+        #S_sym_3_var = np.power(S_sym_3_sigma, 2)
 
-        ipdb.set_trace()
         SNR_lambda_array = []
         for wavel_bin_num in range(len(slot["wavel_bin_width"])):
             #wavel_start = slot["wavel_bin_edges"][wavel_bin_num].value
@@ -174,22 +189,22 @@ def calculate_s2n_post_rotation(read_dir, config):
 
             d_wavel = slot["wavel_bin_width"][wavel_bin_num]
 
-            # astrophysical signals
+            # astrophysical signals (all must be in photoelectrons)
             # Dannert+ 2022 Eqn. (19)-(20): sqrt of angle-averaged squared signals per bin
-            S_p_rms_phi = np.sqrt(S_p_sqd_arr_mean[wavel_bin_num])
-            S_p_3_rms_phi = np.sqrt(S_p_3_sqd_arr_mean[wavel_bin_num])
+            S_p_rms_phi = np.sqrt(S_p_sqd_arr_mean_elec[wavel_bin_num])
+            S_p_3_rms_phi = np.sqrt(S_p_3_sqd_arr_mean_elec[wavel_bin_num])
 
             # term for dark current for this wavelength bin
             # note this is not 2*sqrt(N_angles) etc. because the dark current term is already from the CHOPPED signal, not from each of the 2 dark outputs
             # note also that the dark current is assumed to be independent of viewing angle (so just use angle 0.0 here)
-            S_dark_noise_var = N_angles * np.power(slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num], 2)
+            S_dark_noise_var = np.power(slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
             # again, so 2*sqrt(N_angles) etc. because the net read noise for this wavelength bin is from the chopped signal; also consider independent of viewing angle 
-            S_read_noise_var = N_angles * np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num], 2)
+            S_read_noise_var = np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
             S_instrumental_var = S_dark_noise_var + S_read_noise_var
-            S_instrumental_sigma = np.sqrt(S_instrumental_var)
+            S_instrumental_sigma = np.sqrt(S_instrumental_var).value * u.electron
 
-            S_sym_3_var_this = S_sym_3_var[wavel_bin_num]
-            S_sym_3_sigma_this = np.sqrt(S_sym_3_var_this)
+            S_sym_3_var_this = S_sym_noise_var_3_elec[wavel_bin_num]
+            S_sym_3_sigma_this = S_sym_3_sigma_elec[wavel_bin_num]
             
             # instrumental systematics
             # readout noise per pixel times the number of pixels
@@ -204,10 +219,13 @@ def calculate_s2n_post_rotation(read_dir, config):
             # put it all together 
             # note that integration over wavelengths of this wavelength bin is already included (i.e., they are bin totals),
             # since the signals were already multiplied by the wavelength bin further upstream
-            numerator_ = S_p_rms_phi                                    # ADU
-            astro_noise = np.sqrt(2) * (S_sym_3_sigma_this + S_p_3_rms_phi)     # ADU  (matches your LaTeX integrand if already bin totals)
+            numerator_ = S_p_rms_phi        
+            # note S_sym_3_var_this is same as S_sym_3 this, assuming Poisson noise
+            astro_noise_term = 2 * (S_sym_3_var_this + S_p_3_rms_phi)
+            instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
             instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
-            denominator_ = np.sqrt(astro_noise**2 + instrum_noise**2)  # ADU
+            # add noise terms; note astronoise is already the quadrature term, so no **2 on it
+            denominator_ = np.sqrt(astro_noise_term + instrum_noise_term).value * u.electron 
 
             SNR_lambda = numerator_ / denominator_
             SNR_lambda_array.append(SNR_lambda.value)
