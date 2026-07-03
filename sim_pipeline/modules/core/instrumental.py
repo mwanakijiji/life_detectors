@@ -1223,7 +1223,7 @@ class InstrumentDepTerms:
                     source_img = source_dict_pre_screen[source_name][idx, :, :].value
                     source_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
                     transmission_img = transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
-                    source_times_transmission_img = source_val[transmission_screen_name][idx, :, :].value
+                    source_times_transmission_img = source_img * source_val[transmission_screen_name][idx, :, :].value
                     source_times_transmission_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
 
                     fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
@@ -1240,7 +1240,7 @@ class InstrumentDepTerms:
                     axs[1].set_ylabel(f"y (pixel)")
                     fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
                     im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-                    axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n(not chopped)")
+                    axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n({np.sum(source_times_transmission_img)/np.sum(source_img)*100:.2f}% transmitted; not chopped)")
                     fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
 
                     # for debugging

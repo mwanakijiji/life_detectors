@@ -458,14 +458,15 @@ class AstrophysicalSources:
         # make flux vectors and check consistency in units
         flux_dict = {}
         for source_name in incident_dict.keys():
-            flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um'] # to check units
             flux_dict[source_name] = incident_dict[source_name]['pre_screen_astro_flux_ph_sec_m2_um']
+            flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um'] # to check units
             if flux_dict[source_name].unit != flux_star.unit:
                 raise ValueError(
                     f"{source_name} flux units differ: {flux_dict[source_name].unit} vs {flux_star.unit}"
                 )
             else:
                 logger.info(f"Constructing scene. {source_name} flux units are consistent: {flux_dict[source_name].unit}")
+
         #flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
         #flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
         #flux_exozodi = incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']

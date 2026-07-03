@@ -147,23 +147,26 @@ def calculate_s2n_post_rotation(read_dir, config):
 
         #N_sym_adu = 0 * u.adu # symmetric sources
         #gain = float(config['detector']['gain'])
-        #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(N_e) / gain
+        #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(sigma_sym_noise) / gain
 
-        # symmetric noise sources (angle-averaged shot noise; Dannert+ 2022 Eqn. 19)
+        # symmetric noise sources (angle-averaged shot noise; Dannert+ 2022 Eqn. 20)
         gain = float(config['detector']['gain'])  # e-/ADU
         sources_sym = slot.get('sources_sym', {})
         S_sym_noise_var = None
+        logging.info(f'Astrophysical sources considered to be symmetric: {[source_name for source_name in sources_sym.keys()]}')
         for source_name, source_dict in sources_sym.items():
             cols_sigma_sq = []
             for a in angles:
                 S3 = source_dict['Ssym_dark_3'][a]
                 S4 = source_dict['Ssym_dark_4'][a]
-                N_e = (S3 + S4) * gain  # note not S3**2 + S4**4, because we are doing sqrt(S3)**2 etc.
-                cols_sigma_sq.append(np.power(np.sqrt(N_e.value) / gain, 2))
+                sigma_sym_noise_this_angle = (S3 + S4) * gain  # note not S3**2 + S4**4, because we are doing sqrt(S3)**2 etc. to get the photon noise
+                cols_sigma_sq.append(np.power(np.sqrt(sigma_sym_noise_this_angle.value) / gain, 2))
             sigma_sq_mean = np.mean(np.column_stack(cols_sigma_sq), axis=1)
-            S_sym_noise_var = sigma_sq_mean if S_sym_noise_var is None else S_sym_noise_var + sigma_sq_mean
+            S_sym_noise_var = sigma_sq_mean if S_sym_noise_var is None else S_sym_noise_var + sigma_sq_mean # add chopped photon noise from all the astrophysical sources
         S_sym_3 = np.sqrt(S_sym_noise_var) * u.adu if S_sym_noise_var is not None else np.zeros(len(slot["wavel_bin_width"])) * u.adu
+        S_sym_3_var = np.power(S_sym_3, 2)
 
+        ipdb.set_trace()
         SNR_lambda_array = []
         for wavel_bin_num in range(len(slot["wavel_bin_width"])):
             #wavel_start = slot["wavel_bin_edges"][wavel_bin_num].value
@@ -183,9 +186,10 @@ def calculate_s2n_post_rotation(read_dir, config):
             # again, so 2*sqrt(N_angles) etc. because the net read noise for this wavelength bin is from the chopped signal; also consider independent of viewing angle 
             S_read_noise_var = N_angles * np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num], 2)
             S_instrumental_var = S_dark_noise_var + S_read_noise_var
+            S_instrumental_sigma = np.sqrt(S_instrumental_var)
 
-            S_sym_3_var_this = N_angles * np.power(S_sym_3[wavel_bin_num], 2)
-            S_sym_3_this = np.sqrt(S_sym_3_var_this)
+            S_sym_3_var_this = S_sym_3_var[wavel_bin_num]
+            S_sym_3_sigma_this = np.sqrt(S_sym_3_var_this)
             
             # instrumental systematics
             # readout noise per pixel times the number of pixels
@@ -201,8 +205,9 @@ def calculate_s2n_post_rotation(read_dir, config):
             # note that integration over wavelengths of this wavelength bin is already included (i.e., they are bin totals),
             # since the signals were already multiplied by the wavelength bin further upstream
             numerator_ = S_p_rms_phi                                    # ADU
-            astro_noise = np.sqrt(2) * (S_sym_3_this + S_p_3_rms_phi)     # ADU  (matches your LaTeX integrand if already bin totals)
-            denominator_ = np.sqrt(astro_noise**2 + S_instrumental_var)  # ADU
+            astro_noise = np.sqrt(2) * (S_sym_3_sigma_this + S_p_3_rms_phi)     # ADU  (matches your LaTeX integrand if already bin totals)
+            instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
+            denominator_ = np.sqrt(astro_noise**2 + instrum_noise**2)  # ADU
 
             SNR_lambda = numerator_ / denominator_
             SNR_lambda_array.append(SNR_lambda.value)
@@ -600,103 +605,6 @@ def batch_qe_nint_process(base_config_path: str,
     
     return success_all
 
-'''
-def example_custom_sources():
-    """Example 4: Batch processing with different source combinations."""
-    print("\nExample 4: Different source combinations")
-    print("-" * 40)
-    
-    config_path = "modules/config/demo_config.ini"
-    n_int_values = [3000, 6000]
-    
-    # Different source combinations
-    source_combinations = [
-        (["star", "exoplanet_model_10pc"], "planet_only"),
-        (["star", "exozodiacal", "zodiacal"], "background_only"),
-        (["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"], "all_sources")
-    ]
-    
-    all_results = []
-    
-    for sources, name_suffix in source_combinations:
-        print(f"\nProcessing sources: {sources}")
-        output_dir = f"source_combinations/{name_suffix}"
-        
-        results = batch_qe_nint_process(
-            config_path=config_path,
-            n_int_values=n_int_values,
-            output_dir=output_dir,
-            sources_to_include=sources,
-            base_filename=f"s2n_{name_suffix}",
-            overwrite=True,
-            plot=True
-        )
-        
-        all_results.extend(results)
-    
-    return all_results
-'''
-'''
-def example_simple_batch():
-    """Example 1: Simple batch processing with a few n_int values."""
-    print("Example 1: Simple batch processing")
-    print("-" * 40)
-    
-    config_path = "modules/config/demo_config.ini"
-    n_int_values = [1000, 3000, 6000, 9000]
-    output_dir = "batch_output"
-    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
-    
-    results = batch_qe_nint_process(
-        config_path=config_path,
-        n_int_values=n_int_values,
-        output_dir=output_dir,
-        sources_to_include=sources,
-        base_filename="s2n_simple",
-        overwrite=True,
-        plot=True
-    )
-    
-    print(f"Processed {len(results)} calculations")
-    return results
-'''
-'''
-def example_single_calculation():
-    """Example 2: Run a single calculation with custom parameters."""
-    print("\nExample 2: Single calculation")
-    print("-" * 40)
-    
-    config_path = "modules/config/demo_config.ini"
-    n_int = 5000
-    output_path = "single_output/s2n_n5000.fits"
-    sources = ["star", "exoplanet_model_10pc", "exozodiacal", "zodiacal"]
-    
-    # Create output directory
-    os.makedirs("single_output", exist_ok=True)
-    
-    success = run_single_calculation(
-        config_path=config_path,
-        sources_to_include=sources,
-        n_int=n_int,
-        output_path=output_path,
-        overwrite=True,
-        plot=True
-    )
-    
-    if success:
-        print(f"✓ Successfully created: {output_path}")
-    else:
-        print(f"✗ Failed to create: {output_path}")
-    
-    return success
-'''
-''' # command line option
-    print("\nTo run the batch processor from command line:")
-    print("python batch_qe_nint_process.py --config modules/config/demo_config.ini \\")
-    print("                       --n-int 1000 3000 6000 9000 \\")
-    print("                       --output-dir my_batch_output \\")
-    print("                       --sources star exoplanet_model_10pc exozodiacal zodiacal")
-'''
 
 def parameter_sweep(
     config_single_obs_path: str,
