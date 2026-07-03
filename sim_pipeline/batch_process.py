@@ -207,8 +207,6 @@ def calculate_s2n_post_rotation(read_dir, config):
             SNR_lambda = numerator_ / denominator_
             SNR_lambda_array.append(SNR_lambda.value)
 
-        ipdb.set_trace()
-
         SNR_tot = np.sqrt(np.sum(np.power(SNR_lambda_array, 2)))
         print(f'SNR_tot for DC {dc_qe_str}: {SNR_tot}')
 
@@ -218,29 +216,30 @@ def calculate_s2n_post_rotation(read_dir, config):
         n_int_total = n_angles_cfg * n_int_per_angle * t_int_frame
         qe_val = float(config['detector']['quantum_efficiency'])
 
-        # plot SNR 
-        fig = plt.figure(figsize=(8, 8), constrained_layout=True) # pragma: no cover
-        plt.clf()
-        plt.stairs(SNR_lambda_array, edges=wavel_bin_edges.value)
-        plt.xlim([4, 18.5])
-        plt.yscale('log')
-        plt.grid(True)
-        plt.xlabel(f'Wavelength ({slot["wavel_bin_width"][wavel_bin_num].unit})')
-        plt.ylabel('SNR')
-        base_title = (
-            f"SNR for DC {dc_qe_str}  |  SNR_tot = {SNR_tot:.4g}  |  "
-            f"N_angles = {n_angles_cfg}  |  N_int_per_angle = {n_int_per_angle}  |  "
-            f"N_int tot = {n_int_total} sec"
-        )
-        plt.title(format_plot_title(base_title, config), fontsize=8, loc='left')
-        file_name_plot = (
-            str(config['dirs']['save_s2n_data_unique_dir'])
-            + f"SNR_vs_wavelength_{dc_qe_str}"
-            + f"_Nang_{n_angles_cfg}_Nintpa_{n_int_per_angle}_Ninttot_{n_int_total}.png"
-        )
-        plt.tight_layout()
-        plt.savefig(file_name_plot)
-        logging.info(f"Saved plot of SNR vs wavelength for {dc_qe_str} to {file_name_plot}")
+        # plot SNR
+        if True:  # pragma: no cover
+            fig = plt.figure(figsize=(8, 8), constrained_layout=True)
+            plt.clf()
+            plt.stairs(SNR_lambda_array, edges=wavel_bin_edges.value)
+            plt.xlim([4, 18.5])
+            plt.yscale('log')
+            plt.grid(True)
+            plt.xlabel(f'Wavelength ({slot["wavel_bin_width"][wavel_bin_num].unit})')
+            plt.ylabel('SNR')
+            base_title = (
+                f"SNR for DC {dc_qe_str}  |  SNR_tot = {SNR_tot:.4g}  |  "
+                f"N_angles = {n_angles_cfg}  |  N_int_per_angle = {n_int_per_angle}  |  "
+                f"N_int tot = {n_int_total} sec"
+            )
+            plt.title(format_plot_title(base_title, config), fontsize=8, loc='left')
+            file_name_plot = (
+                str(config['dirs']['save_s2n_data_unique_dir'])
+                + f"SNR_vs_wavelength_{dc_qe_str}"
+                + f"_Nang_{n_angles_cfg}_Nintpa_{n_int_per_angle}_Ninttot_{n_int_total}.png"
+            )
+            plt.tight_layout()
+            plt.savefig(file_name_plot)
+            logging.info(f"Saved plot of SNR vs wavelength for {dc_qe_str} to {file_name_plot}")
 
     return
 

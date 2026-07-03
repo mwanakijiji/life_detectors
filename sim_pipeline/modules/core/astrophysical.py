@@ -517,47 +517,48 @@ class AstrophysicalSources:
         scene_cubes = list(canvas_3D_dict.values())
         scene_names = list(canvas_3D_dict.keys())
         # The total/collapsed scene as the last plot
-        n_rows = 1
-        n_cols = len(scene_cubes) + 1
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5), squeeze=False)
-        # Compute the 2D collapsed maps and store for the summary
-        for i, (source_cube, name) in enumerate(zip(scene_cubes, scene_names)):
-            ax = axes[0, i]
-            summed = np.sum(source_cube, axis=0)
+        if plot:  # pragma: no cover
+            n_rows = 1
+            n_cols = len(scene_cubes) + 1
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5), squeeze=False)
+            # Compute the 2D collapsed maps and store for the summary
+            for i, (source_cube, name) in enumerate(zip(scene_cubes, scene_names)):
+                ax = axes[0, i]
+                summed = np.sum(source_cube, axis=0)
+                im = ax.imshow(
+                    summed.value,
+                    origin='lower',
+                    norm=LogNorm(),
+                    aspect='equal',
+                    interpolation='none'
+                )
+                ax.set_title(f"{name}")
+                try:
+                    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+                except:
+                    logger.warning(f"No colorbar for {name}")
+            # Last subplot: sum across total/collapsed scene (z-scaled)
+            ax = axes[0, -1]
+            total_summed = np.sum(source_collapsed_scene_no_screen, axis=0)
+            total_data = np.asarray(total_summed.value, dtype=float)
+            vmin, vmax = ZScaleInterval().get_limits(total_data)
             im = ax.imshow(
-                summed.value,
+                total_data,
                 origin='lower',
-                norm=LogNorm(),
+                vmin=vmin,
+                vmax=vmax,
                 aspect='equal',
-                interpolation='none'
+                interpolation='none',
             )
-            ax.set_title(f"{name}")
-            try:
-                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-            except:
-                logger.warning(f"No colorbar for {name}")
-        # Last subplot: sum across total/collapsed scene (z-scaled)
-        ax = axes[0, -1]
-        total_summed = np.sum(source_collapsed_scene_no_screen, axis=0)
-        total_data = np.asarray(total_summed.value, dtype=float)
-        vmin, vmax = ZScaleInterval().get_limits(total_data)
-        im = ax.imshow(
-            total_data,
-            origin='lower',
-            vmin=vmin,
-            vmax=vmax,
-            aspect='equal',
-            interpolation='none',
-        )   
-        ax.set_title("Total (z-scale)")
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        plt.tight_layout()
-        plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
-        plt.subplots_adjust(top=0.85)
-        file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"/scene_no_screen_fyi.png"
-        plt.savefig(file_name_plot, bbox_inches='tight')
-        logger.info(f"FYI scene plot written to {file_name_plot}")
-        plt.close(fig)
+            ax.set_title("Total (z-scale)")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            plt.tight_layout()
+            plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
+            plt.subplots_adjust(top=0.85)
+            file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"/scene_no_screen_fyi.png"
+            plt.savefig(file_name_plot, bbox_inches='tight')
+            logger.info(f"FYI scene plot written to {file_name_plot}")
+            plt.close(fig)
 
 
         def _cube_values(q):

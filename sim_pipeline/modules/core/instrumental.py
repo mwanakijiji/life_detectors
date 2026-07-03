@@ -626,43 +626,44 @@ class InstrumentDepTerms:
                 output_channel.tables_by_dark_current[float(dc_rate)] = final_table
 
                 # plot of final signal in the detector
-                wavel_bin_center = final_table['wavel_bin_center']
-                wavel_bin_width = final_table['wavel_bin_width']
-                wavel_bin_edges = output_channel.bin_edges
-                fig, ax = plt.subplots(figsize=(10, 5))
-                debug_cols = [
-                    'instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot',
-                    'instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot',
-                ]
-                for col_name in debug_cols:
-                    y_col = final_table[col_name]
-                    y_vals = y_col.value if hasattr(y_col, "value") else y_col
-                    ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
-                    if hasattr(y_col, "unit"):
-                        y_unit = y_col.unit
-                for source_name in self.sources_to_include:
-                    col_name = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
-                    if col_name in final_table.colnames:
+                if True:  # pragma: no cover
+                    wavel_bin_center = final_table['wavel_bin_center']
+                    wavel_bin_width = final_table['wavel_bin_width']
+                    wavel_bin_edges = output_channel.bin_edges
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    debug_cols = [
+                        'instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot',
+                        'instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot',
+                    ]
+                    for col_name in debug_cols:
                         y_col = final_table[col_name]
                         y_vals = y_col.value if hasattr(y_col, "value") else y_col
                         ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
                         if hasattr(y_col, "unit"):
                             y_unit = y_col.unit
-                ax.set_xlim(4.0, 18.5)
-                ax.set_title(f"Debug final_table: {output_name}, dc={dc_rate:.3f} e/pix/s")
-                ax.set_xlabel(f"Wavelength bin center ({wavel_bin_center.unit})")
-                ax.set_ylabel(f"Flux ({y_unit})")
-                ax.set_yscale('log')
-                ax.legend(fontsize=8, loc='best')
-                fig.tight_layout()
-                file_name_plot = (
-                    str(self.config['dirs']['save_s2n_data_unique_dir'])
-                    + f"debug_final_table_{output_name}_dc_{dc_rate:.3f}.png"
-                )
-                #plt.show()
-                fig.savefig(file_name_plot)
-                plt.close(fig)
-                logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
+                    for source_name in self.sources_to_include:
+                        col_name = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
+                        if col_name in final_table.colnames:
+                            y_col = final_table[col_name]
+                            y_vals = y_col.value if hasattr(y_col, "value") else y_col
+                            ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
+                            if hasattr(y_col, "unit"):
+                                y_unit = y_col.unit
+                    ax.set_xlim(4.0, 18.5)
+                    ax.set_title(f"Debug final_table: {output_name}, dc={dc_rate:.3f} e/pix/s")
+                    ax.set_xlabel(f"Wavelength bin center ({wavel_bin_center.unit})")
+                    ax.set_ylabel(f"Flux ({y_unit})")
+                    ax.set_yscale('log')
+                    ax.legend(fontsize=8, loc='best')
+                    fig.tight_layout()
+                    file_name_plot = (
+                        str(self.config['dirs']['save_s2n_data_unique_dir'])
+                        + f"debug_final_table_{output_name}_dc_{dc_rate:.3f}.png"
+                    )
+                    #plt.show()
+                    fig.savefig(file_name_plot)
+                    plt.close(fig)
+                    logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
          
 
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False):
@@ -987,7 +988,12 @@ class InstrumentDepTerms:
             # tack on to the output_channel.detector.n_pix_array
 
             footprint_cube = output_channel.detector.footprint_cube  # (n_bins, ny, nx)
-            n_pix_per_wavel_bin = np.sum(footprint_cube, axis=(1, 2)) * u.pix  # (n_bins,)
+            footprint_pixel_count = np.sum(footprint_cube, axis=(1, 2))
+            n_pix_per_wavel_bin = (
+                footprint_pixel_count.to(u.pix)
+                if hasattr(footprint_pixel_count, "unit")
+                else footprint_pixel_count * u.pix
+            )
 
             # dump the astrophysical photons from each source in each wavelength bin into the output_channel.detector.footprint_cube
             for source_name, source_val in self.sources_astroph.items():
@@ -995,7 +1001,21 @@ class InstrumentDepTerms:
                 # flatten the 3D flux cube into a 1D array (spatial information is lost)
                 flux_astro_1d_ph_sec_um = np.sum(self.prop_dict[source_name]['flux_cube_post_screen_post_aperture_ph_sec_um'][output_channel.name], axis=(1,2))
                 # interpolate the flux to fit the wavelength bins on the detector
-                flux_astro_1d_interpolated_ph_sec_um = np.interp(x = output_channel.bin_centers, xp = self.prop_dict[source_name]['wavel'], fp = flux_astro_1d_ph_sec_um)
+                flux_unit = (
+                    flux_astro_1d_ph_sec_um.unit
+                    if hasattr(flux_astro_1d_ph_sec_um, "unit")
+                    else u.ph / (u.um * u.s)
+                )
+                wavel_bins = output_channel.bin_centers
+                wavel_pts = self.prop_dict[source_name]["wavel"]
+                flux_astro_1d_interpolated_ph_sec_um = (
+                    np.interp(
+                        x=wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins,
+                        xp=wavel_pts.value if hasattr(wavel_pts, "value") else wavel_pts,
+                        fp=flux_astro_1d_ph_sec_um.value if hasattr(flux_astro_1d_ph_sec_um, "value") else flux_astro_1d_ph_sec_um,
+                    )
+                    * flux_unit
+                )
                 flux_astro_1d_interpolated_ph_sec_wavel_bin = flux_astro_1d_interpolated_ph_sec_um * output_channel.bin_widths
                 flux_astro_1d_interpolated_ph_sec_pixel = flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
 
@@ -1156,7 +1176,7 @@ class InstrumentDepTerms:
                 logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
 
-            if plot:
+            if plot: # pragma: no cover
 
                 # flux vs wavelength post-screen, separated by screen
                 plt.clf()
@@ -1223,6 +1243,9 @@ class InstrumentDepTerms:
                     axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n(not chopped)")
                     fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
 
+                    # for debugging
+                    #if source_name == 'exoplanet_model_10pc':
+                    #    ipdb.set_trace()
                     file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}_angle_{int(fyi_angle)}_output_{transmission_screen_name}.png"
                     fig.savefig(file_name_plot)
                     plt.close(fig)

@@ -53,6 +53,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "--cov=batch_process --cov=modules --cov-report=html --cov-report=term-missing"
 
+[tool.coverage.run]
+# batch_process is only imported by batch-process tests; avoid noise on other runs
+disable_warnings = ["module-not-imported"]
+
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true

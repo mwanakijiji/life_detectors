@@ -21,6 +21,7 @@ from modules.utils.helpers import (
     _get_plot_title_context,
     _normalize_output_root,
     apply_output_root_override,
+    build_astrophysical_sources_to_use_title,
     build_observation_detector_title,
     build_system_params_title,
     compute_collecting_area_m2,
@@ -170,6 +171,37 @@ class TestTitleBuilders:
 
         ctx_only = format_plot_title("", cfg)
         assert ctx_only == "line1\nline2"
+
+    def test_format_plot_title_two_column_astrophysical_sources(self):
+        cfg = {
+            "plotting": {"title_context": "collecting area = 25.00 m^2\ntelescope throughput = 0.05"},
+            "astrophysical_sources_to_use": {
+                "star": True,
+                "exoplanet_bb": False,
+                "zodiacal": False,
+            },
+        }
+        out = format_plot_title("My Title", cfg)
+        assert "collecting area = 25.00 m^2" in out
+        assert "  star = True" in out
+        assert "  exoplanet_bb = False" in out
+        assert "  zodiacal = False" in out
+        # Left and right columns share a row when both have content.
+        assert "collecting area = 25.00 m^2    astrophysical sources:" in out
+
+    def test_build_astrophysical_sources_to_use_title(self):
+        cfg = {
+            "astrophysical_sources_to_use": {
+                "star": "True",
+                "exozodiacal": "False",
+            }
+        }
+        out = build_astrophysical_sources_to_use_title(cfg)
+        assert out.splitlines()[0] == "astrophysical sources:"
+        assert "  star = True" in out
+        assert "  exozodiacal = False" in out
+
+        assert build_astrophysical_sources_to_use_title({}) == ""
 
 
 class TestSweepRange:

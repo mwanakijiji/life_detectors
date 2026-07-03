@@ -27,6 +27,8 @@ import yaml
 from pathlib import Path
 from astropy.table import QTable
 
+from .loader import config_getboolean
+
 
 logger = logging.getLogger(__name__)
 
@@ -188,18 +190,62 @@ def ensure_plot_title_context(config) -> str:
     return built
 
 
+def _config_section_keys(config, section: str) -> list[str]:
+    if isinstance(config, configparser.ConfigParser):
+        if not config.has_section(section):
+            return []
+        return list(config[section].keys())
+    if isinstance(config, dict):
+        return list(config.get(section, {}).keys())
+    return []
+
+
+def build_astrophysical_sources_to_use_title(config) -> str:
+    """Format [astrophysical_sources_to_use] flags for plot title side column."""
+    keys = _config_section_keys(config, "astrophysical_sources_to_use")
+    if not keys:
+        return ""
+
+    lines = ["astrophysical sources:"]
+    for key in keys:
+        enabled = config_getboolean(config, "astrophysical_sources_to_use", key)
+        lines.append(f"  {key} = {enabled}")
+    return "\n".join(lines)
+
+
+def _join_two_column_text(left: str, right: str, gap: int = 4) -> str:
+    """Place two newline-separated blocks side by side."""
+    left_lines = left.splitlines() if left else []
+    right_lines = right.splitlines() if right else []
+    if not left_lines:
+        return "\n".join(right_lines)
+    if not right_lines:
+        return "\n".join(left_lines)
+
+    left_width = max(len(line) for line in left_lines)
+    n_rows = max(len(left_lines), len(right_lines))
+    rows = []
+    for row_idx in range(n_rows):
+        left_cell = left_lines[row_idx] if row_idx < len(left_lines) else ""
+        right_cell = right_lines[row_idx] if row_idx < len(right_lines) else ""
+        rows.append(f"{left_cell:<{left_width}}{' ' * gap}{right_cell}")
+    return "\n".join(rows)
+
+
 def format_plot_title(base_title: str, config) -> str:
     title_context = _get_plot_title_context(config)
-    if not title_context:
+    sources_context = build_astrophysical_sources_to_use_title(config)
+    body = _join_two_column_text(title_context, sources_context)
+    if not body:
         return base_title
     separator = "\n" if base_title else ""
     # If 'base_title' is present, underline it; otherwise, just return the context.
     if base_title:
         # Underline the base title with '=' (length matches without ANSI/formatting, just plain text)
         underline = "=" * len(base_title)
-        return f"{base_title}\n{underline}{separator}{title_context}"
+        return f"{base_title}\n{underline}{separator}{body}"
     else:
-        return f"{title_context}"
+        return f"{body}"
 
 # end bunch of functions to get and set the plot title context
 ########################################################
@@ -225,7 +271,7 @@ def merge_psg_spectra_to_planet_population(
     return df_planet_population.merge(df_psg_spectra_names, on='id', how='left')
 
 
-def plot_planet_population_sample(
+def plot_planet_population_sample(  # pragma: no cover
     df_planet_population: pd.DataFrame,
     cols_to_plot: list[str],
     output_path: str,
@@ -979,7 +1025,7 @@ def record_info_at_angle_and_qe(
 
     logger.info(f"Recorded angle {angle_deg} to {file_name}")
 
-    if plot and post_chop_tables_by_dark_current:
+    if plot and post_chop_tables_by_dark_current: # pragma: no cover
         dc_rate = next(iter(post_chop_tables_by_dark_current))
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate]
         wavel_center = chopped_tbl['wavel_bin_center'].value
