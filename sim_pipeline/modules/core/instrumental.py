@@ -11,7 +11,7 @@ Sky / aperture coordinate convention (use everywhere in this repo):
   - Config pos_*_arcsec strings: "y, x" (y first, x second).
 """
 
-from socket import IPV6_DONTFRAG
+#from socket import IPV6_DONTFRAG
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field, asdict
