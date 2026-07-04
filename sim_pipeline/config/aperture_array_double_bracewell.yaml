@@ -1,0 +1,50 @@
+# Aperture array layout (positions in meters, instrument frame)
+# Code stacks positions as pos_vec_m = [y_m, x_m] per aperture (y first, x second).
+
+schema_version: 1
+units:
+  position: m
+
+reference:
+  origin: array_center   # describe your frame in code/docs
+  # x: e.g. along dispersion; y: e.g. cross-dispersion
+
+
+apertures:
+  - name: aperture_00
+    amplitude: 1.0
+    x_m: -7.2
+    y_m: 2.4
+
+  - name: aperture_01
+    amplitude: 1.0
+    x_m: 7.2
+    y_m: 2.4
+
+  - name: aperture_02
+    amplitude: 1.0
+    x_m: -7.2
+    y_m: -2.4
+
+  - name: aperture_03
+    amplitude: 1.0
+    x_m: 7.2
+    y_m: -2.4
+# apertures variables:
+# amplitude: amplitude of the aperture
+# phi_dc_deg: phase offset of the aperture (in degrees, since pi is hard to set in a yaml file)
+# x_m: x position of the aperture
+# y_m: y position of the aperture
+
+outputs:
+  - name: output_1_bright
+    phase_vector_deg: [0, 0, 0, 0]
+
+  - name: output_2_bright
+    phase_vector_deg: [0, 0, 180, 180]
+
+  - name: output_3_dark
+    phase_vector_deg: [0, 180, 90, 270]
+
+  - name: output_4_dark
+    phase_vector_deg: [0, 180, 270, 90]
