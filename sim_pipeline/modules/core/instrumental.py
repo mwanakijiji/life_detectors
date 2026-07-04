@@ -1072,64 +1072,6 @@ class InstrumentDepTerms:
             self.post_chop_tables_by_dark_current[dc_rate] = chopped
 
 
-    '''
-    def chop_signal(self, fyi_angle, transmission_screens: np.ndarray, plot: bool = False):
-        logger.info("Chopping signal between dark outputs...")
-        ipdb.set_trace()
-        #########
-        for source_name, source_val in self.prop_dict.items():
-            self.prop_dict[source_name]['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'] = source_val['flux_cube_post_screen_post_aperture_ph_sec_um']['output_3_dark'] - source_val['flux_cube_post_screen_post_aperture_ph_sec_um']['output_4_dark']
-
-        chopped_transmission_screen_darks = transmission_screens[2,:,:] - transmission_screens[3,:,:]   
-        if plot:
-
-            plt.clf()
-            plt.figure(figsize=(6, 6))
-            plt.imshow(chopped_transmission_screen_darks, origin='lower', cmap='gray')
-            plt.colorbar()
-            plt.title('Chopped dark transmission screens')
-            plt.savefig(str(self.config['dirs']['save_s2n_data_unique_dir']) + f"chopped_dark_transmission_screens_angle_{int(fyi_angle)}.png")
-            plt.close()
-        
-
-            fig, axs = plt.subplots(1, 2, figsize=(12, 6), constrained_layout=True)
-
-            im0 = axs[0].imshow(chopped_dark_transmission, origin='lower', cmap='gray')
-            axs[0].set_title('Chopped dark transmission')
-            fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
-
-            chopped_flux = self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_ph_sec_um'][idx, :, :]
-            chopped_flux_units = chopped_flux.unit.to_string()
-            im1 = axs[1].imshow(chopped_flux.value, origin='lower', cmap='gray')
-            axs[1].set_title(f'Chopped flux (idx_wavel={idx})')
-            fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=chopped_flux_units)
-
-            fig.suptitle(f'Chop: {source_name}, angle {int(fyi_angle)}')
-            file_name_plot = (
-                str(self.config['dirs']['save_s2n_data_unique_dir'])
-                + f"chopped_dark_transmission_{source_name}_angle_{int(fyi_angle)}.png"
-            )
-            fig.savefig(file_name_plot)
-            plt.close(fig)
-            logging.info(f"Saved plot of chopped dark transmission at angle {int(fyi_angle)} to {file_name_plot}")
-
-
-        return
-
-        #########
-        ipdb.set_trace()
-        dark_transmission_3_dark = transmission_screens[transmission_screen_order.index('output_3_dark'), :, :] ## ## TODO: Make transmission screens chromatic (wavel, x, y), not just (x, y)
-        dark_transmission_4_dark = transmission_screens[transmission_screen_order.index('output_4_dark'), :, :]
-        chopped_dark_transmission = dark_transmission_3_dark - dark_transmission_4_dark
-        # subtract the signals as passed through the dark transmission screens
-
-        # the cube of the chopped signal (wavel, x, y)
-        self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_ph_sec_um'] = source_val['output_3_dark'] - source_val['output_4_dark']
-
-        # the chopped transmission screen (x, y) for now; update with wavelength axis later
-        self.sources_astroph[source_name]['flux_cube_post_screen_post_chop_transmission_ph_sec_um'] = chopped_dark_transmission
-    '''
-
     def pass_through_transmission_screens(self, fyi_angle, source_dict_pre_screen: dict, transmission_screens: np.ndarray, plot: bool = False):
         '''
         Pass each astrophysical source through the transmission screens, and update prop_dict with the propagated terms
@@ -1146,6 +1088,8 @@ class InstrumentDepTerms:
         transmission_screens = transmission_screens[0:4,:,:] # just keep the transmission slices for now ## ## TODO: include the yy and xx slices as a check somehow
 
         # put all the post-screen fluxes (for each source and from each channel) into a single dict
+        # first check that transmission screens add up to one (energy conservation)
+        net_transmission_screen = np.sum(transmission_screens, axis=0)
         source_dict_post_screen = {}
         for source_name, source_val in source_dict_pre_screen.items():
             source_dict_post_screen[source_name] = {}
@@ -1170,13 +1114,26 @@ class InstrumentDepTerms:
             # source_val has 4 different screens, so integrate them separately
             self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
             self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = {} # will contain flux cube corresponding to each screen
+            test_flux_1 = 0 # to check flux conservation
+            test_flux_2 = 0 # to check flux conservation
             for transmission_screen_name in transmission_screen_order:
                 source_val_integrated = np.sum(source_val[transmission_screen_name], axis=(1,2))
                 self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'][transmission_screen_name] = source_val_integrated
                 self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'][transmission_screen_name] = source_val[transmission_screen_name]
                 logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
+                # to check flux conservation, add up all the light transmitted through each screen
+                test_flux_1 += source_val_integrated
+                test_flux_2 += np.sum(source_val[transmission_screen_name], axis=(1,2))
+            # if total flux after transmission is same as the input
+            if np.logical_or(
+                np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
+                np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
+            ):
+                logging.error(f'Flux conservation check failed for {source_name} at angle {int(fyi_angle)}')
+                ipdb.set_trace()
 
+            ipdb.set_trace()
             if plot: # pragma: no cover
 
                 # flux vs wavelength post-screen, separated by screen
