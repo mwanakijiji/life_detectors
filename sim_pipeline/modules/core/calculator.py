@@ -157,24 +157,25 @@ def calculate_s2n_post_rotation(read_dir, config):
         S_sym_noise_var_3_elec = None
         logging.info(f'Astrophysical sources considered to be symmetric: {[source_name for source_name in sources_sym.keys()]}')
         for source_name, source_dict in sources_sym.items():
-            cols_sym_sigma_elec = [] # will contain the noise of symmetric sources for each angle
+            cols_sym_noise_var_3_elec = [] # will contain the noise of symmetric sources for each angle
             for a in angles:
                 # absolute signal from S3 (in photoelectrons) is the same as the noise var of output 3
                 # note just using S3 here; effect of S4 (which is symmetric) is included downstream with sqrt(2)
                 sym_noise_var_this_source_this_angle_dark_3_elec = source_dict['Ssym_dark_3'][a] * gain
                 # for averaging symmetric noise vars across angles (kind of redundant, because the symmetric sources are not expected to change)
-                cols_sym_sigma_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron)
+                cols_sym_noise_var_3_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron)
             # symmetric noise var averaged across angles for this source
-            sym_sigma_mean_3_elec = np.mean(np.column_stack(cols_sym_sigma_elec), axis=1)
+            #sym_sigma_mean_3_elec = np.mean(np.column_stack(cols_sym_noise_var_3_elec), axis=1)
             # symmetric noise var averaged across angles for this source
-            sym_noise_var_mean_3_elec = np.mean(np.power(np.column_stack(cols_sym_sigma_elec), 2).value * u.electron, axis=1)
+            sym_noise_var_mean_3_elec = np.mean(np.column_stack(cols_sym_noise_var_3_elec).value * u.electron, axis=1)
             # add chopped photon noise from all the astrophysical sources in quadrature
             S_sym_noise_var_3_elec = sym_noise_var_mean_3_elec if S_sym_noise_var_3_elec is None else S_sym_noise_var_3_elec + sym_noise_var_mean_3_elec
+        #ipdb.set_trace()
         # noise sigma and var from all symmetric sources
         if S_sym_noise_var_3_elec.unit == u.electron:
             S_sym_3_sigma_elec = np.sqrt(S_sym_noise_var_3_elec.value) * u.electron if S_sym_noise_var_3_elec is not None else np.zeros(len(slot["wavel_bin_width"])) * u.electron
         else:
-            logger.error('Unit inconsistency!')
+            logger.error('Unit inconsistency in symmetric astrophysical noise sources!')
             exit()
         #S_sym_3_var = np.power(S_sym_3_sigma, 2)
 
@@ -196,21 +197,12 @@ def calculate_s2n_post_rotation(read_dir, config):
             S_dark_noise_var = np.power(slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
             # again, so 2*sqrt(N_angles) etc. because the net read noise for this wavelength bin is from the chopped signal; also consider independent of viewing angle
             S_read_noise_var = np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
-            S_instrumental_var = S_dark_noise_var + S_read_noise_var
-            S_instrumental_sigma = np.sqrt(S_instrumental_var).value * u.electron
+            #S_instrumental_var = S_dark_noise_var + S_read_noise_var
+            #S_instrumental_sigma = np.sqrt(S_instrumental_var).value * u.electron
 
+            # symmetric astrophysical noise sources
             S_sym_3_var_this = S_sym_noise_var_3_elec[wavel_bin_num]
             S_sym_3_sigma_this = S_sym_3_sigma_elec[wavel_bin_num]
-
-            # instrumental systematics
-            # readout noise per pixel times the number of pixels
-            '''
-            slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"]
-            var_N_ron_tot = N_angles * N_ron # [N_ron] = e pix-1
-            # dark current noise per pixel times the number of pixels ## ## TODO: enable multiple reads
-            N_dark_tot = N_dark * np.sqrt(n_pix) * t_int_frame  # [N_dark] = e pix-1 s-1
-            S_instrumental = N_ron_tot**2 + N_dark_tot**2
-            '''
 
             # put it all together
             # note that integration over wavelengths of this wavelength bin is already included (i.e., they are bin totals),
@@ -219,9 +211,10 @@ def calculate_s2n_post_rotation(read_dir, config):
             # note S_sym_3_var_this is same as S_sym_3 this, assuming Poisson noise
             astro_noise_term = 2 * (S_sym_3_var_this + S_p_3_rms_phi)
             instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
-            instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
+            #instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
             # add noise terms; note astronoise is already the quadrature term, so no **2 on it
-            instrum_noise_term = 0 * u.electron # this is just for testing
+            # debugging:
+            #instrum_noise_term = 0 * u.electron # this is just for testing
             denominator_ = np.sqrt(astro_noise_term + instrum_noise_term).value * u.electron
 
             SNR_lambda = numerator_ / denominator_
