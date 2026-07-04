@@ -263,6 +263,8 @@ class TestInstrumentDepTerms:
         #ipdb.set_trace()
         screens = instr.generate_instrument_transmission(wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False)
         
+        # for debugging
+        '''
         import matplotlib.pyplot as plt
         screens = instr.generate_instrument_transmission(
             wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
@@ -280,23 +282,21 @@ class TestInstrumentDepTerms:
         plt.tight_layout()
         plt.savefig(transmission_config["dirs"]["save_s2n_data_unique_dir"] + "test_transmission_screens.png")
         plt.show()  # only if running interactively, not in headless pytest
+        '''
 
         assert np.max(np.any(screens[0:5,:,:], axis=(0))) < 1.0 + 1e-6 # transmission < 1
         net = np.sum(screens[0:4], axis=0)
         assert np.allclose(net, 1.0)
 
-    '''
+
     def test_pass_through_transmission_screens_multiplies_scene_by_each_output(
-        self, unit_converter, instrum_base_config
+        self, unit_converter, instrum_base_config, transmission_config
     ):
-        config = {**instrum_base_config, "dirs": {"save_s2n_data_unique_dir": "/tmp/"}}
         wavel = np.array([1.0, 2.0]) * u.um
-        scene = np.ones((2, 4, 4)) * u.ph / (u.um * u.m**2 * u.s)
-        transmission = np.zeros((6, 4, 4))
-        transmission[0, :, :] = 1.0
-        transmission[1, :, :] = 0.5
-        transmission[2, :, :] = 0.25
-        transmission[3, :, :] = 0.1
+        scene = np.zeros((2, 1001, 1001)) * u.ph / (u.um * u.m**2 * u.s)
+        scene[:, 500:600, 200:300] = 1.0 * u.ph / (u.um * u.m**2 * u.s) # the 'star'
+        Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(parents=True, exist_ok=True)
+
 
         sources_astroph = {
             "star": {
@@ -306,20 +306,67 @@ class TestInstrumentDepTerms:
         }
 
         instr = InstrumentDepTerms(
-            config, unit_converter, sources_astroph=sources_astroph, sources_to_include=["star"]
+            transmission_config, 
+            unit_converter, 
+            sources_astroph=sources_astroph, 
+            sources_to_include=["star"]
         )
+
+        screens = instr.generate_instrument_transmission(wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False)
+
         instr.pass_through_transmission_screens(
             fyi_angle=0.0,
             source_dict_pre_screen={"star": scene},
-            transmission_screens=transmission,
+            transmission_screens=screens,
             plot=False,
         )
 
-        bright = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_1_bright"]
-        dark = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_4_dark"]
-        assert np.allclose(bright[0, 0, 0].value, scene[0, 0, 0].value)
-        assert np.allclose(dark[0, 0, 0].value, 0.1 * scene[0, 0, 0].value)
+        bright_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_1_bright"]
+        bright_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_2_bright"]
+        dark_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_3_dark"]
+        dark_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_4_dark"]
 
+        '''
+        if np.logical_or(
+            np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
+            np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
+        ):
+        '''
+
+        net_flux = bright_1 + bright_2 + dark_1 + dark_2
+
+        # for debugging
+        '''
+        import matplotlib.pyplot as plt
+        wavel_idx = 0
+        panels = [
+            ("scene", scene),
+            ("output_1_bright", bright_1),
+            ("output_2_bright", bright_2),
+            ("output_3_dark", dark_1),
+            ("output_4_dark", dark_2),
+            ("net_flux", net_flux),
+        ]
+        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+        for ax, (name, cube) in zip(axes.ravel(), panels):
+            im = ax.imshow(cube[wavel_idx, :, :].value, origin="lower")
+            ax.set_title(name)
+            fig.colorbar(im, ax=ax, fraction=0.046)
+        fig.suptitle(f"post-screen flux (wavel index {wavel_idx})")
+        plt.tight_layout()
+        out_dir = transmission_config["dirs"]["save_s2n_data_unique_dir"]
+        plt.show()
+        #plt.savefig(out_dir + "test_post_screen_flux_panels.png")
+        #plt.close(fig)
+        '''
+
+        # check flux conservation
+        np.testing.assert_allclose(net_flux.value, scene.value)
+   
+        #assert np.allclose(dark[0, 0, 0].value, 0.1 * scene[0, 0, 0].value)
+
+
+    '''
     def test_photons_to_e_converts_legacy_post_aperture_flux(self, unit_converter, instrum_base_config):
         config = {
             **instrum_base_config,
@@ -349,6 +396,7 @@ class TestInstrumentDepTerms:
         assert np.allclose(got.value, expected.value)
         assert "flux_e_sec_um" not in instr.prop_dict["bad"]
     '''
+
 
     def test_chop_signal_builds_post_chop_tables(self, unit_converter, instrum_base_config):
         instr = InstrumentDepTerms(

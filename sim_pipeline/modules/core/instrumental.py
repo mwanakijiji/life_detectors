@@ -1114,8 +1114,8 @@ class InstrumentDepTerms:
             # source_val has 4 different screens, so integrate them separately
             self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
             self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = {} # will contain flux cube corresponding to each screen
-            test_flux_1 = 0 # to check flux conservation
-            test_flux_2 = 0 # to check flux conservation
+            #test_flux_1 = 0 # to check flux conservation
+            #test_flux_2 = 0 # to check flux conservation
             for transmission_screen_name in transmission_screen_order:
                 source_val_integrated = np.sum(source_val[transmission_screen_name], axis=(1,2))
                 self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'][transmission_screen_name] = source_val_integrated
@@ -1123,15 +1123,17 @@ class InstrumentDepTerms:
                 logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
                 # to check flux conservation, add up all the light transmitted through each screen
-                test_flux_1 += source_val_integrated
-                test_flux_2 += np.sum(source_val[transmission_screen_name], axis=(1,2))
+                #test_flux_1 += source_val_integrated
+                #test_flux_2 += np.sum(source_val[transmission_screen_name], axis=(1,2))
             # if total flux after transmission is same as the input
+            '''
             if np.logical_or(
                 np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
                 np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
             ):
                 logging.error(f'Flux conservation check failed for {source_name} at angle {int(fyi_angle)}')
                 ipdb.set_trace()
+            '''
 
             ipdb.set_trace()
             if plot: # pragma: no cover
