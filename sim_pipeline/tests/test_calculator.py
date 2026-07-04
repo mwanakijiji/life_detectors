@@ -3,6 +3,7 @@ Unit tests for the main noise calculator.
 """
 
 import configparser
+import re
 import sys
 import types
 from types import SimpleNamespace
@@ -11,12 +12,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from astropy import units as u
+from astropy.table import QTable
 
 # Mock ipdb before importing project modules (optional dev dependency)
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.core.calculator import NoiseCalculator
+from modules.core.calculator import NoiseCalculator, calculate_s2n_post_rotation
 
 
 def _geometric_n_bins(lambda_min: float, lambda_max: float, spec_res: float) -> int:
@@ -343,3 +345,258 @@ class TestS2nE:
 
         assert mock_plt.savefig.called
         assert mock_plt.close.called
+
+
+PLANET_COL = "astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"
+CHOPPED_PLANET_COL = f"chopped_{PLANET_COL}"
+STAR_COL_3 = "output_3_dark_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"
+STAR_COL_4 = "output_4_dark_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"
+
+
+def _make_wavelength_meta(n_bins: int = 1):
+    centers = np.linspace(10.0, 10.0 + n_bins - 1, n_bins) * u.um
+    widths = np.ones(n_bins) * u.um
+    edges = np.empty(n_bins + 1) * u.um
+    edges[1:-1] = 0.5 * (centers[:-1] + centers[1:])
+    edges[0] = centers[0] - 0.5 * widths[0]
+    edges[-1] = centers[-1] + 0.5 * widths[-1]
+    return centers, widths, edges
+
+
+def _base_table(n_bins: int = 1) -> QTable:
+    centers, widths, edges = _make_wavelength_meta(n_bins)
+    tbl = QTable()
+    tbl["wavel_bin_num"] = np.arange(n_bins)
+    tbl["wavel_bin_center"] = centers
+    tbl["wavel_bin_width"] = widths
+    tbl["n_pix_per_wavel_bin"] = np.full(n_bins, 100) * u.pix
+    tbl.meta["wavel_bin_edges"] = edges
+    tbl.meta["qe"] = 0.70
+    tbl.meta["angle_deg"] = 0.0
+    tbl.meta["dark_current_e_pix_s"] = 1e-4
+    return tbl
+
+
+def _write_angle_hdf5(
+    path,
+    *,
+    angle_deg: float,
+    dc_rate: float = 1e-4,
+    qe: float = 0.70,
+    planet_chopped,
+    planet_out3,
+    star_out3=None,
+    star_out4=None,
+    instrum_dark=0.5,
+    instrum_read=0.3,
+    n_bins: int = 1,
+):
+    """Write one angle_*.hdf5 file matching record_info_at_angle_and_qe layout."""
+    dc_qe_str = f"dc_{dc_rate:g}_qe_{qe:.2f}"
+    star_out3 = star_out3 if star_out3 is not None else np.zeros(n_bins)
+    star_out4 = star_out4 if star_out4 is not None else np.zeros(n_bins)
+
+    def _write_table(tbl, dataset_name, overwrite=False):
+        tbl.meta["angle_deg"] = float(angle_deg)
+        tbl.meta["qe"] = float(qe)
+        tbl.write(
+            path,
+            path=f"{dc_qe_str}/{dataset_name}",
+            serialize_meta=True,
+            overwrite=overwrite,
+            append=not overwrite,
+        )
+
+    first = True
+    for ch_name in (
+        "output_1_bright",
+        "output_2_bright",
+        "output_3_dark",
+        "output_4_dark",
+    ):
+        tbl = _base_table(n_bins)
+        if ch_name == "output_3_dark":
+            tbl[PLANET_COL] = np.asarray(planet_out3) * u.adu
+        _write_table(tbl, ch_name, overwrite=first)
+        first = False
+
+    chopped = _base_table(n_bins)
+    chopped[CHOPPED_PLANET_COL] = np.asarray(planet_chopped) * u.adu
+    chopped[STAR_COL_3] = np.asarray(star_out3) * u.adu
+    chopped[STAR_COL_4] = np.asarray(star_out4) * u.adu
+    chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"] = (
+        np.full(n_bins, instrum_dark) * u.adu
+    )
+    chopped["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"] = (
+        np.full(n_bins, instrum_read) * u.adu
+    )
+    _write_table(chopped, "chopped", overwrite=False)
+
+
+def _expected_snr_lambda(
+    *,
+    planet_chopped_by_angle,
+    planet_out3_by_angle,
+    star_out3_by_angle,
+    star_out4_by_angle,
+    gain,
+    instrum_dark,
+    instrum_read,
+):
+    """Mirror calculate_s2n_post_rotation SNR math (no plotting)."""
+    angles = sorted(planet_chopped_by_angle.keys())
+    n_angles = len(angles)
+    n_bins = len(next(iter(planet_chopped_by_angle.values())))
+
+    cols_S_p = [np.asarray(planet_chopped_by_angle[a]) for a in angles]
+    cols_S_p_3 = [np.asarray(planet_out3_by_angle[a]) for a in angles]
+    S_p_sqd_arr_mean = np.mean(np.power(np.column_stack(cols_S_p), 2), axis=1)
+    S_p_3_sqd_arr_mean = np.mean(np.power(np.column_stack(cols_S_p_3), 2), axis=1)
+
+    cols_sigma_sq = []
+    for a in angles:
+        S3 = np.asarray(star_out3_by_angle[a])
+        S4 = np.asarray(star_out4_by_angle[a])
+        N_e = (S3 + S4) * gain
+        cols_sigma_sq.append(np.power(np.sqrt(N_e) / gain, 2))
+    sigma_sq_mean = np.mean(np.column_stack(cols_sigma_sq), axis=1)
+    S_sym_3 = np.sqrt(sigma_sq_mean)
+
+    snr_bins = []
+    for wavel_bin_num in range(n_bins):
+        S_p_rms_phi = np.sqrt(S_p_sqd_arr_mean[wavel_bin_num])
+        S_p_3_rms_phi = np.sqrt(S_p_3_sqd_arr_mean[wavel_bin_num])
+
+        S_dark_noise_var = n_angles * instrum_dark[wavel_bin_num] ** 2
+        S_read_noise_var = n_angles * instrum_read[wavel_bin_num] ** 2
+        S_instrumental_var = S_dark_noise_var + S_read_noise_var
+
+        S_sym_3_this = np.sqrt(n_angles * S_sym_3[wavel_bin_num] ** 2)
+        astro_noise = np.sqrt(2) * (S_sym_3_this + S_p_3_rms_phi)
+        denominator = np.sqrt(astro_noise**2 + S_instrumental_var)
+        snr_bins.append(S_p_rms_phi / denominator)
+
+    snr_bins = np.asarray(snr_bins)
+    return snr_bins, np.sqrt(np.sum(np.power(snr_bins, 2)))
+
+
+@pytest.fixture
+def s2n_config(tmp_path):
+    return {
+        "dirs": {"save_s2n_data_unique_dir": str(tmp_path / "out") + "/"},
+        "detector": {"gain": "2.0", "quantum_efficiency": "0.7"},
+        "observation": {
+            "t_int_frame": "10",
+            "N_angles": "2",
+            "N_int_per_angle": "1",
+        },
+        "plotting": {"title_context": ""},
+    }
+
+
+@pytest.fixture
+def patch_plotting():
+    with patch("modules.core.calculator.plt.savefig"), patch(
+        "modules.core.calculator.plt.figure"
+    ), patch("modules.core.calculator.plt.clf"), patch(
+        "modules.core.calculator.plt.stairs"
+    ), patch(
+        "modules.core.calculator.plt.tight_layout"
+    ):
+        yield
+
+
+class TestCalculateS2nPostRotation:
+    def test_snr_matches_reference_implementation(
+        self, tmp_path, s2n_config, patch_plotting, capsys
+    ):
+        read_dir = tmp_path / "hdf5"
+        read_dir.mkdir()
+
+        _write_angle_hdf5(
+            read_dir / "angle_0.hdf5",
+            angle_deg=0.0,
+            planet_chopped=[4.0],
+            planet_out3=[3.0],
+            star_out3=[1.0],
+            star_out4=[1.0],
+        )
+        _write_angle_hdf5(
+            read_dir / "angle_90.hdf5",
+            angle_deg=90.0,
+            planet_chopped=[0.0],
+            planet_out3=[1.0],
+            star_out3=[2.0],
+            star_out4=[2.0],
+        )
+
+        gain = float(s2n_config["detector"]["gain"])
+        _, expected_tot = _expected_snr_lambda(
+            planet_chopped_by_angle={0.0: [4.0], 90.0: [0.0]},
+            planet_out3_by_angle={0.0: [3.0], 90.0: [1.0]},
+            star_out3_by_angle={0.0: [1.0], 90.0: [2.0]},
+            star_out4_by_angle={0.0: [1.0], 90.0: [2.0]},
+            gain=gain,
+            instrum_dark=np.array([0.5]),
+            instrum_read=np.array([0.3]),
+        )
+
+        calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
+
+        captured = capsys.readouterr().out
+        match = re.search(r"SNR_tot for DC dc_0\.0001_qe_0\.70: ([0-9.]+)", captured)
+        assert match is not None
+        assert float(match.group(1)) == pytest.approx(expected_tot)
+
+    def test_symmetric_noise_uses_all_angles_not_last_only(
+        self, tmp_path, s2n_config, patch_plotting, capsys
+    ):
+        """Regression: star shot noise should use angle-averaged sigma^2, not last file only."""
+        read_dir = tmp_path / "hdf5"
+        read_dir.mkdir()
+
+        _write_angle_hdf5(
+            read_dir / "angle_0.hdf5",
+            angle_deg=0.0,
+            planet_chopped=[1.0],
+            planet_out3=[1.0],
+            star_out3=[4.0],
+            star_out4=[4.0],
+        )
+        _write_angle_hdf5(
+            read_dir / "angle_90.hdf5",
+            angle_deg=90.0,
+            planet_chopped=[1.0],
+            planet_out3=[1.0],
+            star_out3=[0.0],
+            star_out4=[0.0],
+        )
+
+        gain = float(s2n_config["detector"]["gain"])
+        expected_with_avg, _ = _expected_snr_lambda(
+            planet_chopped_by_angle={0.0: [1.0], 90.0: [1.0]},
+            planet_out3_by_angle={0.0: [1.0], 90.0: [1.0]},
+            star_out3_by_angle={0.0: [4.0], 90.0: [0.0]},
+            star_out4_by_angle={0.0: [4.0], 90.0: [0.0]},
+            gain=gain,
+            instrum_dark=np.array([0.5]),
+            instrum_read=np.array([0.3]),
+        )
+        expected_last_only, _ = _expected_snr_lambda(
+            planet_chopped_by_angle={0.0: [1.0], 90.0: [1.0]},
+            planet_out3_by_angle={0.0: [1.0], 90.0: [1.0]},
+            star_out3_by_angle={0.0: [0.0], 90.0: [0.0]},
+            star_out4_by_angle={0.0: [0.0], 90.0: [0.0]},
+            gain=gain,
+            instrum_dark=np.array([0.5]),
+            instrum_read=np.array([0.3]),
+        )
+
+        assert expected_with_avg[0] != pytest.approx(expected_last_only[0])
+        assert expected_with_avg[0] < expected_last_only[0]
+
+        calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
+        captured = capsys.readouterr().out
+        match = re.search(r"SNR_tot for DC dc_0\.0001_qe_0\.70: ([0-9.]+)", captured)
+        assert match is not None
+        assert float(match.group(1)) == pytest.approx(expected_with_avg[0])

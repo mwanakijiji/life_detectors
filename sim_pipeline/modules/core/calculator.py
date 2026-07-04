@@ -5,25 +5,31 @@ This module provides the primary interface for calculating total noise
 and signal-to-noise ratios for infrared detector observations.
 """
 
-from ipaddress import ip_network
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
-from dataclasses import dataclass
+import glob
 import logging
-import configparser
-import ipdb
+import os
+from pathlib import Path
+
 import astropy.units as u
-import matplotlib.pyplot as plt
+import configparser
+import h5py
+import ipdb
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import numpy as np
 import pickle
 from astropy.io import fits
+from astropy.table import QTable
+from dataclasses import dataclass
+from ipaddress import ip_network
+from typing import Any, Dict, List, Optional, Tuple
 
 from .astrophysical import AstrophysicalSources
-from .instrumental import InstrumentDepTerms, Detector
+from .instrumental import Detector, InstrumentDepTerms
 from ..data.units import UnitConverter
+from ..utils.helpers import ensure_plot_title_context, format_plot_title
 from ..utils.validator import validate_config
-from ..utils.helpers import format_plot_title
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,217 @@ def calculate_astrophysical_noise_adu(total_astro_adu: float) -> np.ndarray:
     
     return noise_adu
 '''
+
+
+def calculate_s2n_post_rotation(read_dir, config):
+    """
+    Calculate the S/N of the chopped dark outputs.
+
+    Args:
+        read_dir: dir containing the HDF5 files
+        config: configuration dictionary
+
+    Returns:
+        S_p_sqd_phi_mean: mean of the squared signal of the chopped dark outputs
+        S_p_3_sqd_phi_mean: mean of the squared signal of the chopped dark output 3
+        SNR_lambda_array: SNR for each wavelength bin
+        SNR_tot: total SNR
+    """
+
+    hdf5_files = glob.glob(os.path.join(read_dir, '*.hdf5'))
+    by_dc_qe = {}
+    ensure_plot_title_context(config)
+
+    # read in one HDF5 file per angle and QE value
+    for hdf5_file in hdf5_files:
+        angle = float(Path(hdf5_file).stem.removeprefix("angle_"))
+
+        with h5py.File(hdf5_file, "r") as f:
+            # for all DC, QE values
+
+            for dc_qe_str in f.keys():
+                # for all outputs
+                for ch in f[dc_qe_str].keys():
+                    if ch.endswith(".__table_column_meta__"):
+                        continue
+                    tbl = QTable.read(hdf5_file, path=f"{dc_qe_str}/{ch}")
+
+                qe = tbl.meta['qe']
+
+                # calculate the S/N of the chopped dark outputs
+                # need S_p and S_p_3; see Dannert+ 2022 Eqn. 20
+                chopped = QTable.read(hdf5_file, path=f"{dc_qe_str}/chopped")
+                S_p = chopped["chopped_astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
+                out3 = QTable.read(hdf5_file, path=f"{dc_qe_str}/output_3_dark")
+                S_p_3 = out3["astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"]
+                wavel = chopped["wavel_bin_center"].value
+                wavel_bin_edges = chopped.meta["wavel_bin_edges"]
+
+                slot = by_dc_qe.setdefault(dc_qe_str,
+                                        {"wavel": wavel, "S_p": {}, "S_p_3": {},
+                                        "chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot": {},
+                                        "chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot": {}})
+                slot["S_p"][angle] = S_p
+                slot["S_p_3"][angle] = S_p_3
+
+                #slot["instrum_dark_current_chopped"][angle] = # self.output_channels["output_3_dark"].instrum_noise["dark_current_e_pix-1_sec-1"] * chopped["n_pix_per_wavel_bin"] * t_int_frame / gain chopped["instrum_dark_current_chopped"]
+                slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][angle] = chopped["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"]
+                slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][angle] = chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"]
+                slot["wavel_bin_width"] = chopped["wavel_bin_width"] ## ## TODO: use the proper bin edges
+
+                keystrings_all = ['3', 'dark']
+                slot.setdefault('sources_sym', {})
+                for signal_name in chopped.colnames:
+                    if all(keystring in signal_name for keystring in keystrings_all) and ('_star' in signal_name):
+                        source_name = 'star'
+                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_exozodiacal' in signal_name):
+                        source_name = 'exozodiacal'
+                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_zodiacal' in signal_name):
+                        source_name = 'zodiacal'
+                    else:
+                        continue
+                    slot['sources_sym'].setdefault(source_name, {'Ssym_dark_3': {}, 'Ssym_dark_4': {}})
+                    slot['sources_sym'][source_name]['Ssym_dark_3'][angle] = chopped[signal_name]
+                    slot['sources_sym'][source_name]['Ssym_dark_4'][angle] = chopped[signal_name.replace('3', '4')]
+
+    for dc_qe_str, slot in by_dc_qe.items():
+        gain = float(config['detector']['gain']) * u.electron / u.adu  # e-/ADU
+        angles = sorted(slot["S_p"].keys())
+        N_angles = len(angles)
+        # (n_bins, n_angles) — use .value if columns are Quantity
+
+        cols_S_p_adu = []
+        cols_S_p_3_adu = []
+        cols_S_p_elec = []
+        cols_S_p_3_elec = []
+        for a in angles:
+            # get photoelectron quantities to find S/N
+            ## ## TODO: if not 1 electron per photon, this breaks reasoning
+            cols_S_p_adu.append(np.asarray(slot["S_p"][a])) # adu units are lost here, but will be restored later
+            cols_S_p_3_adu.append(np.asarray(slot["S_p_3"][a])) # adu units are lost here, but will be restored later
+            cols_S_p_elec.append(np.asarray(slot["S_p"][a] * gain) ) # photoelectrons units are lost here, but will be restored later
+            cols_S_p_3_elec.append(np.asarray(slot["S_p_3"][a]* gain) ) # photoelectrons units are lost here, but will be restored later
+        S_p_arr_elec = np.column_stack(cols_S_p_elec) * u.electron
+        S_p_sqd_arr_elec = np.power(S_p_arr_elec, 2)
+        S_p_3_arr_elec = np.column_stack(cols_S_p_3_elec) * u.electron
+        S_p_3_sqd_arr_elec = np.power(S_p_3_arr_elec, 2)
+
+        S_p_sqd_arr_mean_elec = S_p_sqd_arr_elec.mean(axis=1) # Dannert+ 2022 Eqn. (20)
+        S_p_3_sqd_arr_mean_elec = S_p_3_sqd_arr_elec.mean(axis=1)  # Dannert+ 2022 Eqn. (20)
+
+        #N_sym_adu = 0 * u.adu # symmetric sources
+        #gain = float(config['detector']['gain'])
+        #S_sym_shot_adu = np.sqrt(N_sym_adu * gain)   # = sqrt(sigma_sym_noise) / gain
+
+        # symmetric noise sources (angle-averaged shot noise; Dannert+ 2022 Eqn. 20)
+        sources_sym = slot.get('sources_sym', {})
+        S_sym_noise_var_3_elec = None
+        logging.info(f'Astrophysical sources considered to be symmetric: {[source_name for source_name in sources_sym.keys()]}')
+        for source_name, source_dict in sources_sym.items():
+            cols_sym_sigma_elec = [] # will contain the noise of symmetric sources for each angle
+            for a in angles:
+                # absolute signal from S3 (in photoelectrons) is the same as the noise var of output 3
+                # note just using S3 here; effect of S4 (which is symmetric) is included downstream with sqrt(2)
+                sym_noise_var_this_source_this_angle_dark_3_elec = source_dict['Ssym_dark_3'][a] * gain
+                # for averaging symmetric noise vars across angles (kind of redundant, because the symmetric sources are not expected to change)
+                cols_sym_sigma_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron)
+            # symmetric noise var averaged across angles for this source
+            sym_sigma_mean_3_elec = np.mean(np.column_stack(cols_sym_sigma_elec), axis=1)
+            # symmetric noise var averaged across angles for this source
+            sym_noise_var_mean_3_elec = np.mean(np.power(np.column_stack(cols_sym_sigma_elec), 2).value * u.electron, axis=1)
+            # add chopped photon noise from all the astrophysical sources in quadrature
+            S_sym_noise_var_3_elec = sym_noise_var_mean_3_elec if S_sym_noise_var_3_elec is None else S_sym_noise_var_3_elec + sym_noise_var_mean_3_elec
+        # noise sigma and var from all symmetric sources
+        if S_sym_noise_var_3_elec.unit == u.electron:
+            S_sym_3_sigma_elec = np.sqrt(S_sym_noise_var_3_elec.value) * u.electron if S_sym_noise_var_3_elec is not None else np.zeros(len(slot["wavel_bin_width"])) * u.electron
+        else:
+            logger.error('Unit inconsistency!')
+            exit()
+        #S_sym_3_var = np.power(S_sym_3_sigma, 2)
+
+        SNR_lambda_array = []
+        for wavel_bin_num in range(len(slot["wavel_bin_width"])):
+            #wavel_start = slot["wavel_bin_edges"][wavel_bin_num].value
+            #wavel_stop = slot["wavel_bin_edges"][wavel_bin_num + 1].value
+
+            d_wavel = slot["wavel_bin_width"][wavel_bin_num]
+
+            # astrophysical signals (all must be in photoelectrons)
+            # Dannert+ 2022 Eqn. (19)-(20): sqrt of angle-averaged squared signals per bin
+            S_p_rms_phi = np.sqrt(S_p_sqd_arr_mean_elec[wavel_bin_num])
+            S_p_3_rms_phi = np.sqrt(S_p_3_sqd_arr_mean_elec[wavel_bin_num])
+
+            # term for dark current for this wavelength bin
+            # note this is not 2*sqrt(N_angles) etc. because the dark current term is already from the CHOPPED signal, not from each of the 2 dark outputs
+            # note also that the dark current is assumed to be independent of viewing angle (so just use angle 0.0 here)
+            S_dark_noise_var = np.power(slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
+            # again, so 2*sqrt(N_angles) etc. because the net read noise for this wavelength bin is from the chopped signal; also consider independent of viewing angle
+            S_read_noise_var = np.power(slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][0.0][wavel_bin_num] * gain, 2).value * u.electron
+            S_instrumental_var = S_dark_noise_var + S_read_noise_var
+            S_instrumental_sigma = np.sqrt(S_instrumental_var).value * u.electron
+
+            S_sym_3_var_this = S_sym_noise_var_3_elec[wavel_bin_num]
+            S_sym_3_sigma_this = S_sym_3_sigma_elec[wavel_bin_num]
+
+            # instrumental systematics
+            # readout noise per pixel times the number of pixels
+            '''
+            slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"]
+            var_N_ron_tot = N_angles * N_ron # [N_ron] = e pix-1
+            # dark current noise per pixel times the number of pixels ## ## TODO: enable multiple reads
+            N_dark_tot = N_dark * np.sqrt(n_pix) * t_int_frame  # [N_dark] = e pix-1 s-1
+            S_instrumental = N_ron_tot**2 + N_dark_tot**2
+            '''
+
+            # put it all together
+            # note that integration over wavelengths of this wavelength bin is already included (i.e., they are bin totals),
+            # since the signals were already multiplied by the wavelength bin further upstream
+            numerator_ = S_p_rms_phi
+            # note S_sym_3_var_this is same as S_sym_3 this, assuming Poisson noise
+            astro_noise_term = 2 * (S_sym_3_var_this + S_p_3_rms_phi)
+            instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
+            instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
+            # add noise terms; note astronoise is already the quadrature term, so no **2 on it
+            denominator_ = np.sqrt(astro_noise_term + instrum_noise_term).value * u.electron
+
+            SNR_lambda = numerator_ / denominator_
+            SNR_lambda_array.append(SNR_lambda.value)
+
+        SNR_tot = np.sqrt(np.sum(np.power(SNR_lambda_array, 2)))
+        print(f'SNR_tot for DC {dc_qe_str}: {SNR_tot}')
+
+        t_int_frame = float(config['observation']['t_int_frame'])
+        n_angles_cfg = int(float(config['observation']['N_angles']))
+        n_int_per_angle = int(float(config['observation']['N_int_per_angle']))
+        n_int_total = n_angles_cfg * n_int_per_angle * t_int_frame
+        qe_val = float(config['detector']['quantum_efficiency'])
+
+        # plot SNR
+        if True:  # pragma: no cover
+            fig = plt.figure(figsize=(8, 8), constrained_layout=True)
+            plt.clf()
+            plt.stairs(SNR_lambda_array, edges=wavel_bin_edges.value)
+            plt.xlim([4, 18.5])
+            plt.yscale('log')
+            plt.grid(True)
+            plt.xlabel(f'Wavelength ({slot["wavel_bin_width"][wavel_bin_num].unit})')
+            plt.ylabel('SNR')
+            base_title = (
+                f"SNR for DC {dc_qe_str}  |  SNR_tot = {SNR_tot:.4g}  |  "
+                f"N_angles = {n_angles_cfg}  |  N_int_per_angle = {n_int_per_angle}  |  "
+                f"N_int tot = {n_int_total} sec"
+            )
+            plt.title(format_plot_title(base_title, config), fontsize=8, loc='left')
+            file_name_plot = (
+                str(config['dirs']['save_s2n_data_unique_dir'])
+                + f"SNR_vs_wavelength_{dc_qe_str}"
+                + f"_Nang_{n_angles_cfg}_Nintpa_{n_int_per_angle}_Ninttot_{n_int_total}.png"
+            )
+            plt.tight_layout()
+            plt.savefig(file_name_plot)
+            logging.info(f"Saved plot of SNR vs wavelength for {dc_qe_str} to {file_name_plot}")
+
+    return
 
 
 class NoiseCalculator:

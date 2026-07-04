@@ -294,7 +294,7 @@ class TestInstrumentDepTerms:
     ):
         wavel = np.array([1.0, 2.0]) * u.um
         scene = np.zeros((2, 1001, 1001)) * u.ph / (u.um * u.m**2 * u.s)
-        scene[:, 500:600, 200:300] = 1.0 * u.ph / (u.um * u.m**2 * u.s) # the 'star'
+        scene[:, 500:600, 200:300] = 6.0 * u.ph / (u.um * u.m**2 * u.s) # the 'star'
         Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(parents=True, exist_ok=True)
 
 
@@ -362,9 +362,6 @@ class TestInstrumentDepTerms:
 
         # check flux conservation
         np.testing.assert_allclose(net_flux.value, scene.value)
-   
-        #assert np.allclose(dark[0, 0, 0].value, 0.1 * scene[0, 0, 0].value)
-
 
     '''
     def test_photons_to_e_converts_legacy_post_aperture_flux(self, unit_converter, instrum_base_config):
