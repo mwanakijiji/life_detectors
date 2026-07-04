@@ -629,6 +629,19 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
                 
             )
 
+            # dot to indicate line of sight
+            axes[i].plot(
+                lambda_rel_lon_los,
+                beta_lat_los,
+                marker='o',
+                markersize=8,
+                markerfacecolor='red',
+                markeredgecolor='white',
+                markeredgewidth=0.8,
+                linestyle='None',
+                zorder=5,
+            )
+
             axes[i].set_title(f'Zodiacal background\nat {wavelength_um[idx]/u.um:.1f} μm')
             axes[i].set_xlabel(r'Relative Longitude to Sun, $\lambda_{\rm rel}$ (deg)')
             axes[i].set_ylabel(r'Latitude $\beta$ (deg)')
@@ -842,6 +855,23 @@ def compute_collecting_area_m2(config: dict) -> float:
     return n_apertures * np.pi * (0.5 * diameter_m) ** 2
 
 
+GENERATED_SPECTRA_FILENAMES = {
+    "star": "star_spectrum.txt",
+    "exoplanet_bb": "exoplanet_bb_spectrum.txt",
+    "exozodiacal": "exozodiacal_spectrum.txt",
+    "zodiacal": "zodiacal_spectrum.txt",
+}
+
+
+def bind_astrophysical_sources_library(config: configparser.ConfigParser) -> None:
+    """Point generated-source library entries at spectra in save_s2n_data_unique_dir."""
+    output_dir = Path(config["dirs"]["save_s2n_data_unique_dir"]).resolve()
+    if not config.has_section("astrophysical_sources_library"):
+        config.add_section("astrophysical_sources_library")
+    for source, filename in GENERATED_SPECTRA_FILENAMES.items():
+        config.set("astrophysical_sources_library", source, str(output_dir / filename))
+
+
 def create_sample_data(config: configparser.ConfigParser, overwrite: bool = False, plot: bool = False, read_sample_file: bool = False) -> None:
     """
     Create sample spectral data files for testing.
@@ -858,6 +888,7 @@ def create_sample_data(config: configparser.ConfigParser, overwrite: bool = Fals
 
     output_dir = Path(config['dirs']['save_s2n_data_unique_dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    bind_astrophysical_sources_library(config)
 
     # Create wavelength grid
     wavelength = np.logspace(-1, 1.4, 100)  # 1-20 microns

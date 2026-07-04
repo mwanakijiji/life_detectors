@@ -264,6 +264,21 @@ def run_single_calculation(
                 transmission_screens = transmission_screens, 
                 plot=plot
                 )
+            #ipdb.set_trace()
+
+            # debugging
+            integrated_post_screen_spectrum = None
+            for output_channel_name in instrument_dep_terms.output_channels.keys():
+                if integrated_post_screen_spectrum is None:
+                    integrated_post_screen_spectrum = instrument_dep_terms.sources_astroph['exoplanet_model_10pc']['flux_integrated_post_screen_ph_sec_m2_um'][output_channel_name]
+                else:
+                    integrated_post_screen_spectrum += instrument_dep_terms.sources_astroph['exoplanet_model_10pc']['flux_integrated_post_screen_ph_sec_m2_um'][output_channel_name]
+            status_bool = np.allclose(integrated_post_screen_spectrum, instrument_dep_terms.sources_astroph["exoplanet_model_10pc"]["pre_screen_astro_flux_ph_sec_m2_um"])
+            if not status_bool:
+                logger.error("Flux conservation check failed for exoplanet_model_10pc")
+                ipdb.set_trace()
+            #ipdb.set_trace()
+
 
             # Pass through telescope aperture
             logger.info("Passing through telescope aperture (incl. telescope throughput)...")
@@ -297,25 +312,6 @@ def run_single_calculation(
 
     else:
         logger.info("Skipping simulation and calculating S/N from HDF5 files...")
-
-        '''
-
-        
-        # Calculate S/N
-        logger.info("Calculating signal-to-noise ratio...")
-        noise_calc = calculator.NoiseCalculator(
-            config,
-            sources_all=instrument_dep_terms, 
-            sources_to_include=sources_to_include
-        )
-        
-        # This will automatically save the FITS file 
-        s2n = noise_calc.s2n_e(file_name_fits_unique = output_fits_file_abs_path)
-        
-        #logger.info(f"Successfully completed calculation with n_int={n_int}")
-        logger.info(f"Results saved to: {output_fits_file_abs_path}")
-        ipdb.set_trace()
-        '''
 
     if calculate_s2n:
         logger.info("Calculating S/N from HDF5 files.")

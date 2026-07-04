@@ -221,6 +221,7 @@ def calculate_s2n_post_rotation(read_dir, config):
             instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
             instrum_noise = S_instrumental_sigma # note there is no sqrt(2) (detector noise from 2 detectors) because it is aleady being added in quadrature further upstream
             # add noise terms; note astronoise is already the quadrature term, so no **2 on it
+            instrum_noise_term = 0 * u.electron # this is just for testing
             denominator_ = np.sqrt(astro_noise_term + instrum_noise_term).value * u.electron
 
             SNR_lambda = numerator_ / denominator_

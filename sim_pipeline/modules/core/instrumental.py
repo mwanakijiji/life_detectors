@@ -1134,8 +1134,6 @@ class InstrumentDepTerms:
                 logging.error(f'Flux conservation check failed for {source_name} at angle {int(fyi_angle)}')
                 ipdb.set_trace()
             '''
-
-            ipdb.set_trace()
             if plot: # pragma: no cover
 
                 # flux vs wavelength post-screen, separated by screen

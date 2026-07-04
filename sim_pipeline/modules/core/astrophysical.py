@@ -209,6 +209,8 @@ class AstrophysicalSources:
     def _load_spectra(self) -> None:
         """Load spectral data for all astrophysical sources."""
         #sources_config = self.config.get("astrophysical_sources", {})
+
+        #output_dir = Path(config['dirs']['save_s2n_data_unique_dir']).resolve()
         
         sources_section = "astrophysical_sources_library"
         if self.config.has_section(sources_section):
@@ -583,83 +585,3 @@ class AstrophysicalSources:
         logger.info(f"Saved scene to {file_name_fits}")
     
         return dict_source_layered_scene
-
-    '''
-    def convert_adu(self, source_name: str, null: bool = False, plot: bool = False) -> np.ndarray:
-        # Converts photons to e and ADU
-
-        pass
-    '''
-
-    '''
-    def calculate_total_astrophysical_flux(self, wavelength: np.ndarray) -> np.ndarray:
-        """
-        Calculate total astrophysical flux from all sources.
-        
-        Args:
-            wavelength: Wavelength array in microns
-            
-        Returns:
-            Total flux array in photons/sec/m^2/micron
-        """
-        total_flux = np.zeros_like(wavelength)
-        
-        sources_config = self.config.get("astrophysical_sources_library", {})
-        
-        for source_name in sources_config.keys():
-            if sources_config[source_name].get("enabled", True):
-                source_flux = self.calculate_source_flux(source_name, wavelength)
-                total_flux += source_flux
-                logger.debug(f"Added {source_name} flux: {np.sum(source_flux):.2e}")
-        
-        return total_flux
-    
-    def calculate_detector_illumination(self, wavelength: np.ndarray) -> np.ndarray:
-        """
-        Calculate total illumination at the detector.
-        
-        This includes telescope collecting area, throughput, and plate scale.
-        
-        Args:
-            wavelength: Wavelength array in microns
-            
-        Returns:
-            Detector illumination in photons/sec/pixel/micron
-        """
-        # Get telescope parameters
-        collecting_area = self.config["telescope"]["collecting_area"]  # m^2
-        throughput = self.config["telescope"]["throughput"]  # dimensionless
-        plate_scale = self.config["telescope"]["plate_scale"]  # arcsec/pixel
-        
-        # Calculate total astrophysical flux
-        total_flux = self.calculate_total_astrophysical_flux(wavelength)
-        
-        # Convert to detector illumination
-        # photons/sec/m^2/micron -> photons/sec/pixel/micron
-        pixel_area = (plate_scale ** 2) * (np.pi / (180 * 3600)) ** 2  # steradians
-        detector_illumination = total_flux * collecting_area * throughput * pixel_area
-        
-        return detector_illumination
-    
-    
-    def get_source_contributions(self, wavelength: np.ndarray) -> Dict[str, np.ndarray]:
-        """
-        Get individual source contributions to total flux.
-        
-        Args:
-            wavelength: Wavelength array in microns
-            
-        Returns:
-            Dictionary mapping source names to their flux contributions
-        """
-        contributions = {}
-        
-        sources_config = self.config.get("astrophysical_sources_library", {})
-        
-        for source_name in sources_config.keys():
-            if sources_config[source_name].get("enabled", True):
-                source_flux = self.calculate_source_flux(source_name, wavelength)
-                contributions[source_name] = source_flux
-        
-        return contributions 
-    '''

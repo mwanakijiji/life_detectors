@@ -666,3 +666,6 @@ class TestCreateSampleData:
             assert "luminosity_photons" in df.columns
             assert len(df) == n
 
+        for source, filename in helpers.GENERATED_SPECTRA_FILENAMES.items():
+            assert cfg.get("astrophysical_sources_library", source) == str(out_dir / filename)
+
