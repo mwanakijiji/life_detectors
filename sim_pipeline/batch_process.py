@@ -7,7 +7,7 @@ and save the results as FITS files with different names.
 """
 
 import os
-from socket import IPV6_DONTFRAG
+#from socket import IPV6_DONTFRAG
 import sys
 import configparser
 import logging
