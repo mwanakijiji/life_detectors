@@ -41,6 +41,14 @@ def _box_kernel(n_pix: int, idx_y: int, idx_x: int, half_pix: int) -> np.ndarray
     return kernel
 
 
+def _circle_kernel(n_pix: int, idx_y: int, idx_x: int, half_pix: int) -> np.ndarray:
+    """Normalized circular kernel centered on (idx_y, idx_x); half_pix is the radius in pixels."""
+    y_idx, x_idx = np.ogrid[:n_pix, :n_pix]
+    kernel = ((y_idx - idx_y) ** 2 + (x_idx - idx_x) ** 2 <= half_pix ** 2).astype(float)
+    kernel /= kernel.sum()
+    return kernel
+
+
 def _exozodi_kernel(n_pix: int, 
                     idx_y: int, 
                     idx_x: int, 
@@ -122,7 +130,7 @@ def generate_star_scene(
 
     Returns a Quantity with the same units as flux_star, typically ph/(um m^2 s).
     """
-    kernel_star = _box_kernel(n_pix, idx_y_star, idx_x_star, half_pix)
+    kernel_star = _circle_kernel(n_pix, idx_y_star, idx_x_star, half_pix)
 
     return flux_star[:, None, None] * kernel_star[None, :, :]
 
@@ -140,7 +148,7 @@ def generate_exoplanet_scene(
     Returns a Quantity with the same units as flux_planet, typically ph/(um m^2 s).
     """
 
-    kernel_planet = _box_kernel(n_pix, idx_y_planet, idx_x_planet, half_pix)
+    kernel_planet = _circle_kernel(n_pix, idx_y_planet, idx_x_planet, half_pix)
 
     return flux_planet[:, None, None] * kernel_planet[None, :, :]
 

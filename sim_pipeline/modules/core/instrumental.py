@@ -11,7 +11,6 @@ Sky / aperture coordinate convention (use everywhere in this repo):
   - Config pos_*_arcsec strings: "y, x" (y first, x second).
 """
 
-#from socket import IPV6_DONTFRAG
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field, asdict
@@ -26,6 +25,7 @@ import yaml
 from pathlib import Path
 import logging
 from modules.utils.helpers import enable_plot_units
+from scipy import ndimage
 
 
 
@@ -666,7 +666,7 @@ class InstrumentDepTerms:
                     logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
          
 
-    def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False):
+    def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False, angle_deg: float = 0):
         # phi_dc_vec_rad, theta_vec_2d_asec, 
         # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
 
@@ -675,6 +675,7 @@ class InstrumentDepTerms:
         # wavel_m (float): Wavelength in meters (e.g., 1e-6).
         # normalize (bool): If True, normalize transmission to unity maximum. If False, max transmission is N for N identical apertures.
         # plot (bool): If True, generate plots and write FITS cubes.
+        # angle_deg (float): Rotation angle of the transmission screens in degrees.
 
         OUTPUT:
         # Returns:
@@ -818,16 +819,23 @@ class InstrumentDepTerms:
                 transmission_instrument_response /= max_response
                 logging.info(f'Normalized transmission instrument response to unity, based on way bookkeeping is done downstream')
 
+
+            # rotate the transmission screens
+            if angle_deg != 0:   
+                transmission_screens_only_rot = ndimage.rotate(transmission_instrument_response[0:4,:,:], angle_deg, axes=(1,2), reshape=False) # rotate the screens, but not the sky coordinates
+                transmission_instrument_response[0:4,:,:] = transmission_screens_only_rot # reasssign the rotated screens to the original transmission_screens
+
             # a small override mask is put over the star for now to avoid geometrical leakage ## ## TODO: remove this once the geometry is properly implemented
+            # (important to do this after rotation, to avoid numerical errors)
             if override_stellar_mask:
                 nulling_factor = float(self.config['nulling']['nulling_factor'])
                 logging.info(f'Star is manually being nulled to {nulling_factor}')
-                # mask the central NxN pixels
-                N_mask = int(2) + int(2) * int(self.config['onsky_scene']['half_pix']) # extra 2 to make sure we cover the resolved star
-                transmission_instrument_response[0, 
-                                                transmission_instrument_response.shape[1]//2-int(0.5*N_mask):transmission_instrument_response.shape[1]//2+int(0.5*N_mask), 
-                                                transmission_instrument_response.shape[2]//2-int(0.5*N_mask):transmission_instrument_response.shape[2]//2+int(0.5*N_mask)
-                                                ] = nulling_factor
+                # mask a central circular region over the star
+                mask_radius_pix = 4
+                cy, cx = transmission_instrument_response.shape[1] // 2, transmission_instrument_response.shape[2] // 2
+                y_idx, x_idx = np.ogrid[:transmission_instrument_response.shape[1], :transmission_instrument_response.shape[2]]
+                circular_mask = (y_idx - cy) ** 2 + (x_idx - cx) ** 2 <= mask_radius_pix ** 2
+                transmission_instrument_response[0, circular_mask] = nulling_factor
 
             return transmission_instrument_response
 
@@ -1096,6 +1104,7 @@ class InstrumentDepTerms:
 
             for transmission_screen_name in transmission_screen_order:
                 source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
+                ipdb.set_trace()
                 # collapse the sources into a single 3D array (wavel, x, y), for plotting
                 # source_dict_post_screen[source_name][transmission_screen_name + '_collapsed'] = np.sum(source_dict_post_screen[source_name][transmission_screen_name], axis=(1,2))
         # there should be a cube for each output (4 cubes total)
@@ -1181,8 +1190,8 @@ class InstrumentDepTerms:
                     source_img = source_dict_pre_screen[source_name][idx, :, :].value
                     source_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
                     transmission_img = transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
-                    source_times_transmission_img = source_img * source_val[transmission_screen_name][idx, :, :].value
-                    source_times_transmission_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
+                    source_times_transmission_img = source_img * transmission_img
+                    #source_times_transmission_units = source_val[transmission_screen_name][idx, :, :].unit.to_string()
 
                     fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
                     im0 = axs[0].imshow(source_img, origin='lower', cmap='gray')
@@ -1198,8 +1207,9 @@ class InstrumentDepTerms:
                     axs[1].set_ylabel(f"y (pixel)")
                     fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
                     im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-                    axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n({np.sum(source_times_transmission_img)/np.sum(source_img)*100:.2f}% transmitted; not chopped)")
-                    fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_times_transmission_units}")
+                    ipdb.set_trace()
+                    axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n({np.sum(source_times_transmission_img)/np.sum(source_img):.2f} transmitted; not chopped)")
+                    fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
 
                     # for debugging
                     #if source_name == 'exoplanet_model_10pc':

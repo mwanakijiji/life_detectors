@@ -108,20 +108,16 @@ def calculate_s2n_post_rotation(read_dir, config):
                 slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][angle] = chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"]
                 slot["wavel_bin_width"] = chopped["wavel_bin_width"] ## ## TODO: use the proper bin edges
 
-                keystrings_all = ['3', 'dark']
+                # symmetric sources: per-output flux on output_3_dark (note this is NOT chopped!); Dannert+ 2022 Eqn. 20
+                SYM_TAGS = ('star', 'exozodiacal', 'zodiacal')
                 slot.setdefault('sources_sym', {})
-                for signal_name in chopped.colnames:
-                    if all(keystring in signal_name for keystring in keystrings_all) and ('_star' in signal_name):
-                        source_name = 'star'
-                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_exozodiacal' in signal_name):
-                        source_name = 'exozodiacal'
-                    elif all(keystring in signal_name for keystring in keystrings_all) and ('_zodiacal' in signal_name):
-                        source_name = 'zodiacal'
-                    else:
+                for source_name in SYM_TAGS:
+                    col = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
+                    if col not in out3.colnames:
                         continue
-                    slot['sources_sym'].setdefault(source_name, {'Ssym_dark_3': {}, 'Ssym_dark_4': {}})
-                    slot['sources_sym'][source_name]['Ssym_dark_3'][angle] = chopped[signal_name]
-                    slot['sources_sym'][source_name]['Ssym_dark_4'][angle] = chopped[signal_name.replace('3', '4')]
+                    slot['sources_sym'].setdefault(source_name, {'Ssym_dark_3': {}})
+                    slot['sources_sym'][source_name]['Ssym_dark_3'][angle] = chopped['output_3_dark_astro_'+source_name+'_flux_adu_sec_for_wavel_bin_and_integration_tot']
+                    ipdb.set_trace()
 
     for dc_qe_str, slot in by_dc_qe.items():
         gain = float(config['detector']['gain']) * u.electron / u.adu  # e-/ADU
@@ -162,6 +158,7 @@ def calculate_s2n_post_rotation(read_dir, config):
                 # absolute signal from S3 (in photoelectrons) is the same as the noise var of output 3
                 # note just using S3 here; effect of S4 (which is symmetric) is included downstream with sqrt(2)
                 sym_noise_var_this_source_this_angle_dark_3_elec = source_dict['Ssym_dark_3'][a] * gain
+                ipdb.set_trace()
                 # for averaging symmetric noise vars across angles (kind of redundant, because the symmetric sources are not expected to change)
                 cols_sym_noise_var_3_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron)
             # symmetric noise var averaged across angles for this source
