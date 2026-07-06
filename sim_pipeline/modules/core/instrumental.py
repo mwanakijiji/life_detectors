@@ -1116,7 +1116,6 @@ class InstrumentDepTerms:
                     source_name,
                     file_name_csv,
                 )
-                ipdb.set_trace()
 
                 ax.stairs(cumulative_signal, edges=edges, linewidth=3, color="black", alpha=0.5, linestyle="--", label="cumulative")
            
