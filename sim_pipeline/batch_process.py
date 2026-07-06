@@ -143,7 +143,7 @@ def run_single_calculation(
         hdf5_files = glob.glob(os.path.join(dir_temp_hdf5_files, '*.hdf5'))
         # Ask the user if they want to delete the files in this directory.
         #response = input(f"Found directory containing temp HDF5 files:\n    {dir_temp_hdf5_files}\nFound {len(hdf5_files)} HDF5 files in this directory.\nDo you want to delete HDF5 files in this directory? [y/N]: ").strip().lower()
-        response = "y"
+        response = "n"
         if response == "y" or response == "yes":
             
             for file_path in hdf5_files:
