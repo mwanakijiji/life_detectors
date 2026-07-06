@@ -83,7 +83,7 @@ def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
     by_dc_qe: Dict[str, dict] = {}
 
     for hdf5_file in hdf5_files:
-        angle = float(Path(hdf5_file).stem.removeprefix("angle_"))
+        angle = float(hdf5_file.split('angle_')[1].split('_qe_')[0])
 
         with h5py.File(hdf5_file, "r") as f:
             for dc_qe_str in f.keys():
