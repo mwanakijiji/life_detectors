@@ -343,6 +343,7 @@ def run_single_calculation(
             ipdb.set_trace()
 
             # debugging
+            '''
             integrated_post_screen_spectrum = None
             for output_channel_name in instrument_dep_terms.output_channels.keys():
                 if integrated_post_screen_spectrum is None:
@@ -354,7 +355,7 @@ def run_single_calculation(
             if not status_bool:
                 logger.error("Flux conservation check failed")
                 exit()
-            ipdb.set_trace()
+            '''
 
             ###### START DEBUGGING (post-transmission-screen, pre-aperture)
             # FYI: star flux in each output channel after transmission screens
