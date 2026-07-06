@@ -1149,7 +1149,6 @@ class InstrumentDepTerms:
                     output_channel.name,
                     file_name_plot,
                 )
-                ipdb.set_trace()
 
         return
 
