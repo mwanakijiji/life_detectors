@@ -478,7 +478,7 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Option
                 plt.savefig(file_name_plot)
                 logging.info("Saved plot of SNR vs wavelength for %s to %s", dc_qe_str, file_name_plot)
 
-    file_name_s2n_cube = save_cube_path_stem + "/s2n_cube.hdf5"
+    file_name_s2n_cube = save_cube_path_stem + "/" + dc_qe_str + "_s2n_cube.hdf5"
     save_s2n_cube(cube, output_path=file_name_s2n_cube, file_format="both")
 
     return cube
