@@ -376,12 +376,16 @@ def save_s2n_cube(
     return saved_paths
 
 
-def load_s2n_cube(path: Union[str, Path]) -> S2NCube:
-    """Load an S2NCube from pickle or HDF5."""
+def read_s2n_cube_hdf5(path: Union[str, Path]) -> S2NCube:
+    """
+    Read an S/N cube HDF5 file written by ``save_s2n_cube``.
+
+    The primary data array ``cube.snr`` has shape ``(n_wavelength, n_dc, n_qe)``
+    with coordinate vectors ``cube.wavelength``, ``cube.dark_current``, and ``cube.qe``.
+  """
     path = Path(path)
-    if path.suffix == ".pkl":
-        with open(path, "rb") as handle:
-            return pickle.load(handle)
+    if path.suffix not in {".h5", ".hdf5"}:
+        raise ValueError(f"Expected an HDF5 path (.h5 / .hdf5), got: {path}")
 
     with h5py.File(path, "r") as handle:
         meta = handle["meta"]
@@ -405,6 +409,15 @@ def load_s2n_cube(path: Union[str, Path]) -> S2NCube:
             config=config,
         )
 
+
+def load_s2n_cube(path: Union[str, Path]) -> S2NCube:
+    """Load an S2NCube from pickle or HDF5."""
+    path = Path(path)
+    if path.suffix == ".pkl":
+        with open(path, "rb") as handle:
+            return pickle.load(handle)
+    return read_s2n_cube_hdf5(path)
+
 '''
 def calculate_astrophysical_noise_adu(total_astro_adu: float) -> np.ndarray:
     """
@@ -424,7 +437,7 @@ def calculate_astrophysical_noise_adu(total_astro_adu: float) -> np.ndarray:
 '''
 
 
-def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path: Optional[str] = None):
+def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Optional[str] = None):
     """
     Calculate the S/N of the chopped dark outputs and optionally save an S/N cube.
 
@@ -465,8 +478,8 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path: Optional[st
                 plt.savefig(file_name_plot)
                 logging.info("Saved plot of SNR vs wavelength for %s to %s", dc_qe_str, file_name_plot)
 
-    if save_cube_path is not None:
-        save_s2n_cube(cube, save_cube_path, file_format="both")
+    file_name_s2n_cube = save_cube_path_stem + "/s2n_cube.hdf5"
+    save_s2n_cube(cube, output_path=file_name_s2n_cube, file_format="both")
 
     return cube
 

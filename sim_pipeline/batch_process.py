@@ -313,7 +313,7 @@ def run_single_calculation(
 
     if calculate_s2n:
         logger.info("Calculating S/N from HDF5 files.")
-        calculate_s2n_post_rotation(config['dirs']['save_s2n_data_unique_dir'], config=config)
+        calculate_s2n_post_rotation(config['dirs']['save_s2n_data_unique_dir'], save_cube_path_stem=config['dirs']['save_s2n_data_unique_dir'], config=config)
 
     else:
         logger.info("Not calculating S/N from HDF5 files.")
