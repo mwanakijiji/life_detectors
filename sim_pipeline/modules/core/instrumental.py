@@ -15,6 +15,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field, asdict
 import logging
+import pandas as pd
 import ipdb
 import astropy.units as u
 from astropy.table import QTable
@@ -1041,6 +1042,114 @@ class InstrumentDepTerms:
                     'n_pix_per_wavel_bin': n_pix_per_wavel_bin.decompose(),                # (n_bins,) pix — from footprint
                 }
 
+        if plot:  # pragma: no cover
+            for output_channel in self.output_channels.values():
+                if not output_channel.astroph_signal:
+                    continue
+
+                wavel_bin_edges = output_channel.bin_edges
+                edges = (
+                    wavel_bin_edges.value
+                    if hasattr(wavel_bin_edges, "value")
+                    else wavel_bin_edges
+                )
+                plt.clf()
+                fig, ax = plt.subplots(figsize=(10, 5))
+                cumulative_signal = None
+                y_unit = None
+                wavel_um = np.asarray(
+                    output_channel.bin_centers.value
+                    if hasattr(output_channel.bin_centers, "value")
+                    else output_channel.bin_centers,
+                    dtype=float,
+                )
+                ref_source = next(
+                    (
+                        name
+                        for name in self.sources_to_include
+                        if name in output_channel.astroph_signal
+                    ),
+                    None,
+                )
+                n_pix_vals = None
+                if ref_source is not None:
+                    n_pix_qty = output_channel.astroph_signal[ref_source][
+                        "n_pix_per_wavel_bin"
+                    ]
+                    n_pix_vals = np.asarray(
+                        n_pix_qty.value if hasattr(n_pix_qty, "value") else n_pix_qty,
+                        dtype=float,
+                    )
+
+                df_signals = pd.DataFrame()
+                for source_name in self.sources_to_include:
+                    if source_name not in output_channel.astroph_signal:
+                        continue
+                    sig = output_channel.astroph_signal[source_name]
+                    y_col = sig["flux_astro_1d_interpolated_ph_sec_pixel"]
+                    y_vals = np.asarray(
+                        y_col.value if hasattr(y_col, "value") else y_col,
+                        dtype=float,
+                    )
+                    y_unit = (
+                        y_col.unit if hasattr(y_col, "unit") else u.ph / (u.s * u.pix)
+                    )
+                    if cumulative_signal is None:
+                        cumulative_signal = np.zeros_like(y_vals, dtype=float)
+                    ax.stairs(y_vals, edges=edges, linewidth=2, label=source_name)
+                    cumulative_signal = np.add(cumulative_signal, y_vals)
+
+                    df_signals["wavel_um"] = wavel_um.value,
+                    df_signals[f"{source_name}_ph_sec_pixel"] = y_vals.value,
+                    df_signals["n_pix_per_wavel_bin"] = n_pix_vals.value,
+
+                    file_name_csv = (
+                        str(self.config["dirs"]["save_s2n_data_unique_dir"])
+                        + f"astro_ph_sec_pixel_{output_channel.name}_{source_name}.csv"
+                    )
+                
+                df_signals["cumulative_ph_sec_pixel"] = cumulative_signal.value
+                df_signals.to_csv(file_name_csv, index=False)
+                logging.info(
+                    "Saved astrophysical photon rate per pixel table for %s and %s to %s",
+                    output_channel.name,
+                    source_name,
+                    file_name_csv,
+                )
+                ipdb.set_trace()
+
+                ax.stairs(cumulative_signal, edges=edges, linewidth=3, color="black", alpha=0.5, linestyle="--", label="cumulative")
+           
+                ax.set_xlim(4.0, 18.5)
+                ax.set_yscale("log")
+                ax.set_xlabel(
+                    f"Wavelength ({output_channel.bin_centers.unit})",
+                    fontsize=16,
+                )
+                ax.set_ylabel(f"Photons/s/pixel ({y_unit})", fontsize=16)
+                ax.tick_params(axis="both", which="major", labelsize=14)
+                ax.set_title(
+                    format_plot_title(
+                        f"Astrophysical photon rate per pixel — {output_channel.name}",
+                        self.config,
+                    ),
+                    loc="left",
+                )
+                ax.legend(fontsize=7, loc="best")
+                fig.tight_layout()
+                file_name_plot = (
+                    str(self.config["dirs"]["save_s2n_data_unique_dir"])
+                    + f"astro_ph_sec_pixel_{output_channel.name}.png"
+                )
+           
+                fig.savefig(file_name_plot)
+                plt.close(fig)
+                logging.info(
+                    "Saved astrophysical photon rate per pixel plot for %s: %s",
+                    output_channel.name,
+                    file_name_plot,
+                )
+
         return
 
 
@@ -1228,6 +1337,7 @@ class InstrumentDepTerms:
                     self.sources_astroph[source_name]['wavel'], 
                     self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'], 
                     label=source_name)
+                    
             plt.yscale('log')
             plt.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)  # Add grid pattern to plot
             plt.xlim([4, 18]) # for comparison with Dannert
@@ -1322,6 +1432,51 @@ class InstrumentDepTerms:
                 'Post-screen, post-aperture flux (all sources)',
                 'flux_all_sources_post_screen_post_aperture',
             )
+
+            #########################################################
+            # begin insert for poster plot — post-aperture flux, one panel per output
+            save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+            for output_name in transmission_screen_order:
+                fig, ax = plt.subplots(figsize=(8, 8))
+                flux_unit = None
+                wavel_unit = None
+                for source_name, source_val in self.prop_dict.items():
+                    if source_name not in self.sources_to_include:
+                        continue
+                    flux_integrated = np.sum(
+                        source_val['flux_cube_post_screen_post_aperture_ph_sec_um'][output_name],
+                        axis=(1, 2),
+                    )
+                    ax.plot(source_val['wavel'], flux_integrated, label=source_name)
+                    if flux_unit is None:
+                        flux_unit = flux_integrated.unit
+                        wavel_unit = source_val['wavel'].unit
+
+                ax.set_yscale('log')
+                ax.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)
+                ax.set_xlim([4, 18])
+                ax.set_ylim([1e-3, 1e5])
+                ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=16)
+                ax.set_ylabel(f"Flux ({flux_unit})", fontsize=16)
+                ax.tick_params(axis="both", which="major", labelsize=14)
+                ax.legend(fontsize=7, loc='lower right')
+                ax.set_title(
+                    format_plot_title(
+                        f"Post-aperture flux (all sources) — {output_name}",
+                        self.config,
+                    ),
+                    loc='left',
+                )
+                fig.tight_layout()
+                file_name_plot = save_dir + f"poster_post_aperture_flux_{output_name}.png"
+                #plt.show()
+                fig.savefig(file_name_plot)
+                plt.close(fig)
+                logging.info(f"Saved poster post-aperture flux plot to {file_name_plot}")
+
+            # end insert for poster plot
+            #########################################################
+
         logging.info(f'Passed astrophysical flux through telescope aperture...')
 
         return

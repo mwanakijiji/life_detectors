@@ -999,7 +999,7 @@ def record_info_at_angle_and_qe(
             chopped           QTable, all columns from post_chop_tables_by_dark_current
     """
 
-    file_name = f"{save_dir}angle_{angle_deg:g}.hdf5"
+    file_name_hdf5 = f"{save_dir}angle_{angle_deg:g}_qe_{qe:.2f}.hdf5"
     hdf5_paths = []
     first_dataset = True
 
@@ -1017,7 +1017,7 @@ def record_info_at_angle_and_qe(
             hdf5_path = dc_qe_str + f"/{ch_name}"
             if first_dataset:
                 out_tbl.write(
-                    file_name,
+                    file_name_hdf5,
                     path=hdf5_path,
                     serialize_meta=True,
                     overwrite=True,
@@ -1025,13 +1025,13 @@ def record_info_at_angle_and_qe(
                 first_dataset = False
             else:
                 out_tbl.write(
-                    file_name,
+                    file_name_hdf5,
                     path=hdf5_path,
                     serialize_meta=True,
                     append=True,
                 )
             hdf5_paths.append(hdf5_path)
-            logger.info(f"Wrote {file_name}:{hdf5_path}")
+            logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
 
         # now include the chopped signal
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate].copy()
@@ -1039,22 +1039,22 @@ def record_info_at_angle_and_qe(
         chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
         hdf5_path = hdf5_path = dc_qe_str + "/chopped"
         chopped_tbl.write(
-            file_name,
+            file_name_hdf5,
             path=hdf5_path,
             serialize_meta=True,
             append=True,
         )
         hdf5_paths.append(hdf5_path)
-        logger.info(f"Wrote {file_name}:{hdf5_path}")
+        logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
 
     snapshot = {
         'angle_deg': angle_deg,
-        'hdf5_file': file_name,
+        'hdf5_file': file_name_hdf5,
         'hdf5_paths': hdf5_paths,
         'dark_currents': list(post_chop_tables_by_dark_current.keys()),
     }
 
-    logger.info(f"Recorded angle {angle_deg} to {file_name}")
+    logger.info(f"Recorded angle {angle_deg} to {file_name_hdf5}")
 
     if plot and post_chop_tables_by_dark_current: # pragma: no cover
         dc_rate = next(iter(post_chop_tables_by_dark_current))
