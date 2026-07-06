@@ -500,7 +500,7 @@ def generate_planet_bb_spectrum(config: configparser.ConfigParser, wavelength_um
         file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/planet_spectrum.png"
 
         plt.savefig(file_name_plot)
-        print(f"Wrote planet emission plot {file_name_plot}")
+        logging.info(f"Wrote planet emission plot {file_name_plot}")
 
     # luminosity without regard to distance
     return luminosity_photons_planet, luminosity_energy_planet
@@ -655,7 +655,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         plt.tight_layout()
         file_name = config['dirs']['save_s2n_data_unique_dir'] + "/zodiacal_emission_2d.png"
         plt.savefig(file_name)
-        print(f"Wrote zodiacal emission 2D plot {file_name}")
+        logging.info(f"Wrote zodiacal emission 2D plot {file_name}")
 
         # spectrum of zodiacal light along the line-of-sight
         plt.clf()
@@ -684,7 +684,7 @@ def generate_zodiacal_spectrum(config: configparser.ConfigParser, wavelength_um:
         plt.tight_layout()
         file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/zodiacal_spectrum_los.png"
         plt.savefig(file_name_plot)
-        print(f"Wrote zodiacal emission spectrum plot {file_name_plot}")
+        logging.info(f"Wrote zodiacal emission spectrum plot {file_name_plot}")
 
     # I_nu should be
     # ~5 um: ~0.1s of MJy/sr
@@ -838,7 +838,7 @@ def generate_exozodiacal_spectrum(config: configparser.ConfigParser, wavelength_
         plt.title("Exozodiacal disk spectrum (no distance correction)")
         file_name_plot = config['dirs']['save_s2n_data_unique_dir'] + "/exozodiacal_spectrum.png"
         plt.savefig(file_name_plot)
-        print(f"Wrote exozodiacal emission plot {file_name_plot}")
+        logging.info(f"Wrote exozodiacal emission plot {file_name_plot}")
 
 
     return luminosity_photons_exozodi_disk, luminosity_energy_disk_lambda
