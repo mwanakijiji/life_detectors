@@ -1099,16 +1099,16 @@ class InstrumentDepTerms:
                     ax.stairs(y_vals, edges=edges, linewidth=2, label=source_name)
                     cumulative_signal = np.add(cumulative_signal, y_vals)
 
-                    df_signals["wavel_um"] = wavel_um.value,
-                    df_signals[f"{source_name}_ph_sec_pixel"] = y_vals.value,
-                    df_signals["n_pix_per_wavel_bin"] = n_pix_vals.value,
+                    df_signals["wavel_um"] = wavel_um
+                    df_signals[f"{source_name}_ph_sec_pixel"] = y_vals
+                    df_signals["n_pix_per_wavel_bin"] = n_pix_vals
 
                     file_name_csv = (
                         str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                        + f"astro_ph_sec_pixel_{output_channel.name}_{source_name}.csv"
+                        + f"astro_ph_sec_pixel_{output_channel.name}.csv"
                     )
                 
-                df_signals["cumulative_ph_sec_pixel"] = cumulative_signal.value
+                df_signals["cumulative_ph_sec_pixel"] = cumulative_signal
                 df_signals.to_csv(file_name_csv, index=False)
                 logging.info(
                     "Saved astrophysical photon rate per pixel table for %s and %s to %s",
@@ -1116,17 +1116,17 @@ class InstrumentDepTerms:
                     source_name,
                     file_name_csv,
                 )
-                ipdb.set_trace()
 
                 ax.stairs(cumulative_signal, edges=edges, linewidth=3, color="black", alpha=0.5, linestyle="--", label="cumulative")
            
                 ax.set_xlim(4.0, 18.5)
                 ax.set_yscale("log")
+                ax.grid(which="both", linestyle="--", linewidth=0.5, alpha=0.7)
                 ax.set_xlabel(
                     f"Wavelength ({output_channel.bin_centers.unit})",
                     fontsize=16,
                 )
-                ax.set_ylabel(f"Photons/s/pixel ({y_unit})", fontsize=16)
+                ax.set_ylabel(f"Photon rate incident on pixels ({y_unit})", fontsize=16)
                 ax.tick_params(axis="both", which="major", labelsize=14)
                 ax.set_title(
                     format_plot_title(
