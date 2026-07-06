@@ -1126,7 +1126,7 @@ class InstrumentDepTerms:
                     f"Wavelength ({output_channel.bin_centers.unit})",
                     fontsize=16,
                 )
-                ax.set_ylabel(f"Photon rate incident on pixels ({y_unit})", fontsize=16)
+                ax.set_ylabel(f"Photon rate incident on pixels", fontsize=16)
                 ax.tick_params(axis="both", which="major", labelsize=14)
                 ax.set_title(
                     format_plot_title(
@@ -1139,7 +1139,7 @@ class InstrumentDepTerms:
                 fig.tight_layout()
                 file_name_plot = (
                     str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                    + f"astro_ph_sec_pixel_{output_channel.name}.png"
+                    + f"astro_ph_sec_pixel_{output_channel.name}.pdf"
                 )
            
                 fig.savefig(file_name_plot)
@@ -1149,6 +1149,7 @@ class InstrumentDepTerms:
                     output_channel.name,
                     file_name_plot,
                 )
+                ipdb.set_trace()
 
         return
 
