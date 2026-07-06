@@ -263,7 +263,6 @@ def run_single_calculation(
                 transmission_screens = transmission_screens, 
                 plot=plot
                 )
-            ipdb.set_trace()
 
             # debugging
             '''

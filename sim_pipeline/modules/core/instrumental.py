@@ -1104,7 +1104,6 @@ class InstrumentDepTerms:
 
             for transmission_screen_name in transmission_screen_order:
                 source_dict_post_screen[source_name][transmission_screen_name] = source_val * transmission_screens[transmission_screen_order.index(transmission_screen_name), :, :]
-                ipdb.set_trace()
                 # collapse the sources into a single 3D array (wavel, x, y), for plotting
                 # source_dict_post_screen[source_name][transmission_screen_name + '_collapsed'] = np.sum(source_dict_post_screen[source_name][transmission_screen_name], axis=(1,2))
         # there should be a cube for each output (4 cubes total)
@@ -1207,7 +1206,6 @@ class InstrumentDepTerms:
                     axs[1].set_ylabel(f"y (pixel)")
                     fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label=f"transmission")
                     im2 = axs[2].imshow(source_times_transmission_img, origin='lower', cmap='gray')
-                    ipdb.set_trace()
                     axs[2].set_title(f"Source * Transmission ({transmission_screen_name})\n({np.sum(source_times_transmission_img)/np.sum(source_img):.2f} transmitted; not chopped)")
                     fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
 

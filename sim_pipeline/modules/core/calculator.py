@@ -117,7 +117,6 @@ def calculate_s2n_post_rotation(read_dir, config):
                         continue
                     slot['sources_sym'].setdefault(source_name, {'Ssym_dark_3': {}})
                     slot['sources_sym'][source_name]['Ssym_dark_3'][angle] = chopped['output_3_dark_astro_'+source_name+'_flux_adu_sec_for_wavel_bin_and_integration_tot']
-                    ipdb.set_trace()
 
     for dc_qe_str, slot in by_dc_qe.items():
         gain = float(config['detector']['gain']) * u.electron / u.adu  # e-/ADU
@@ -158,7 +157,6 @@ def calculate_s2n_post_rotation(read_dir, config):
                 # absolute signal from S3 (in photoelectrons) is the same as the noise var of output 3
                 # note just using S3 here; effect of S4 (which is symmetric) is included downstream with sqrt(2)
                 sym_noise_var_this_source_this_angle_dark_3_elec = source_dict['Ssym_dark_3'][a] * gain
-                ipdb.set_trace()
                 # for averaging symmetric noise vars across angles (kind of redundant, because the symmetric sources are not expected to change)
                 cols_sym_noise_var_3_elec.append(np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron)
             # symmetric noise var averaged across angles for this source
