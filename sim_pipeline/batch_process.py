@@ -89,6 +89,8 @@ def run_single_calculation(
     base_config.read(config_path)
     generate_sims = loader.config_getboolean(base_config, "tasks", "generate_sims")
     calculate_s2n = loader.config_getboolean(base_config, "tasks", "calculate_s2n_post_rotation")
+    # config-driven FYI plotting: overrides the passed-in plot flag when the key is present
+    plot = loader.config_getboolean(base_config, "tasks", "print_fyi_plots", default=plot)
 
     # Build a per-run token so parallel jobs do not clobber temp files.
     run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
