@@ -999,13 +999,13 @@ def record_info_at_angle_and_qe(
             chopped           QTable, all columns from post_chop_tables_by_dark_current
     """
 
-    file_name_hdf5 = f"{save_dir}angle_{angle_deg:g}_qe_{qe:.2f}.hdf5"
+    file_name_hdf5 = f"{save_dir}angle_{angle_deg:06.2f}_qe_{qe:04.2f}.hdf5"
     hdf5_paths = []
     first_dataset = True
 
     for dc_rate in post_chop_tables_by_dark_current:
-        dc_group = f"dc_{dc_rate:g}"
-        qe_group = f"qe_{qe:.2f}"
+        dc_group = f"dc_{dc_rate:06.3f}"
+        qe_group = f"qe_{qe:04.2f}"
         dc_qe_str = f"{dc_group}_{qe_group}"
 
         # write out the tables for each output channel
@@ -1077,12 +1077,12 @@ def record_info_at_angle_and_qe(
         ax.set_xlim(4.0, 18.0)
         ax.set_xlabel('Wavelength (um)')
         ax.set_ylabel('Signal (ADU)')
-        ax.set_title(f'Chopped signals at angle {angle_deg}, dc={dc_rate:g} e/pix/s, QE {qe:.2f}')
+        ax.set_title(f'Chopped signals at angle {angle_deg:06.2f}, dc={dc_rate:06.3f} e/pix/s, QE {qe:04.2f}')
         ax.legend(fontsize=8, loc='best')
-        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:g}_QE_{qe:.2f}.png"
+        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:06.2f}_qe_{qe:04.2f}.png"
         fig.savefig(file_name_plot)
         plt.close(fig)
-        logger.info(f"Saved plot of chopped signals at angle {angle_deg}, QE {qe:.2f}: {file_name_plot}")
+        logger.info(f"Saved plot of chopped signals at angle {angle_deg:06.2f}, QE {qe:04.2f}: {file_name_plot}")
 
     return
 
@@ -1135,7 +1135,7 @@ def modify_config_file_sweep(config_path: str, qe: float, run_id: Optional[str] 
     config.set('detector', 'quantum_efficiency', str(qe))
 
     temp_config_dir = os.path.dirname(config_path) + '/parameter_sweeps/'
-    qe_str = f"{qe:.2f}".replace('.', 'p')
+    qe_str = f"{qe:04.2f}".replace('.', 'p')
     run_suffix = f"_{run_id}" if run_id else ""
     temp_config_path = temp_config_dir + os.path.basename(config_path).replace(
         '.ini', f'_temp_qe{qe_str}{run_suffix}.ini'

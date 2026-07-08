@@ -392,7 +392,7 @@ def _write_angle_hdf5(
     n_bins: int = 1,
 ):
     """Write one angle_*.hdf5 file matching record_info_at_angle_and_qe layout."""
-    dc_qe_str = f"dc_{dc_rate:g}_qe_{qe:.2f}"
+    dc_qe_str = f"dc_{dc_rate:06.3f}_qe_{qe:04.2f}"
     star_out3 = star_out3 if star_out3 is not None else np.zeros(n_bins)
     star_out4 = star_out4 if star_out4 is not None else np.zeros(n_bins)
 
@@ -544,7 +544,7 @@ class TestCalculateS2nPostRotation:
         calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
 
         captured = capsys.readouterr().out
-        match = re.search(r"SNR_tot for DC dc_0\.0001_qe_0\.70: ([0-9.]+)", captured)
+        match = re.search(r"SNR_tot for DC dc_00\.000_qe_0\.70: ([0-9.]+)", captured)
         assert match is not None
         assert float(match.group(1)) == pytest.approx(expected_tot)
 
@@ -597,6 +597,6 @@ class TestCalculateS2nPostRotation:
 
         calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
         captured = capsys.readouterr().out
-        match = re.search(r"SNR_tot for DC dc_0\.0001_qe_0\.70: ([0-9.]+)", captured)
+        match = re.search(r"SNR_tot for DC dc_00\.000_qe_0\.70: ([0-9.]+)", captured)
         assert match is not None
         assert float(match.group(1)) == pytest.approx(expected_with_avg[0])

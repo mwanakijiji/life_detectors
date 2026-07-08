@@ -381,9 +381,9 @@ class TestRecordInfoAtAngleAndQe:
             plot=False,
         )
 
-        hdf5_path = tmp_path / "angle_45.hdf5"
+        hdf5_path = tmp_path / "angle_045.00_qe_0.70.hdf5"
         assert hdf5_path.exists()
-        restored = QTable.read(hdf5_path, path="dc_0_qe_0.70/output_1_bright")
+        restored = QTable.read(hdf5_path, path="dc_00.000_qe_0.70/output_1_bright")
         assert len(restored) == n_bins
         assert restored.meta["angle_deg"] == 45.0
         assert restored.meta["qe"] == 0.7

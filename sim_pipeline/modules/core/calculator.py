@@ -83,7 +83,7 @@ def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
     by_dc_qe: Dict[str, dict] = {}
 
     for hdf5_file in hdf5_files:
-        angle = float(hdf5_file.split('angle_')[1].split('_qe_')[0])
+        angle = float(Path(hdf5_file).stem.split('angle_')[1].split('_qe_')[0])
 
         with h5py.File(hdf5_file, "r") as f:
             for dc_qe_str in f.keys():
@@ -453,7 +453,7 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Option
 
     for i_dc, dc_val in enumerate(cube.dark_current):
         for i_qe, qe_val in enumerate(cube.qe):
-            dc_qe_str = f"dc_{dc_val:g}_qe_{qe_val:.2f}"
+            dc_qe_str = f"dc_{dc_val:06.3f}_qe_{qe_val:04.2f}"
             snr_lambda_array = cube.snr[:, i_dc, i_qe]
             snr_tot = cube.snr_tot[i_dc, i_qe]
             print(f"SNR_tot for DC {dc_qe_str}: {snr_tot}")
@@ -480,7 +480,7 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Option
 
     if save_cube_path_stem is not None:
         qe_val = float(config["detector"]["quantum_efficiency"])
-        file_name_s2n_cube = f"{save_cube_path_stem}/qe_{qe_val:.2f}_s2n_cube.hdf5"
+        file_name_s2n_cube = f"{save_cube_path_stem}/qe_{qe_val:04.2f}_s2n_cube.hdf5"
         save_s2n_cube(cube, output_path=file_name_s2n_cube, file_format="both")
 
     return cube

@@ -1248,7 +1248,7 @@ class InstrumentDepTerms:
                 np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
                 np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
             ):
-                logging.error(f'Flux conservation check failed for {source_name} at angle {int(fyi_angle)}')
+                logging.error(f'Flux conservation check failed for {source_name} at angle {fyi_angle:06.2f}')
                 ipdb.set_trace()
             '''
             if plot: # pragma: no cover
@@ -1264,10 +1264,10 @@ class InstrumentDepTerms:
                 plt.title(f'Flux of {source_name} passed through transmission screens')
                 plt.xlabel('Wavelength')
                 plt.ylabel('Flux (ph/s/m^2/um)')
-                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"flux_of_{source_name}_passed_through_transmission_screens_angle_{int(fyi_angle)}.png"
+                file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"flux_of_{source_name}_passed_through_transmission_screens_angle_{fyi_angle:06.2f}.png"
            
                 plt.savefig(file_name_plot)
-                logging.info(f"Saved plot of flux of {source_name} passed through transmission screens at angle {int(fyi_angle)}: {file_name_plot}")
+                logging.info(f"Saved plot of flux of {source_name} passed through transmission screens at angle {fyi_angle:06.2f}: {file_name_plot}")
                 plt.close()
 
                 # source_val_integrated = np.sum(source_val, axis=(1,2))
@@ -1321,10 +1321,10 @@ class InstrumentDepTerms:
                     # for debugging
                     #if source_name == 'exoplanet_model_10pc':
                     #    ipdb.set_trace()
-                    file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}_angle_{int(fyi_angle)}_output_{transmission_screen_name}.png"
+                    file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"source_transmission_map_triptych_{source_name}_angle_{fyi_angle:06.2f}_output_{transmission_screen_name}.png"
                     fig.savefig(file_name_plot)
                     plt.close(fig)
-                    logging.info(f"Saved plot of source, transmission, source * transmission triptych at angle {int(fyi_angle)} to {file_name_plot}")
+                    logging.info(f"Saved plot of source, transmission, source * transmission triptych at angle {fyi_angle:06.2f} to {file_name_plot}")
 
         if plot: # pragma: no cover
 
