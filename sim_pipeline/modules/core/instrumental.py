@@ -540,7 +540,7 @@ class InstrumentDepTerms:
         return 
 
 
-    def combine_astro_and_instrum_signals(self):
+    def combine_astro_and_instrum_signals(self, plot: bool = False):
         # combines astrophysical signals and instrumental noise
 
         t_frame = float(self.config['observation']['t_int_frame']) * u.second
@@ -627,7 +627,7 @@ class InstrumentDepTerms:
                 output_channel.tables_by_dark_current[float(dc_rate)] = final_table
 
                 # plot of final signal in the detector
-                if True:  # pragma: no cover
+                if plot:  # pragma: no cover
                     wavel_bin_center = final_table['wavel_bin_center']
                     wavel_bin_width = final_table['wavel_bin_width']
                     wavel_bin_edges = output_channel.bin_edges

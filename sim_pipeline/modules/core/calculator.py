@@ -35,6 +35,7 @@ from ..utils.helpers import (
     ensure_plot_title_context,
     format_plot_title,
 )
+from ..utils.loader import config_getboolean
 from ..utils.validator import validate_config
 
 logger = logging.getLogger(__name__)
@@ -451,6 +452,8 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Option
     """
     cube = build_s2n_cube_from_hdf5(read_dir, config)
 
+    plot = config_getboolean(config, "tasks", "print_fyi_plots", default=False)
+
     for i_dc, dc_val in enumerate(cube.dark_current):
         for i_qe, qe_val in enumerate(cube.qe):
             dc_qe_str = f"dc_{dc_val:06.3f}_qe_{qe_val:04.2f}"
@@ -458,7 +461,7 @@ def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Option
             snr_tot = cube.snr_tot[i_dc, i_qe]
             print(f"SNR_tot for DC {dc_qe_str}: {snr_tot}")
 
-            if True:  # pragma: no cover
+            if plot:  # pragma: no cover
                 fig = plt.figure(figsize=(8, 8), constrained_layout=True)
                 plt.clf()
                 plt.stairs(snr_lambda_array, edges=cube.wavel_bin_edges)

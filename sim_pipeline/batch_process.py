@@ -295,7 +295,7 @@ def run_single_calculation(
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
             # pack the signals together (and convert photons to electrons)
-            instrument_dep_terms.combine_astro_and_instrum_signals()
+            instrument_dep_terms.combine_astro_and_instrum_signals(plot=plot)
 
             # chop the signal between dark outputs
             instrument_dep_terms.chop_signal(plot=plot)
@@ -488,10 +488,12 @@ def parameter_sweep(
             df_planet_population, config_planet_population
         )
 
-        cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
-        fyi_plot_path = config_planet_population["file_name_planet_population"]["fyi_plot_name"]
-        helpers.plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
-        logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
+        plot = loader.config_getboolean(config_single_obs, "tasks", "print_fyi_plots", default=False)
+        if plot:
+            cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
+            fyi_plot_path = config_planet_population["file_name_planet_population"]["fyi_plot_name"]
+            helpers.plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
+            logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
     elif systems_2_look_at == "single_system":
         logging.info("Applying parameter sweep to a single planetary system")
