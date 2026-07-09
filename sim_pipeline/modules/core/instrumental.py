@@ -27,11 +27,16 @@ from pathlib import Path
 import logging
 from modules.utils.helpers import enable_plot_units
 from scipy import ndimage
+from matplotlib.ticker import LogLocator
 
 
 
 from ..data.units import UnitConverter
-from ..utils.helpers import format_plot_title, compute_collecting_area_m2
+from ..utils.helpers import (
+    compute_collecting_area_m2,
+    format_astro_source_label,
+    format_plot_title,
+)
 from ..utils.loader import config_getboolean
 
 logger = logging.getLogger(__name__)
@@ -1043,6 +1048,8 @@ class InstrumentDepTerms:
                 }
 
         if plot:  # pragma: no cover
+
+            # save plot and csv of photon counts per pixel
             for output_channel in self.output_channels.values():
                 if not output_channel.astroph_signal:
                     continue
@@ -1096,7 +1103,7 @@ class InstrumentDepTerms:
                     )
                     if cumulative_signal is None:
                         cumulative_signal = np.zeros_like(y_vals, dtype=float)
-                    ax.stairs(y_vals, edges=edges, linewidth=2, label=source_name)
+                    ax.stairs(y_vals, edges=edges, linewidth=2, label=format_astro_source_label(source_name))
                     cumulative_signal = np.add(cumulative_signal, y_vals)
 
                     df_signals["wavel_um"] = wavel_um
@@ -1109,6 +1116,7 @@ class InstrumentDepTerms:
                     )
                 
                 df_signals["cumulative_ph_sec_pixel"] = cumulative_signal
+                df_signals["cumulative_signal_ph_pix_10min"] = 600.*cumulative_signal
                 df_signals.to_csv(file_name_csv, index=False)
                 logging.info(
                     "Saved astrophysical photon rate per pixel table for %s and %s to %s",
@@ -1121,34 +1129,47 @@ class InstrumentDepTerms:
            
                 ax.set_xlim(4.0, 18.5)
                 ax.set_yscale("log")
+                ax.yaxis.set_minor_locator(LogLocator(subs=np.arange(2, 10)))
                 ax.grid(which="both", linestyle="--", linewidth=0.5, alpha=0.7)
                 ax.set_xlabel(
                     f"Wavelength ({output_channel.bin_centers.unit})",
-                    fontsize=16,
+                    fontsize=22,
                 )
-                ax.set_ylabel(f"Photon rate incident on pixels", fontsize=16)
-                ax.tick_params(axis="both", which="major", labelsize=14)
+                ax.set_ylabel("Photon rate incident on pixels\n(" + str(y_col.unit) + ")", fontsize=22)
+           
+                ax.tick_params(axis="both", which="major", labelsize=18)
                 ax.set_title(
                     format_plot_title(
                         f"Astrophysical photon rate per pixel — {output_channel.name}",
                         self.config,
+                        font_size=2
                     ),
                     loc="left",
+                    pad=70,
                 )
-                ax.legend(fontsize=7, loc="best")
+                legend_handles, _ = ax.get_legend_handles_labels()
+                ax.legend(
+                    fontsize=12,
+                    loc="lower center",
+                    bbox_to_anchor=(0.5, 1.02),
+                    ncol=len(legend_handles),
+                    frameon=True,
+                    borderaxespad=0,
+                )
                 fig.tight_layout()
                 file_name_plot = (
                     str(self.config["dirs"]["save_s2n_data_unique_dir"])
                     + f"astro_ph_sec_pixel_{output_channel.name}.pdf"
                 )
            
-                fig.savefig(file_name_plot)
+                fig.savefig(file_name_plot, bbox_inches="tight", pad_inches=0.5)
                 plt.close(fig)
                 logging.info(
                     "Saved astrophysical photon rate per pixel plot for %s: %s",
                     output_channel.name,
                     file_name_plot,
                 )
+                ipdb.set_trace()
 
         return
 
@@ -1336,7 +1357,7 @@ class InstrumentDepTerms:
                 plt.plot(
                     self.sources_astroph[source_name]['wavel'], 
                     self.sources_astroph[source_name]['pre_screen_astro_flux_ph_sec_m2_um'], 
-                    label=source_name)
+                    label=format_astro_source_label(source_name))
                     
             plt.yscale('log')
             plt.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)  # Add grid pattern to plot
@@ -1399,7 +1420,7 @@ class InstrumentDepTerms:
                         ax.plot(
                             source_val['wavel'],
                             flux_integrated,
-                            label=source_name,
+                            label=format_astro_source_label(source_name),
                         )
                         if flux_unit is None:
                             flux_unit = flux_integrated.unit
@@ -1407,13 +1428,13 @@ class InstrumentDepTerms:
                     ax.set_yscale('log')
                     ax.set_xlim([4, 18])  # for comparison with Dannert
                     ax.set_ylim([1e-3, 1e10])  # for comparison with Dannert
-                    ax.set_xlabel(f'Wavelength ({wavel_unit})')
-                    ax.set_ylabel(f'Flux ({flux_unit})')
-                    ax.legend(fontsize=8, loc='best')
+                    ax.set_xlabel(f'Wavelength ({wavel_unit})', fontsize=22)
+                    ax.set_ylabel(f'Flux ({flux_unit})', fontsize=22)
+                    ax.tick_params(axis="both", which="major", labelsize=18)
                     ax.set_title(
                         format_plot_title(f'{title} — {output_name}', self.config),
                         loc='left',
-                        fontsize=8,
+                        fontsize=2,
                     )
                     file_name = f'{file_stem}_{output_name}.png'
                     fig.tight_layout()
@@ -1435,9 +1456,10 @@ class InstrumentDepTerms:
 
             #########################################################
             # begin insert for poster plot — post-aperture flux, one panel per output
+            
             save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
             for output_name in transmission_screen_order:
-                fig, ax = plt.subplots(figsize=(8, 8))
+                fig, ax = plt.subplots(figsize=(10, 5))
                 flux_unit = None
                 wavel_unit = None
                 for source_name, source_val in self.prop_dict.items():
@@ -1447,30 +1469,41 @@ class InstrumentDepTerms:
                         source_val['flux_cube_post_screen_post_aperture_ph_sec_um'][output_name],
                         axis=(1, 2),
                     )
-                    ax.plot(source_val['wavel'], flux_integrated, label=source_name)
+                    ax.plot(source_val['wavel'], flux_integrated, label=format_astro_source_label(source_name))
                     if flux_unit is None:
                         flux_unit = flux_integrated.unit
                         wavel_unit = source_val['wavel'].unit
 
+                ax.set_xlim(4.0, 18.5)
                 ax.set_yscale('log')
+                ax.set_ylim([1e-2, 1e5])
+                ax.yaxis.set_minor_locator(LogLocator(subs=np.arange(2, 10)))
                 ax.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)
-                ax.set_xlim([4, 18])
-                ax.set_ylim([1e-3, 1e5])
-                ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=16)
-                ax.set_ylabel(f"Flux ({flux_unit})", fontsize=16)
-                ax.tick_params(axis="both", which="major", labelsize=14)
-                ax.legend(fontsize=7, loc='lower right')
+                ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=22)
+                ax.set_ylabel(f"Flux\n({flux_unit})", fontsize=22)
+                ax.tick_params(axis="both", which="major", labelsize=18)
                 ax.set_title(
                     format_plot_title(
                         f"Post-aperture flux (all sources) — {output_name}",
-                        self.config,
+                        self.config, 
+                        font_size=2
                     ),
-                    loc='left',
+                    loc="left",
+                    pad=70,
+                )
+                legend_handles, _ = ax.get_legend_handles_labels()
+                ax.legend(
+                    fontsize=12,
+                    loc="lower center",
+                    bbox_to_anchor=(0.5, 1.02),
+                    ncol=len(legend_handles),
+                    frameon=True,
+                    borderaxespad=0,
                 )
                 fig.tight_layout()
-                file_name_plot = save_dir + f"poster_post_aperture_flux_{output_name}.png"
+                file_name_plot = save_dir + f"poster_post_aperture_flux_{output_name}.pdf"
                 #plt.show()
-                fig.savefig(file_name_plot)
+                fig.savefig(file_name_plot, bbox_inches="tight", pad_inches=0.5)
                 plt.close(fig)
                 logging.info(f"Saved poster post-aperture flux plot to {file_name_plot}")
 

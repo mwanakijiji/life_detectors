@@ -1,46 +1,30 @@
 # Displays S/N degradation as function of DC 
 
-import importlib
 import sys
 from pathlib import Path
-import ipdb
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-# load stuff
-repo_root = Path.cwd().resolve()
-sim_pipeline = repo_root / "sim_pipeline"
-if not sim_pipeline.is_dir():
-    sim_pipeline = repo_root.parent / "sim_pipeline"
-if str(sim_pipeline) not in sys.path:
-    sys.path.insert(0, str(sim_pipeline))
 
-# If you edited calculator.py in this session, reload so new names are visible
-import modules.core.calculator as calculator
-importlib.reload(calculator)
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
-# read_s2n_cube_hdf5 (.hdf5 only) or load_s2n_cube (.hdf5 or .pkl)
-read_s2n_cube_hdf5 = getattr(calculator, "read_s2n_cube_hdf5", calculator.load_s2n_cube)
+from load_s2n_cube import load_s2n_cube, print_cube_statistics
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
 #s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/dc_5_qe_0.90_s2n_cube.hdf5'
 s2n_hdf5_path = '/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.50_s2n_cube.hdf5'
 
-cube = read_s2n_cube_hdf5(s2n_hdf5_path)
+cube = load_s2n_cube(s2n_hdf5_path)
+print_cube_statistics(cube)
 
 # Primary array: shape (wavelength, DC, QE)
 snr_cube = cube.snr
 wavelength = cube.wavelength
 dark_current = cube.dark_current
 qe = cube.qe
-
-print('-------- VITAL STATISTICS --------')
-print("snr_cube shape (wavelength, DC, QE):", snr_cube.shape)
-print("wavelength (um):", wavelength.min(), "-", wavelength.max())
-print("dark_current (e/pix/s):", dark_current)
-print("qe:", qe)
-print('----------------------------------')
 
 # S/N vs wavelength for one QE, varying DC
 qe_idx = 0

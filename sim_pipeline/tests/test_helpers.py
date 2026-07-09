@@ -27,6 +27,7 @@ from modules.utils.helpers import (
     compute_collecting_area_m2,
     create_sample_data,
     ensure_plot_title_context,
+    format_astro_source_label,
     format_plot_title,
     generate_exozodiacal_spectrum,
     generate_planet_bb_spectrum,
@@ -188,6 +189,23 @@ class TestTitleBuilders:
         assert "  zodiacal = False" in out
         # Left and right columns share a row when both have content.
         assert "collecting area = 25.00 m^2    astrophysical sources:" in out
+
+    @pytest.mark.parametrize(
+        ("source_name", "expected"),
+        [
+            ("star", "Star"),
+            ("star_psg", "Star"),
+            ("exoplanet_bb", "Exoplanet"),
+            ("exoplanet_model_10pc", "Exoplanet"),
+            ("exoplanet_psg", "Exoplanet"),
+            ("exozodiacal", "Exozodiacal"),
+            ("exozodiacal_psg", "Exozodiacal"),
+            ("zodiacal", "Zodiacal"),
+            ("unknown_source", "unknown_source"),
+        ],
+    )
+    def test_format_astro_source_label(self, source_name, expected):
+        assert format_astro_source_label(source_name) == expected
 
     def test_build_astrophysical_sources_to_use_title(self):
         cfg = {

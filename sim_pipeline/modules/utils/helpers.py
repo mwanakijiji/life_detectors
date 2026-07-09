@@ -232,7 +232,7 @@ def _join_two_column_text(left: str, right: str, gap: int = 4) -> str:
     return "\n".join(rows)
 
 
-def format_plot_title(base_title: str, config) -> str:
+def format_plot_title(base_title: str, config, font_size: int = 12) -> str:
     title_context = _get_plot_title_context(config)
     sources_context = build_astrophysical_sources_to_use_title(config)
     body = _join_two_column_text(title_context, sources_context)
@@ -249,6 +249,20 @@ def format_plot_title(base_title: str, config) -> str:
 
 # end bunch of functions to get and set the plot title context
 ########################################################
+
+
+def format_astro_source_label(source_name: str) -> str:
+    """Map internal astrophysical source keys to plot legend labels."""
+    if source_name == "star" or source_name.startswith("star_"):
+        return "Star"
+    if source_name.startswith("exozodiacal"):
+        return "Exozodiacal"
+    if source_name.startswith("exoplanet"):
+        return "Exoplanet"
+    if source_name == "zodiacal":
+        return "Zodiacal"
+    return source_name
+
 
 def merge_psg_spectra_to_planet_population(
     df_planet_population: pd.DataFrame, planet_population_params: dict
