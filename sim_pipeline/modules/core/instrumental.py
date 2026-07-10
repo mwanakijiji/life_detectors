@@ -1251,13 +1251,13 @@ class InstrumentDepTerms:
         for source_name, source_val in source_dict_post_screen.items():
             # source_val has 4 different screens, so integrate them separately
             self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = {} # will contain flux corresponding to each screen
-            self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = {} # will contain flux cube corresponding to each screen
+            self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_m2_um'] = {} # will contain flux cube corresponding to each screen
             #test_flux_1 = 0 # to check flux conservation
             #test_flux_2 = 0 # to check flux conservation
             for transmission_screen_name in transmission_screen_order:
                 source_val_integrated = np.sum(source_val[transmission_screen_name], axis=(1,2))
                 self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'][transmission_screen_name] = source_val_integrated
-                self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'][transmission_screen_name] = source_val[transmission_screen_name]
+                self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_m2_um'][transmission_screen_name] = source_val[transmission_screen_name]
                 logging.info(f'Flux of {source_name} passed through transmission screen {transmission_screen_name}')
 
                 # to check flux conservation, add up all the light transmitted through each screen
@@ -1293,7 +1293,7 @@ class InstrumentDepTerms:
 
                 # source_val_integrated = np.sum(source_val, axis=(1,2))
                 # self.sources_astroph[source_name]['flux_integrated_post_screen_ph_sec_m2_um'] = source_val_integrated
-                # self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_um'] = source_dict_post_screen[source_name]
+                # self.sources_astroph[source_name]['flux_cube_post_screen_ph_sec_m2_um'] = source_dict_post_screen[source_name]
                 # logging.info(f'Flux of {source_name} passed through transmission screen')
             
                 # if name is right and units are right
@@ -1389,7 +1389,7 @@ class InstrumentDepTerms:
         for source_name, source_val in self.sources_astroph.items():
 
             post_aperture_flux_by_output = {
-                output_name: eta_t * np.multiply(collecting_area, source_val['flux_cube_post_screen_ph_sec_um'][output_name])
+                output_name: eta_t * np.multiply(collecting_area, source_val['flux_cube_post_screen_ph_sec_m2_um'][output_name])
                 for output_name in transmission_screen_order
             }
 
@@ -1397,7 +1397,7 @@ class InstrumentDepTerms:
             ## ## TODO; make a separate module for throughput, and add other terms (telescope background, etc.)
             self.prop_dict[source_name] = {
                 'wavel': source_val['wavel'],
-                'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_um'],
+                'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_m2_um'],
                 'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output, # includes chop signal if enabled
             }
 

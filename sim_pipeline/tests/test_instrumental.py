@@ -227,7 +227,7 @@ class TestInstrumentDepTerms:
         sources_astroph = {
             "star": {
                 "wavel": wavel,
-                "flux_cube_post_screen_ph_sec_um": _output_flux_dict(cube),
+                "flux_cube_post_screen_ph_sec_m2_um": _output_flux_dict(cube),
             }
         }
 
@@ -321,10 +321,10 @@ class TestInstrumentDepTerms:
             plot=False,
         )
 
-        bright_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_1_bright"]
-        bright_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_2_bright"]
-        dark_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_3_dark"]
-        dark_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_um"]["output_4_dark"]
+        bright_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_1_bright"]
+        bright_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_2_bright"]
+        dark_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_3_dark"]
+        dark_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_4_dark"]
 
         '''
         if np.logical_or(

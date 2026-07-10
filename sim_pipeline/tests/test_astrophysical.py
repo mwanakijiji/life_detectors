@@ -144,10 +144,14 @@ class TestAstrophysicalSources:
         sources.spectra["zodiacal"] = sample_spectrum_zodiacal
 
         wavelength = np.array([1.5, 2.5]) * u.um
-        flux = sources._calculate_flux_from_spectrum("zodiacal", wavelength, distance_set=10.0) # distance_set is ignored for zodiacal
+        flux_baseline = sources._calculate_flux_from_spectrum("zodiacal", wavelength, distance_set=10.0) # distance_set is ignored for zodiacal
+        assert flux_baseline.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert np.allclose(flux_baseline.value, np.array([15.0, 25.0]))
 
-        assert flux.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
-        assert np.allclose(flux.value, np.array([15.0, 25.0]))
+        # distance should not cause the flux to change
+        flux_farther = sources._calculate_flux_from_spectrum("zodiacal", wavelength, distance_set=20.0)
+        assert flux_farther.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
+        assert np.allclose(flux_farther.value, flux_baseline.value, rtol=1e-5)
 
 
     def test_calculate_flux_from_ad_hoc_spectrum_applies_distance(
@@ -201,7 +205,6 @@ class TestAstrophysicalSources:
             metadata={},
         )
 
-        
         dist_1 = 5.7 # pc
         dist_2 = 21.6 # pc
         incident_predicted_0 = sources._calculate_flux_from_spectrum("star", wavelength_grid, distance_set=dist_1)
@@ -209,8 +212,8 @@ class TestAstrophysicalSources:
 
         # expected vals from Google Gemini, for 10 pc
         incident_expected_dist_10 = np.array([8.66e8, 2.37e7]) # units (u.ph / (u.um * u.m**2 * u.s))
-        incident_expected_dist_5pt7 = incident_expected_dist_10 * (10.0/ dist_1) ** 2 # rescale for distance
-        incident_expected_dist_21pt6 = incident_expected_dist_10 * (10.0/ dist_2) ** 2 # rescale for distance
+        incident_expected_dist_5pt7 = incident_expected_dist_10 * (10.0 / dist_1) ** 2 # rescale for distance
+        incident_expected_dist_21pt6 = incident_expected_dist_10 * (10.0 / dist_2) ** 2 # rescale for distance
 
         assert incident_predicted_0.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
         assert incident_predicted_1.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
@@ -284,13 +287,6 @@ class TestAstrophysicalSources:
         assert np.allclose(np.round(l_phot_mine, 2), l_phot_expected, rtol=1e-2) # 1% tolerance
         assert np.allclose(np.round(l_energy_mine, 2), l_energy_expected, rtol=1e-2)
 
-        #assert np.allclose(lum_phot_star.value, np.array([6.59e14, 1.31e-4]))
-        #assert np.allclose(lum_energy_star.value, np.array([2.31e11, 9.19e-9]))
-
-        #flux = sources._calculate_flux_from_spectrum("star_bb_test", wavelength, distance_set=10.0)
-        #assert flux.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s))
-        #assert np.allclose(flux.value, np.array([15.0, 25.0]))
-
 
     def test_calculate_flux_from_spectrum_logs_warning_for_inconsistent_units(
         self, config_with_sources, unit_converter, sample_spectrum_bad_units, caplog
@@ -354,6 +350,7 @@ class TestAstrophysicalSources:
         final_flux = incident["pre_screen_astro_flux_ph_sec_m2_um"]
         assert final_flux.unit.is_equivalent(u.ph / (u.s * u.m**2 * u.micron))
         assert np.allclose(final_flux.to(u.ph / (u.s * u.m**2 * u.micron)).value, [11.0, 22.0, 33.0])
+
 
     def test_calculate_incident_flux_exoplanet_model_10pc(self, unit_converter):
         """Test exoplanet_model_10pc branch using a mocked model dataframe."""
@@ -420,6 +417,7 @@ class TestAstrophysicalSources:
         assert np.allclose(empirical_values, expected)
         assert not np.allclose(empirical_values, expected_bogus)
 
+
     def test_calculate_incident_flux_unknown_source_returns_empty_array(
         self, config_for_incident_flux, unit_converter
     ):
@@ -430,6 +428,7 @@ class TestAstrophysicalSources:
 
         assert isinstance(result, np.ndarray)
         assert result.size == 0
+
 
     @patch("modules.core.astrophysical.plt.savefig")
     @patch("modules.core.astrophysical.plt.plot")

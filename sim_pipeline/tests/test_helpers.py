@@ -436,6 +436,52 @@ class TestRecordInfoAtAngleAndQe:
         assert restored.meta["angle_deg"] == 45.0
         assert restored.meta["qe"] == 0.7
 
+    def test_clears_stale_groups_before_rewrite(self, tmp_path):
+        import h5py
+
+        save_dir = str(tmp_path) + "/"
+        hdf5_path = tmp_path / "angle_045.00_qe_0.70.hdf5"
+        n_bins = 2
+        wavel = np.array([5.0, 10.0]) * u.um
+        width = np.array([0.5, 0.5]) * u.um
+
+        def _table(signal):
+            return QTable(
+                {
+                    "wavel_bin_center": wavel,
+                    "wavel_bin_width": width,
+                    "signal_adu": np.ones(n_bins) * signal * u.adu,
+                }
+            )
+
+        stale = _table(99.0)
+        stale.write(hdf5_path, path="dc_00.000_qe_0.50/chopped", overwrite=True)
+
+        channel = MagicMock()
+        channel.tables_by_dark_current = {0.0: _table(1.0)}
+        output_channels = {
+            "output_1_bright": channel,
+            "output_2_bright": channel,
+            "output_3_dark": channel,
+            "output_4_dark": channel,
+        }
+        post_chop = {0.0: _table(3.0)}
+        post_chop[0.0]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
+
+        record_info_at_angle_and_qe(
+            angle_deg=45.0,
+            qe=0.7,
+            output_channels=output_channels,
+            post_chop_tables_by_dark_current=post_chop,
+            save_dir=save_dir,
+            plot=False,
+        )
+
+        with h5py.File(hdf5_path, "r") as handle:
+            groups = set(handle.keys())
+        assert "dc_00.000_qe_0.50" not in groups
+        assert "dc_00.000_qe_0.70" in groups
+
 
 def test_validate_file_path_cases(tmp_path):
     # 1) Missing path -> False

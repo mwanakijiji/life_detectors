@@ -7,12 +7,24 @@ import logging
 import os
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import astropy.units as u
 import numpy as np
 import pandas as pd
 import pytest
+
+from modules.core.astrophysical import (
+    generate_exoplanet_scene,
+    generate_exozodi_scene,
+    generate_star_scene,
+    generate_zodiacal_scene,
+)
+from modules.core.instrumental import InstrumentDepTerms
+from modules.data.units import UnitConverter
+from modules.utils.helpers import compute_collecting_area_m2, parse_sky_position_arcsec_yx
+
 
 # Mock ipdb before importing batch_process (optional dev dependency)
 sys.modules["ipdb"] = types.ModuleType("ipdb")
@@ -399,7 +411,276 @@ def run_calc_config_path(tmp_path):
     return str(config_path), save_dir
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
+
+
+@pytest.fixture
+def unit_converter():
+    return UnitConverter()
+
+
+@pytest.fixture
+def flux_conservation_config(tmp_path):
+    """Minimal config for transmission-screen flux conservation checks."""
+    return {
+        "detector": {
+            "spec_res": "20", 
+            "read_noise": "6",
+            "dark_current": "0.0001",
+            "gain": "2.0",
+            "quantum_efficiency": "0.8",
+            "photons_to_e": "1.0",
+            "size": "1024",
+            "pitch_pix": "25",
+            "pix_per_wavel_bin": "2.2",
+            "pix_spectral_width": "2",
+        },
+        "wavelength_range": {"min": "4.0", "max": "18.0"},
+        "telescope": {
+            "single_mirror_diameter": "3.5", 
+            "eta_t": "0.8",
+            "aperture_array_config_file_name": str(APERTURE_YAML)},
+        "onsky_scene": {
+            "n_pix": "1001",
+            "pix_size_mas": "10.7",
+            "half_pix": "1",
+            "pos_star_arcsec": "0.0, 0.0",
+            "pos_planet_arcsec": "0.5, -0.3",
+        },
+        "observation": {
+            "t_int_frame": "10",
+            "N_angles": "1",
+            "N_int_per_angle": "1",
+        },
+        "target": {"distance": "10.0", "z_exozodiacal": "1.0"},
+        "nulling": {"null": "False", "nulling_factor": "0.001"},
+        "dirs": {"save_s2n_data_unique_dir": str(tmp_path / "out") + "/"},
+    }
+
+
+def _build_four_source_scenes(config, wavel):
+    """Build star, planet, exozodi, and zodiacal 3D scenes for flux conservation tests."""
+    n_pix = int(config["onsky_scene"]["n_pix"])
+    half_pix = int(config["onsky_scene"]["half_pix"])
+    pix_size_arcsec = float(config["onsky_scene"]["pix_size_mas"]) / 1000.0
+    dist_pc = float(config["target"]["distance"])
+    z_exozodiacal = float(config["target"]["z_exozodiacal"])
+    flux_unit = u.ph / (u.um * u.m**2 * u.s)
+
+    axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
+
+    def _idx_from_arcsec(y_arcsec, x_arcsec):
+        idx_y = int(np.abs(axis_arcsec - y_arcsec).argmin())
+        idx_x = int(np.abs(axis_arcsec - x_arcsec).argmin())
+        return idx_y, idx_x
+
+    y_star, x_star = parse_sky_position_arcsec_yx(config["onsky_scene"]["pos_star_arcsec"])
+    y_planet, x_planet = parse_sky_position_arcsec_yx(config["onsky_scene"]["pos_planet_arcsec"])
+    idx_y_star, idx_x_star = _idx_from_arcsec(y_star, x_star)
+    idx_y_planet, idx_x_planet = _idx_from_arcsec(y_planet, x_planet)
+
+    flux_specs = {
+        "star": np.array([6.0, 5.0]) * flux_unit,
+        "exoplanet_model_10pc": np.array([1.0, 1.2]) * flux_unit,
+        "exozodiacal": np.array([0.4, 0.4]) * flux_unit,
+        "zodiacal": np.array([2.0, 2.0]) * flux_unit,
+    }
+
+    scenes = {
+        "star": generate_star_scene(
+            flux_specs["star"], n_pix, idx_y_star, idx_x_star, half_pix
+        ),
+        "exoplanet_model_10pc": generate_exoplanet_scene(
+            flux_specs["exoplanet_model_10pc"], n_pix, idx_y_planet, idx_x_planet, half_pix
+        ),
+        "exozodiacal": generate_exozodi_scene(
+            flux_specs["exozodiacal"],
+            n_pix,
+            idx_y_star,
+            idx_x_star,
+            pix_size_arcsec,
+            dist_pc,
+            z_exozodiacal,
+        ),
+        "zodiacal": generate_zodiacal_scene(
+            flux_specs["zodiacal"], n_pix, pix_size_arcsec
+        ),
+    }
+
+    sources_astroph = {
+        name: {
+            "wavel": wavel,
+            "pre_screen_astro_flux_ph_sec_m2_um": flux_specs[name],
+        }
+        for name in scenes
+    }
+    return sources_astroph, scenes
+
+
+def _dispersed_flux_from_channels(instr, source_name, flux_rate_unit):
+    """Sum flux_astro_1d_interpolated_ph_sec_um for one source across output channels."""
+    wavel_bins = next(iter(instr.output_channels.values())).bin_centers
+    n_bins = len(wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins)
+    total = np.zeros(n_bins) * flux_rate_unit
+    for channel in instr.output_channels.values():
+        sig = channel.astroph_signal.get(source_name)
+        if sig is None:
+            continue
+        total += sig["flux_astro_1d_interpolated_ph_sec_um"].to(flux_rate_unit)
+    return total
+
+
+def _independent_detector_flux_from_prop_dict(instr, source_name, qe, flux_rate_unit):
+    """
+    Recompute detector-grid flux for one source from post-aperture cubes.
+
+    Mirrors disperse_astro_signals_on_detector without reading astroph_signal.
+    """
+    wavel_bins = next(iter(instr.output_channels.values())).bin_centers
+    wavel_bin_values = (
+        wavel_bins.value if hasattr(wavel_bins, "value") else np.asarray(wavel_bins)
+    )
+    wavel_pts = instr.prop_dict[source_name]["wavel"]
+    wavel_pt_values = (
+        wavel_pts.value if hasattr(wavel_pts, "value") else np.asarray(wavel_pts)
+    )
+    post_aperture_cubes = instr.prop_dict[source_name][
+        "flux_cube_post_screen_post_aperture_ph_sec_um"
+    ]
+
+    total = np.zeros(len(wavel_bin_values)) * flux_rate_unit
+    for ch_name in post_aperture_cubes:
+        flux_1d = np.sum(post_aperture_cubes[ch_name], axis=(1, 2))
+        flux_values = flux_1d.to(flux_rate_unit).value
+        total += (np.interp(wavel_bin_values, wavel_pt_values, flux_values) * qe) * flux_rate_unit
+    return total
+
+
 class TestRunSingleCalculation:
+
+    def test_flux_conserved_when_no_manual_masking(
+        self, flux_conservation_config, unit_converter
+    ):
+        wavel = np.array([1.0, 2.0]) * u.um
+        sources_to_include = [
+            "star",
+            "exoplanet_model_10pc",
+            "exozodiacal",
+            "zodiacal",
+        ]
+        sources_astroph, scenes = _build_four_source_scenes(flux_conservation_config, wavel)
+
+        Path(flux_conservation_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(
+            parents=True, exist_ok=True
+        )
+
+        instr = InstrumentDepTerms(
+            flux_conservation_config,
+            unit_converter,
+            sources_astroph=sources_astroph,
+            sources_to_include=sources_to_include,
+        )
+
+        screens = instr.generate_instrument_transmission(
+            wavel_m=11e-6,
+            override_stellar_mask=False,
+            normalize=True,
+            plot=False,
+        )
+
+        instr.pass_through_transmission_screens(
+            fyi_angle=0.0,
+            source_dict_pre_screen=scenes,
+            transmission_screens=screens,
+            plot=False,
+        )
+
+        # Pass through telescope aperture
+        instr.pass_through_aperture(plot=False)
+
+        # set instrumental noise terms and update the OutputChannel objects
+        instr.calculate_instrinsic_instrumental_noise()
+
+        # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
+        instr.disperse_astro_signals_on_detector(plot=False)
+
+        # is flux conserved before and after transmissions screens? (per source and total)
+        for source_name in sources_to_include:
+            scene = scenes[source_name]
+            post_cubes = instr.sources_astroph[source_name]["flux_cube_post_screen_ph_sec_m2_um"]
+            net_post = sum(post_cubes[ch] for ch in post_cubes)
+            np.testing.assert_allclose(
+                net_post.value,
+                scene.value,
+                err_msg=f"flux not conserved for {source_name} (cube level)",
+            )
+            post_integrated = sum(
+                instr.sources_astroph[source_name]["flux_integrated_post_screen_ph_sec_m2_um"][ch]
+                for ch in post_cubes
+            )
+            np.testing.assert_allclose(
+                post_integrated.value,
+                sources_astroph[source_name]["pre_screen_astro_flux_ph_sec_m2_um"].value,
+                err_msg=f"flux not conserved for {source_name} (integrated level)",
+            )
+
+        # is flux conserved before and after the aperture, modulo throughput and the finite collecting area?
+        eta_t = float(flux_conservation_config["telescope"]["eta_t"])
+        collecting_area = compute_collecting_area_m2(flux_conservation_config) * u.m**2
+        post_transmission_cubes_all_sources_all_channels = np.zeros(len(wavel)) * u.ph / (u.s * u.um)
+        post_aperture_per_wavel_source_all_sources_all_channels = np.zeros(len(wavel)) * u.ph / (u.s * u.um)
+        for source_name in sources_to_include:
+            post_transmission_cubes = instr.sources_astroph[source_name]["flux_cube_post_screen_ph_sec_m2_um"]
+            scaled_post_transmission_per_wavel = sum(
+                np.sum(
+                    post_transmission_cubes[ch] * eta_t * collecting_area,
+                    axis=(1, 2),
+                )
+                for ch in post_transmission_cubes
+            )
+            post_aperture_per_wavel_source_in_all_channels = sum(
+                np.sum(
+                    instr.prop_dict[source_name]["flux_cube_post_screen_post_aperture_ph_sec_um"][ch],
+                    axis=(1, 2),
+                )
+                for ch in post_transmission_cubes
+            )
+            post_transmission_cubes_all_sources_all_channels += scaled_post_transmission_per_wavel
+            post_aperture_per_wavel_source_all_sources_all_channels += post_aperture_per_wavel_source_in_all_channels
+            assert scaled_post_transmission_per_wavel.unit == post_aperture_per_wavel_source_in_all_channels.unit
+        np.testing.assert_allclose(
+            post_aperture_per_wavel_source_all_sources_all_channels.value,
+            post_transmission_cubes_all_sources_all_channels.value,
+            err_msg="flux not conserved before and after the aperture, modulo throughput and the finite collecting area",
+        )
+
+
+        # is flux conserved between dispersed detector and independent recomputation from prop_dict, modulo quantum efficiency? (per source and total)
+        qe = float(flux_conservation_config["detector"]["quantum_efficiency"])
+        flux_rate_unit = u.ph / (u.s * u.um)
+        n_detector_bins = len(next(iter(instr.output_channels.values())).bin_centers)
+        dispersed_all_sources_ph_sec_um = np.zeros(n_detector_bins) * flux_rate_unit
+        independent_all_sources_ph_sec_um = np.zeros(n_detector_bins) * flux_rate_unit
+        for source_name in sources_to_include:
+            dispersed_flux_ph_sec_um = _dispersed_flux_from_channels(instr, source_name, flux_rate_unit)
+            independent_flux_ph_sec_um = _independent_detector_flux_from_prop_dict(
+                instr, source_name, qe, flux_rate_unit
+            )
+            np.testing.assert_allclose(
+                dispersed_flux_ph_sec_um.value,
+                independent_flux_ph_sec_um.value,
+                err_msg=f"flux not conserved for {source_name} (detector level)",
+            )
+            dispersed_all_sources_ph_sec_um += dispersed_flux_ph_sec_um
+            independent_all_sources_ph_sec_um += independent_flux_ph_sec_um
+        np.testing.assert_allclose(
+            dispersed_all_sources_ph_sec_um.value,
+            independent_all_sources_ph_sec_um.value,
+            err_msg="total flux not conserved across all sources (detector level)",
+        )
+
+
     @patch("batch_process.calculate_s2n_post_rotation")
     def test_returns_true_and_calls_s2n_when_enabled(
         self, mock_s2n, run_calc_config_path

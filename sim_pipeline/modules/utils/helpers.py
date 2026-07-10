@@ -1084,6 +1084,10 @@ def record_info_at_angle_and_qe(
     file_name_hdf5 = f"{save_dir}{format_angle_qe_hdf5_name(angle_deg, qe)}"
     angle_deg = canonical_angle_deg(angle_deg)
     qe = canonical_qe(qe)
+    hdf5_path = Path(file_name_hdf5)
+    hdf5_path.parent.mkdir(parents=True, exist_ok=True)
+    if hdf5_path.exists():
+        hdf5_path.unlink()
     hdf5_paths = []
     first_dataset = True
 
@@ -1122,7 +1126,7 @@ def record_info_at_angle_and_qe(
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate_key].copy()
         chopped_tbl.meta['angle_deg'] = float(angle_deg)
         chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate_key)
-        hdf5_path = hdf5_path = dc_qe_str + "/chopped"
+        hdf5_path = dc_qe_str + "/chopped"
         chopped_tbl.write(
             file_name_hdf5,
             path=hdf5_path,
