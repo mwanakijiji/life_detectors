@@ -104,7 +104,7 @@ class Detector:
 
         return
 
-    def footprint_spectral(self, file_name_plot: str, plot: bool = True):
+    def footprint_spectral(self, file_name_plot: str, plot: bool = False):
         '''
         # return a boolean array of the detector, where the footprint is 1 (or a fraction, if the footprint edges do not cover a whole number of pixels)
         # file_name_plot: name of the file to save the plot to
@@ -1169,7 +1169,6 @@ class InstrumentDepTerms:
                     output_channel.name,
                     file_name_plot,
                 )
-                ipdb.set_trace()
 
         return
 
