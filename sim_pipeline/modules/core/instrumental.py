@@ -33,6 +33,7 @@ from matplotlib.ticker import LogLocator
 
 from ..data.units import UnitConverter
 from ..utils.helpers import (
+    canonical_dc_rate,
     compute_collecting_area_m2,
     format_astro_source_label,
     format_plot_title,
@@ -574,7 +575,7 @@ class InstrumentDepTerms:
                 #qt['instrum_read_noise_e_pix'] = read_noise * np.ones(n_bins)
                 qt['t_int_frame'] = t_frame # integration time of one frame ## ## TODO: enable multiple reads
                 qt['qe'] = float(self.config['detector']['quantum_efficiency'])
-                tables_by_dc[float(dc_rate_this.value)] = qt
+                tables_by_dc[canonical_dc_rate(dc_rate_this.value)] = qt
 
             output_channel.tables_by_dark_current_orig = tables_by_dc # _orig meaning that we have not modified the units here
 
@@ -629,7 +630,7 @@ class InstrumentDepTerms:
                 final_table.meta.update(table.meta)
 
                 # store the final table for this permutation of output, dark current, and rotation angle
-                output_channel.tables_by_dark_current[float(dc_rate)] = final_table
+                output_channel.tables_by_dark_current[canonical_dc_rate(dc_rate)] = final_table
 
                 # plot of final signal in the detector
                 if plot:  # pragma: no cover
@@ -977,7 +978,7 @@ class InstrumentDepTerms:
             #output_channel.detector.disperse_signals(output_channel.signal_by_source)
 
             # generate the spectral footprint (shape (n_bins, n_pix, n_pix)) and tack it to output_channel.detector.footprint_cube
-            output_channel.detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + f'footprint_bool_{output_channel.name}.png', plot=True)
+            output_channel.detector.footprint_spectral(file_name_plot=str(self.config['dirs']['save_s2n_data_unique_dir']) + f'footprint_bool_{output_channel.name}.png', plot=plot)
 
             # dump the photons from each source in each wavelength bin into the output_channel.detector.footprint_cube
             # integration time for 1 frame
@@ -1125,7 +1126,7 @@ class InstrumentDepTerms:
                     file_name_csv,
                 )
 
-                ax.stairs(cumulative_signal, edges=edges, linewidth=3, color="black", alpha=0.5, linestyle="--", label="cumulative")
+                ax.stairs(cumulative_signal, edges=edges, linewidth=3, color="black", alpha=0.5, linestyle="--")
            
                 ax.set_xlim(4.0, 18.5)
                 ax.set_yscale("log")
@@ -1149,7 +1150,7 @@ class InstrumentDepTerms:
                 )
                 legend_handles, _ = ax.get_legend_handles_labels()
                 ax.legend(
-                    fontsize=12,
+                    fontsize=18,
                     loc="lower center",
                     bbox_to_anchor=(0.5, 1.02),
                     ncol=len(legend_handles),
@@ -1492,7 +1493,7 @@ class InstrumentDepTerms:
                 )
                 legend_handles, _ = ax.get_legend_handles_labels()
                 ax.legend(
-                    fontsize=12,
+                    fontsize=18,
                     loc="lower center",
                     bbox_to_anchor=(0.5, 1.02),
                     ncol=len(legend_handles),

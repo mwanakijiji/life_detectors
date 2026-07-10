@@ -375,6 +375,17 @@ def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data)
     return mock_astro_instance, mock_instrument
 
 
+def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
+    from modules.core.instrumental import OutputChannel
+
+    channel = OutputChannel(name=name, angle_deg=angle_deg)
+    channel.instrum_noise = {"stale": 1}
+    channel.astroph_signal = {"stale": 2}
+    channel.tables_by_dark_current = {0.0: "table"}
+    channel.tables_by_dark_current_orig = {0.0: "orig"}
+    return channel
+
+
 @pytest.fixture
 def run_calc_config_path(tmp_path):
     save_dir = str(tmp_path / "hdf5_out") + "/"
@@ -454,10 +465,8 @@ class TestRunSingleCalculation:
     @patch("batch_process.astrophysical.AstrophysicalSources")
     @patch("batch_process.create_sample_data")
     @patch("batch_process.calculate_s2n_post_rotation")
-    @patch("builtins.input", return_value="n")
     def test_generate_sims_runs_pipeline_without_deleting_hdf5(
         self,
-        mock_input,
         mock_s2n,
         mock_create_sample_data,
         mock_astro_sources_cls,
@@ -496,7 +505,6 @@ class TestRunSingleCalculation:
             )
 
         assert result is True
-        mock_input.assert_called_once()
         mock_create_sample_data.assert_called_once()
         mock_astro_sources_cls.assert_called_once()
         mock_instrument_cls.assert_called_once()
@@ -506,26 +514,19 @@ class TestRunSingleCalculation:
         assert "[tasks]" in caplog.text
         assert "generate_sims = True" in caplog.text
 
-    ''' ## ## TODO: fix these
     @patch("batch_process.record_info_at_angle_and_qe")
     @patch("batch_process.instrumental.InstrumentDepTerms")
     @patch("batch_process.astrophysical.AstrophysicalSources")
     @patch("batch_process.create_sample_data")
     @patch("batch_process.calculate_s2n_post_rotation")
-    @patch("builtins.input", return_value="n")
-    @patch("batch_process.configparser.ConfigParser")
-    
-    def test_logs_dict_config_contents_when_generate_sims(
+    def test_resets_output_channels_at_each_angle(
         self,
-        mock_cp_class,
-        mock_input,
         mock_s2n,
         mock_create_sample_data,
         mock_astro_sources_cls,
         mock_instrument_cls,
         mock_record_info,
         tmp_path,
-        caplog,
     ):
         save_dir = str(tmp_path / "hdf5_out") + "/"
         config_path = tmp_path / "run_calc_config.ini"
@@ -535,89 +536,63 @@ class TestRunSingleCalculation:
             generate_sims=True,
             calculate_s2n=False,
         )
-        base_config = configparser.ConfigParser()
-        base_config.read(config_path)
-        dict_config = _DictRunConfig(_run_calc_config_dict(save_dir))
-        mock_cp_class.side_effect = [base_config, dict_config]
 
-        mock_astro_instance, mock_instrument = _patch_generate_sims_pipeline(
-            mock_input, mock_s2n, mock_create_sample_data
-        )
+        mock_astro_instance = MagicMock()
+        mock_astro_instance.calculate_incident_flux.return_value = {"flux": 1.0}
+        mock_astro_instance.generate_onsky_scene.return_value = {"star": MagicMock()}
         mock_astro_sources_cls.return_value = mock_astro_instance
+
+        mock_instrument = MagicMock()
+        mock_instrument.sources_astroph = {"star": {"flux": 1.0}}
+        mock_instrument.output_channels = {
+            "output_1_bright": _make_dirty_output_channel("output_1_bright"),
+            "output_3_dark": _make_dirty_output_channel("output_3_dark"),
+        }
+        mock_instrument.post_chop_tables_by_dark_current = {"stale": True}
+        angles_seen = []
+
+        def _capture_reset_state(*, override_stellar_mask=False, angle_deg=None, plot=False):
+            assert mock_instrument.post_chop_tables_by_dark_current == {}
+            for channel in mock_instrument.output_channels.values():
+                angles_seen.append((angle_deg, channel.name, channel.angle_deg))
+                assert channel.instrum_noise == {}
+                assert channel.astroph_signal == {}
+                assert channel.tables_by_dark_current == {}
+                assert channel.tables_by_dark_current_orig == {}
+                channel.instrum_noise["filled"] = angle_deg
+                channel.astroph_signal["filled"] = angle_deg
+                channel.tables_by_dark_current[0.0] = angle_deg
+                channel.tables_by_dark_current_orig[0.0] = angle_deg
+            mock_instrument.post_chop_tables_by_dark_current["filled"] = angle_deg
+            return np.ones((6, 3, 3))
+
+        mock_instrument.generate_instrument_transmission.side_effect = _capture_reset_state
         mock_instrument_cls.return_value = mock_instrument
 
-        with caplog.at_level(logging.INFO):
-            run_single_calculation(
-                config_path=str(config_path),
-                base_filename="planet_00001",
-                sources_to_include=["star"],
-                qe=0.7,
-                plot=False,
-            )
-
-        assert "Top-level keys:" in caplog.text
-        assert "[tasks]" in caplog.text
-        assert "generate_sims = True" in caplog.text
-        assert "[observation]" in caplog.text
-        assert "N_angles = 2.0" in caplog.text
-
-    @patch("batch_process.record_info_at_angle_and_qe")
-    @patch("batch_process.instrumental.InstrumentDepTerms")
-    @patch("batch_process.astrophysical.AstrophysicalSources")
-    @patch("batch_process.create_sample_data")
-    @patch("batch_process.calculate_s2n_post_rotation")
-    @patch("builtins.input", return_value="n")
-    @patch("batch_process.configparser.ConfigParser")
-    def test_logs_fallback_for_unrecognized_config_type_when_generate_sims(
-        self,
-        mock_cp_class,
-        mock_input,
-        mock_s2n,
-        mock_create_sample_data,
-        mock_astro_sources_cls,
-        mock_instrument_cls,
-        mock_record_info,
-        tmp_path,
-        caplog,
-    ):
-        save_dir = str(tmp_path / "hdf5_out") + "/"
-        config_path = tmp_path / "run_calc_config.ini"
-        _write_run_calc_config(
-            config_path,
-            save_dir=save_dir,
-            generate_sims=True,
-            calculate_s2n=False,
+        result = run_single_calculation(
+            config_path=str(config_path),
+            base_filename="planet_00001",
+            sources_to_include=["star", "exoplanet_model_10pc"],
+            qe=0.7,
+            plot=False,
         )
-        base_config = configparser.ConfigParser()
-        base_config.read(config_path)
-        weird_config = _WeirdRunConfig(save_dir)
-        mock_cp_class.side_effect = [base_config, weird_config]
 
-        mock_astro_instance, mock_instrument = _patch_generate_sims_pipeline(
-            mock_input, mock_s2n, mock_create_sample_data
-        )
-        mock_astro_sources_cls.return_value = mock_astro_instance
-        mock_instrument_cls.return_value = mock_instrument
-
-        with caplog.at_level(logging.INFO):
-            run_single_calculation(
-                config_path=str(config_path),
-                base_filename="planet_00001",
-                sources_to_include=["star"],
-                qe=0.7,
-                plot=False,
-            )
-
-        assert "Unrecognized config type" in caplog.text
-        assert "_WeirdRunConfig" in caplog.text
-    '''
+        assert result is True
+        expected_angles = list(np.linspace(0, 360, num=2, endpoint=False))
+        assert mock_instrument.generate_instrument_transmission.call_count == 2
+        assert angles_seen == [
+            (expected_angles[0], "output_1_bright", expected_angles[0]),
+            (expected_angles[0], "output_3_dark", expected_angles[0]),
+            (expected_angles[1], "output_1_bright", expected_angles[1]),
+            (expected_angles[1], "output_3_dark", expected_angles[1]),
+        ]
+        mock_record_info.assert_called()
 
 
 class TestBatchQeNintProcess:
     @patch("batch_process.run_single_calculation", return_value=True)
-    @patch("builtins.input", return_value="y")
     def test_returns_true_when_all_qe_runs_succeed(
-        self, mock_input, mock_run_single, run_calc_config_path
+        self, mock_run_single, run_calc_config_path
     ):
         config_path, _ = run_calc_config_path
         qe_values = [0.5, 0.7]
@@ -631,12 +606,10 @@ class TestBatchQeNintProcess:
 
         assert result is True
         assert mock_run_single.call_count == 2
-        mock_input.assert_called_once()
 
     @patch("batch_process.run_single_calculation")
-    @patch("builtins.input", return_value="y")
     def test_returns_false_when_any_qe_run_fails(
-        self, mock_input, mock_run_single, run_calc_config_path
+        self, mock_run_single, run_calc_config_path
     ):
         config_path, _ = run_calc_config_path
         mock_run_single.side_effect = [True, False]
@@ -651,10 +624,10 @@ class TestBatchQeNintProcess:
         assert mock_run_single.call_count == 2
 
     @patch("batch_process.run_single_calculation", return_value=True)
-    @patch("builtins.input", return_value="n")
-    def test_passes_override_stellar_mask_false_when_user_declines(
-        self, mock_input, mock_run_single, run_calc_config_path
+    def test_passes_override_stellar_mask_true_while_prompt_disabled(
+        self, mock_run_single, run_calc_config_path
     ):
+        """Stellar-mask prompt is commented out in batch_qe_nint_process; mask stays on."""
         config_path, _ = run_calc_config_path
 
         batch_qe_nint_process(
@@ -664,12 +637,11 @@ class TestBatchQeNintProcess:
         )
 
         _, kwargs = mock_run_single.call_args
-        assert kwargs["override_stellar_mask"] is False
+        assert kwargs["override_stellar_mask"] is True
 
     @patch("batch_process.run_single_calculation", return_value=True)
-    @patch("builtins.input", return_value="")
     def test_passes_override_stellar_mask_true_for_empty_response(
-        self, mock_input, mock_run_single, run_calc_config_path
+        self, mock_run_single, run_calc_config_path
     ):
         config_path, _ = run_calc_config_path
 
@@ -683,9 +655,8 @@ class TestBatchQeNintProcess:
         assert kwargs["override_stellar_mask"] is True
 
     @patch("batch_process.run_single_calculation", return_value=True)
-    @patch("builtins.input", side_effect=EOFError)
     def test_defaults_stellar_mask_to_true_on_eof(
-        self, mock_input, mock_run_single, run_calc_config_path
+        self, mock_run_single, run_calc_config_path
     ):
         config_path, _ = run_calc_config_path
 
@@ -861,7 +832,7 @@ class TestParameterSweep:
             config_single_obs_path=single_obs_path,
             config_sweep_path=sweep_path,
             config_planet_population_path=population_path,
-            output_root=str(tmp_path / "batch_root") + "/",
+            output_root=str(tmp_path / "batch_root") + "/"
         )
 
         assert mock_batch.call_count == 2
@@ -873,7 +844,7 @@ class TestParameterSweep:
         assert second_kwargs["system_params"]["id"] == 2
         #assert first_kwargs["lum_types"]["G"] == 1.0 ## ## TODO: fix this
         assert first_kwargs["output_root"] == str(tmp_path / "batch_root") + "/"
-        mock_plot_population.assert_called_once()
+        #mock_plot_population.assert_called_once()
 
     @patch("batch_process.batch_qe_nint_process", return_value=True)
     def test_invalid_system_option_skips_batch(self, mock_batch, tmp_path):

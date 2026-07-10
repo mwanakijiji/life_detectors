@@ -24,9 +24,13 @@ from modules.utils.helpers import (
     build_astrophysical_sources_to_use_title,
     build_observation_detector_title,
     build_system_params_title,
+    canonical_angle_deg,
+    canonical_dc_rate,
+    canonical_qe,
     compute_collecting_area_m2,
     create_sample_data,
     ensure_plot_title_context,
+    format_angle_qe_hdf5_name,
     format_astro_source_label,
     format_plot_title,
     generate_exozodiacal_spectrum,
@@ -34,16 +38,42 @@ from modules.utils.helpers import (
     generate_star_spectrum,
     generate_zodiacal_spectrum,
     get_sweep_range,
+    lookup_float_key,
     merge_psg_spectra_to_planet_population,
     modify_config_file_sweep,
+    parse_angle_from_hdf5_path,
+    parse_dc_qe_group,
     parse_sky_position_arcsec_yx,
     plot_planet_population_sample,
     record_info_at_angle_and_qe,
+    resolve_float_key,
     validate_file_path,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
+
+
+class TestCanonicalHdf5Keys:
+    def test_canonical_angle_matches_filename_roundtrip(self):
+        angle = float(np.linspace(0, 360, num=7, endpoint=False)[1])
+        canonical = canonical_angle_deg(angle)
+        assert canonical == round(angle, 2)
+        assert parse_angle_from_hdf5_path(format_angle_qe_hdf5_name(angle, 0.7)) == canonical
+
+    def test_parse_angle_accepts_legacy_and_formatted_names(self):
+        assert parse_angle_from_hdf5_path("angle_0.hdf5") == 0.0
+        assert parse_angle_from_hdf5_path("angle_045.00_qe_0.70.hdf5") == 45.0
+
+    def test_parse_dc_qe_group_returns_canonical_values(self):
+        dc, qe = parse_dc_qe_group("dc_00.000_qe_0.70")
+        assert dc == canonical_dc_rate(0.0)
+        assert qe == canonical_qe(0.7)
+
+    def test_resolve_float_key_tolerates_formatting_drift(self):
+        mapping = {canonical_angle_deg(51.43): "ok"}
+        assert resolve_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2) == 51.43
+        assert lookup_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2) == "ok"
 
 
 class TestConfigHelpers:

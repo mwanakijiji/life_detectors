@@ -6,6 +6,7 @@ the package for data formatting, validation, and sample data generation.
 """
 
 import numpy as np
+import re
 from pathlib import Path
 from typing import Union, Optional
 import logging
@@ -39,6 +40,73 @@ def parse_sky_position_arcsec_yx(pos_str: str) -> tuple[float, float]:
     if len(parts) != 2:
         raise ValueError(f"Expected two comma-separated values (y, x arcsec), got {pos_str!r}")
     return parts[0], parts[1]
+
+
+ANGLE_FILENAME_DECIMALS = 2
+DC_GROUP_DECIMALS = 3
+QE_GROUP_DECIMALS = 2
+
+_ANGLE_HDF5_STEM_RE = re.compile(r"^angle_(?P<angle>[0-9.]+)(?:_qe_|$)")
+_DC_QE_GROUP_RE = re.compile(r"^dc_(?P<dc>.+)_qe_(?P<qe>[0-9.]+)$")
+
+
+def canonical_angle_deg(angle_deg: float) -> float:
+    """Match angle keys to HDF5 filename precision (``angle_{:06.2f}``)."""
+    return round(float(angle_deg), ANGLE_FILENAME_DECIMALS)
+
+
+def canonical_dc_rate(dc_rate: float) -> float:
+    """Match dark-current keys to HDF5 group precision (``dc_{:06.3f}``)."""
+    return round(float(dc_rate), DC_GROUP_DECIMALS)
+
+
+def canonical_qe(qe: float) -> float:
+    """Match QE keys to HDF5 group precision (``qe_{:04.2f}``)."""
+    return round(float(qe), QE_GROUP_DECIMALS)
+
+
+def format_angle_qe_hdf5_name(angle_deg: float, qe: float) -> str:
+    """Return ``angle_{angle}_qe_{qe}.hdf5`` using the same formatting as writes."""
+    return (
+        f"angle_{canonical_angle_deg(angle_deg):06.2f}"
+        f"_qe_{canonical_qe(qe):04.2f}.hdf5"
+    )
+
+
+def parse_angle_from_hdf5_path(path: Union[str, Path]) -> float:
+    """Parse the angle embedded in an ``angle_*.hdf5`` filename."""
+    stem = Path(path).stem
+    match = _ANGLE_HDF5_STEM_RE.match(stem)
+    if match is None:
+        raise ValueError(f"Cannot parse angle from HDF5 filename: {path!r}")
+    return canonical_angle_deg(float(match.group("angle")))
+
+
+def parse_dc_qe_group(dc_qe_str: str) -> tuple[float, float]:
+    """Parse ``dc_{dc}_qe_{qe}`` group names written by ``record_info_at_angle_and_qe``."""
+    match = _DC_QE_GROUP_RE.match(dc_qe_str)
+    if match is None:
+        raise ValueError(f"Unrecognized HDF5 group name: {dc_qe_str!r}")
+    return canonical_dc_rate(float(match.group("dc"))), canonical_qe(float(match.group("qe")))
+
+
+def lookup_float_key(mapping: dict, key: float, *, label: str = "key", decimals: int = 6):
+    """Dict lookup tolerant of tiny float formatting differences."""
+    resolved = resolve_float_key(mapping, key, label=label, decimals=decimals)
+    return mapping[resolved]
+
+
+def resolve_float_key(mapping: dict, key: float, *, label: str = "key", decimals: int = 6) -> float:
+    """Return the mapping key that matches ``key`` within formatting tolerance."""
+    key = float(key)
+    if key in mapping:
+        return key
+    tol = 10 ** (-decimals)
+    for existing_key in mapping:
+        if abs(float(existing_key) - key) <= tol:
+            return float(existing_key)
+    available = ", ".join(f"{existing_key!r}" for existing_key in sorted(mapping))
+    raise KeyError(f"{label} {key!r} not found; available: {available}")
 
 
 ########################################################
@@ -1013,20 +1081,23 @@ def record_info_at_angle_and_qe(
             chopped           QTable, all columns from post_chop_tables_by_dark_current
     """
 
-    file_name_hdf5 = f"{save_dir}angle_{angle_deg:06.2f}_qe_{qe:04.2f}.hdf5"
+    file_name_hdf5 = f"{save_dir}{format_angle_qe_hdf5_name(angle_deg, qe)}"
+    angle_deg = canonical_angle_deg(angle_deg)
+    qe = canonical_qe(qe)
     hdf5_paths = []
     first_dataset = True
 
     for dc_rate in post_chop_tables_by_dark_current:
-        dc_group = f"dc_{dc_rate:06.3f}"
+        dc_rate_key = canonical_dc_rate(dc_rate)
+        dc_group = f"dc_{dc_rate_key:06.3f}"
         qe_group = f"qe_{qe:04.2f}"
         dc_qe_str = f"{dc_group}_{qe_group}"
 
         # write out the tables for each output channel
         for ch_name, ch in output_channels.items():
-            out_tbl = ch.tables_by_dark_current[dc_rate].copy()
+            out_tbl = ch.tables_by_dark_current[dc_rate_key].copy()
             out_tbl.meta['angle_deg'] = float(angle_deg)
-            out_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
+            out_tbl.meta['dark_current_e_pix_s'] = float(dc_rate_key)
             out_tbl.meta['qe'] = float(qe)
             hdf5_path = dc_qe_str + f"/{ch_name}"
             if first_dataset:
@@ -1048,9 +1119,9 @@ def record_info_at_angle_and_qe(
             logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
 
         # now include the chopped signal
-        chopped_tbl = post_chop_tables_by_dark_current[dc_rate].copy()
+        chopped_tbl = post_chop_tables_by_dark_current[dc_rate_key].copy()
         chopped_tbl.meta['angle_deg'] = float(angle_deg)
-        chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate)
+        chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate_key)
         hdf5_path = hdf5_path = dc_qe_str + "/chopped"
         chopped_tbl.write(
             file_name_hdf5,

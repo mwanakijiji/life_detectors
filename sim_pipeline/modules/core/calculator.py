@@ -32,15 +32,21 @@ from .instrumental import Detector, InstrumentDepTerms
 from ..data.units import UnitConverter
 from ..utils.helpers import (
     build_astrophysical_sources_to_use_title,
+    canonical_angle_deg,
+    canonical_dc_rate,
+    canonical_qe,
     ensure_plot_title_context,
     format_plot_title,
+    parse_angle_from_hdf5_path,
+    parse_dc_qe_group,
+    resolve_float_key,
+    DC_GROUP_DECIMALS,
+    QE_GROUP_DECIMALS,
 )
 from ..utils.loader import config_getboolean
 from ..utils.validator import validate_config
 
 logger = logging.getLogger(__name__)
-
-_DC_QE_GROUP_RE = re.compile(r"^dc_(?P<dc>.+)_qe_(?P<qe>[0-9.]+)$")
 
 
 @dataclass
@@ -72,10 +78,7 @@ def _config_to_dict(config) -> Dict[str, Dict[str, str]]:
 
 
 def _parse_dc_qe_group(dc_qe_str: str) -> Tuple[float, float]:
-    match = _DC_QE_GROUP_RE.match(dc_qe_str)
-    if match is None:
-        raise ValueError(f"Unrecognized HDF5 group name: {dc_qe_str!r}")
-    return float(match.group("dc")), float(match.group("qe"))
+    return parse_dc_qe_group(dc_qe_str)
 
 
 def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
@@ -84,8 +87,6 @@ def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
     by_dc_qe: Dict[str, dict] = {}
 
     for hdf5_file in hdf5_files:
-        angle = float(Path(hdf5_file).stem.split('angle_')[1].split('_qe_')[0])
-
         with h5py.File(hdf5_file, "r") as f:
             for dc_qe_str in f.keys():
                 if dc_qe_str.startswith("__"):
@@ -93,6 +94,11 @@ def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
 
                 chopped = QTable.read(hdf5_file, path=f"{dc_qe_str}/chopped")
                 out3 = QTable.read(hdf5_file, path=f"{dc_qe_str}/output_3_dark")
+                meta_angle = chopped.meta.get("angle_deg")
+                if meta_angle is not None:
+                    angle = canonical_angle_deg(meta_angle)
+                else:
+                    angle = parse_angle_from_hdf5_path(hdf5_file)
                 S_p = chopped[
                     "chopped_astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"
                 ]
@@ -255,8 +261,8 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
         qe_values.append(qe_val)
         parsed.append((dc_qe_str, dc_val, qe_val))
 
-    dark_current = np.array(sorted(set(dc_values)))
-    qe = np.array(sorted(set(qe_values)))
+    dark_current = np.array(sorted({canonical_dc_rate(v) for v in dc_values}))
+    qe = np.array(sorted({canonical_qe(v) for v in qe_values}))
     n_wavel = len(next(iter(by_dc_qe.values()))["wavel"])
     snr_cube = np.full((n_wavel, len(dark_current), len(qe)), np.nan)
     snr_tot = np.full((len(dark_current), len(qe)), np.nan)
@@ -272,8 +278,8 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
 
     for dc_qe_str, dc_val, qe_val in parsed:
         snr_lambda, snr_total = _compute_snr_lambda_for_slot(by_dc_qe[dc_qe_str], config)
-        i_dc = dc_index[dc_val]
-        i_qe = qe_index[qe_val]
+        i_dc = dc_index[resolve_float_key(dc_index, dc_val, label="dark_current", decimals=DC_GROUP_DECIMALS)]
+        i_qe = qe_index[resolve_float_key(qe_index, qe_val, label="qe", decimals=QE_GROUP_DECIMALS)]
         snr_cube[:, i_dc, i_qe] = snr_lambda
         snr_tot[i_dc, i_qe] = snr_total
         base_titles[i_dc, i_qe] = _build_base_title(

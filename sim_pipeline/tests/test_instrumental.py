@@ -514,7 +514,7 @@ class TestCombineAstroAndInstrumSignals:
         instr.calculate_instrinsic_instrumental_noise()
         self._prepare_channels(instr, detector_geometry_config)
 
-        instr.combine_astro_and_instrum_signals()
+        instr.combine_astro_and_instrum_signals(plot=True)
 
         channel = instr.output_channels["output_3_dark"]
         assert 0.0 in channel.tables_by_dark_current_orig
