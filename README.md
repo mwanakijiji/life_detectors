@@ -1,4 +1,5 @@
 # Life Detectors - Infrared Detector Noise Calculator
+[![Coverage Status](https://coveralls.io/repos/github/mwanakijiji/life_detectors/badge.svg?branch=main)](https://coveralls.io/github/mwanakijiji/life_detectors?branch=main)
 
 A Python package for calculating total noise in infrared detectors on telescopes observing stars.
 
