@@ -82,6 +82,23 @@ def parse_angle_from_hdf5_path(path: Union[str, Path]) -> float:
     return canonical_angle_deg(float(match.group("angle")))
 
 
+def parse_qe_from_hdf5_path(path: Union[str, Path]) -> Optional[float]:
+    """Parse QE from ``angle_*_qe_{qe}.hdf5``; return None if the name has no QE suffix."""
+    stem = Path(path).stem
+    if "_qe_" not in stem:
+        return None
+    qe_str = stem.rsplit("_qe_", 1)[-1]
+    return canonical_qe(float(qe_str))
+
+
+def hdf5_path_matches_qe(path: Union[str, Path], qe: float) -> bool:
+    """True when ``path`` is an angle HDF5 for ``qe`` (legacy names without QE always match)."""
+    file_qe = parse_qe_from_hdf5_path(path)
+    if file_qe is None:
+        return True
+    return file_qe == canonical_qe(qe)
+
+
 def parse_dc_qe_group(dc_qe_str: str) -> tuple[float, float]:
     """Parse ``dc_{dc}_qe_{qe}`` group names written by ``record_info_at_angle_and_qe``."""
     match = _DC_QE_GROUP_RE.match(dc_qe_str)

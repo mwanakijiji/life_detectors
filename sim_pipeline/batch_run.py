@@ -7,7 +7,8 @@ import argparse
 from batch_process import parameter_sweep
 import logging
 from modules.utils import loader
-
+import os
+import glob
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -58,6 +59,27 @@ def main():
     output_root = args.output_root
     ###### END USER INPUTS
     #########################################################
+
+    # kludge for now
+    # laptop
+    dir_temp_hdf5_files = '/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/'
+    # node
+    #dir_temp_hdf5_files = '/home/eckhart/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/'
+    hdf5_files = glob.glob(os.path.join(dir_temp_hdf5_files, '*.hdf5'))
+    # Ask the user if they want to delete the files in this directory.
+    response = input(f"Found directory containing temp HDF5 files:\n    {dir_temp_hdf5_files}\nFound {len(hdf5_files)} HDF5 files in this directory.\nDo you want to delete HDF5 files in this directory? [y/N]: ").strip().lower()
+    #response = "y"
+    if response == "y" or response == "yes":
+        
+        for file_path in hdf5_files:
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted: {file_path}")
+            except Exception as ex:
+                logger.warning(f"Failed to delete {file_path}: {ex}")
+        logger.info("All temp HDF5 files deleted.")
+    else:
+        logger.info("Keeping temp HDF5 files.")
 
     # parameter sweep over QE, dark current
     parameter_sweep(config_single_obs_path = config_single_obs_path, 

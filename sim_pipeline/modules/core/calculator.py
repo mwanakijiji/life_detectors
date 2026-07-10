@@ -37,6 +37,7 @@ from ..utils.helpers import (
     canonical_qe,
     ensure_plot_title_context,
     format_plot_title,
+    hdf5_path_matches_qe,
     parse_angle_from_hdf5_path,
     parse_dc_qe_group,
     resolve_float_key,
@@ -81,9 +82,17 @@ def _parse_dc_qe_group(dc_qe_str: str) -> Tuple[float, float]:
     return parse_dc_qe_group(dc_qe_str)
 
 
-def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
-    """Read angle_*.hdf5 files and aggregate tables by dc/qe group."""
+def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, dict]:
+    """Read angle_*.hdf5 files and aggregate tables by dc/qe group.
+
+    When ``qe`` is set, only files named ``angle_*_qe_{qe}.hdf5`` are read
+    (legacy ``angle_*.hdf5`` names without a QE suffix are still accepted, but
+    only groups matching ``qe`` are loaded).
+    """
     hdf5_files = sorted(glob.glob(os.path.join(read_dir, "angle_*.hdf5")))
+    if qe is not None:
+        qe = canonical_qe(qe)
+        hdf5_files = [f for f in hdf5_files if hdf5_path_matches_qe(f, qe)]
     by_dc_qe: Dict[str, dict] = {}
 
     for hdf5_file in hdf5_files:
@@ -91,6 +100,10 @@ def read_hdf5_slots(read_dir: str) -> Dict[str, dict]:
             for dc_qe_str in f.keys():
                 if dc_qe_str.startswith("__"):
                     continue
+                if qe is not None:
+                    _, group_qe = _parse_dc_qe_group(dc_qe_str)
+                    if canonical_qe(group_qe) != qe:
+                        continue
 
                 chopped = QTable.read(hdf5_file, path=f"{dc_qe_str}/chopped")
                 out3 = QTable.read(hdf5_file, path=f"{dc_qe_str}/output_3_dark")
@@ -241,9 +254,12 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
     with groups named ``dc_{dc}_qe_{qe}``.
     """
     ensure_plot_title_context(config)
-    by_dc_qe = read_hdf5_slots(read_dir)
+    qe = canonical_qe(float(config["detector"]["quantum_efficiency"]))
+    by_dc_qe = read_hdf5_slots(read_dir, qe=qe)
     if not by_dc_qe:
-        raise FileNotFoundError(f"No angle_*.hdf5 files found in {read_dir}")
+        raise FileNotFoundError(
+            f"No angle_*.hdf5 files for QE {qe:04.2f} found in {read_dir}"
+        )
 
     t_int_frame = float(config["observation"]["t_int_frame"])
     n_angles_cfg = int(float(config["observation"]["N_angles"]))

@@ -662,6 +662,50 @@ class TestReadHdf5Slots:
         assert list(slot["S_p"].keys()) == [canonical]
         assert canonical != angle_linspace or angle_linspace == round(angle_linspace, 2)
 
+    def test_read_hdf5_slots_filters_by_qe(self, tmp_path):
+        from modules.core.calculator import build_s2n_cube_from_hdf5, read_hdf5_slots
+        from modules.utils.helpers import format_angle_qe_hdf5_name
+
+        read_dir = tmp_path / "hdf5"
+        read_dir.mkdir()
+
+        for qe in (0.60, 0.70):
+            _write_angle_hdf5(
+                read_dir / format_angle_qe_hdf5_name(0.0, qe),
+                angle_deg=0.0,
+                qe=qe,
+                planet_chopped=[1.0],
+                planet_out3=[1.0],
+            )
+
+        slots_070 = read_hdf5_slots(str(read_dir), qe=0.70)
+        assert set(slots_070) == {"dc_00.000_qe_0.70"}
+
+        slots_060 = read_hdf5_slots(str(read_dir), qe=0.60)
+        assert set(slots_060) == {"dc_00.000_qe_0.60"}
+
+    def test_build_s2n_cube_uses_config_qe_not_other_angle_files(
+        self, tmp_path, s2n_config, patch_plotting
+    ):
+        from modules.core.calculator import build_s2n_cube_from_hdf5
+        from modules.utils.helpers import format_angle_qe_hdf5_name
+
+        read_dir = tmp_path / "hdf5"
+        read_dir.mkdir()
+
+        for qe in (0.60, 0.70):
+            _write_angle_hdf5(
+                read_dir / format_angle_qe_hdf5_name(0.0, qe),
+                angle_deg=0.0,
+                qe=qe,
+                planet_chopped=[1.0],
+                planet_out3=[1.0],
+            )
+
+        cube = build_s2n_cube_from_hdf5(str(read_dir), s2n_config)
+        assert list(cube.qe) == [0.7]
+        assert cube.snr.shape[2] == 1
+
 
 def _make_sample_s2n_cube(read_dir: str = "/tmp/hdf5_in") -> S2NCube:
     wavelength = np.array([10.0, 11.0])

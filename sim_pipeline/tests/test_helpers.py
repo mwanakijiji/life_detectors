@@ -43,6 +43,8 @@ from modules.utils.helpers import (
     modify_config_file_sweep,
     parse_angle_from_hdf5_path,
     parse_dc_qe_group,
+    parse_qe_from_hdf5_path,
+    hdf5_path_matches_qe,
     parse_sky_position_arcsec_yx,
     plot_planet_population_sample,
     record_info_at_angle_and_qe,
@@ -69,6 +71,15 @@ class TestCanonicalHdf5Keys:
         dc, qe = parse_dc_qe_group("dc_00.000_qe_0.70")
         assert dc == canonical_dc_rate(0.0)
         assert qe == canonical_qe(0.7)
+
+    def test_parse_qe_from_hdf5_path(self):
+        assert parse_qe_from_hdf5_path("angle_045.00_qe_0.70.hdf5") == 0.7
+        assert parse_qe_from_hdf5_path("angle_0.hdf5") is None
+
+    def test_hdf5_path_matches_qe(self):
+        assert hdf5_path_matches_qe("angle_000.00_qe_0.60.hdf5", 0.6)
+        assert not hdf5_path_matches_qe("angle_000.00_qe_0.60.hdf5", 0.7)
+        assert hdf5_path_matches_qe("angle_0.hdf5", 0.7)
 
     def test_resolve_float_key_tolerates_formatting_drift(self):
         mapping = {canonical_angle_deg(51.43): "ok"}
