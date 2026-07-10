@@ -533,35 +533,58 @@ class TestCalculateS2nPostRotation:
             angle_deg=0.0,
             planet_chopped=[4.0],
             planet_out3=[3.0],
-            star_out3=[1.0],
+            star_out3=[3.0],
             star_out4=[1.0],
         )
         _write_angle_hdf5(
             read_dir / "angle_90.hdf5",
             angle_deg=90.0,
-            planet_chopped=[0.0],
+            planet_chopped=[-5.0],
             planet_out3=[1.0],
-            star_out3=[2.0],
-            star_out4=[2.0],
+            star_out3=[3.0],
+            star_out4=[1.0],
         )
 
         gain = float(s2n_config["detector"]["gain"])
-        _, expected_tot = _expected_snr_lambda(
-            planet_chopped_by_angle={0.0: [4.0], 90.0: [0.0]},
+        # note the inputs here are in photoelectrons, not ADU
+        _, pipeline_s2n_tot = _expected_snr_lambda(
+            planet_chopped_by_angle={0.0: [4.0], 90.0: [-5.0]},
             planet_out3_by_angle={0.0: [3.0], 90.0: [1.0]},
-            star_out3_by_angle={0.0: [1.0], 90.0: [2.0]},
-            star_out4_by_angle={0.0: [1.0], 90.0: [2.0]},
+            star_out3_by_angle={0.0: [3.0], 90.0: [3.0]},
+            star_out4_by_angle={0.0: [2.0], 90.0: [2.0]},
             gain=gain,
             instrum_dark=np.array([0.5]),
             instrum_read=np.array([0.3]),
         )
 
-        calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
+        cube_test = calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
 
         captured = capsys.readouterr().out
         match = re.search(r"SNR_tot for DC dc_00\.000_qe_0\.70: ([0-9.]+)", captured)
         assert match is not None
-        assert float(match.group(1)) == pytest.approx(expected_tot)
+        assert float(match.group(1)) == pytest.approx(pipeline_s2n_tot)
+
+        # by hand (mirror _compute_snr_lambda_for_slot unit conventions)
+        g = gain * u.electron / u.adu
+        planet_chopped_adu = np.array([4, -5]) * u.adu
+        planet_out3_adu = np.array([3, 1]) * u.adu
+        star_out3_adu = np.array([3, 3]) * u.adu
+        dark_rms_adu = 0.5 * u.adu
+        read_rms_adu = 0.3 * u.adu
+
+        S_p_rms = np.sqrt(np.mean(np.power(planet_chopped_adu * g, 2)))
+        S_p3_rms = np.sqrt(np.mean(np.power(planet_out3_adu * g, 2)))
+        S_sym = np.mean(np.sqrt((star_out3_adu * g).to_value(u.electron))) * u.electron
+        astro_noise_term = 2 * (S_sym + S_p3_rms)
+
+        S_dark_noise_var = np.power(dark_rms_adu * g, 2).value * u.electron
+        S_read_noise_var = np.power(read_rms_adu * g, 2).value * u.electron
+        instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
+
+        denominator = np.sqrt((astro_noise_term + instrum_noise_term).value) * u.electron
+        manual_s2n_tot = (S_p_rms / denominator).decompose().value
+
+        assert pipeline_s2n_tot == pytest.approx(manual_s2n_tot)
 
     def test_symmetric_noise_uses_all_angles_not_last_only(
         self, tmp_path, s2n_config, patch_plotting, capsys

@@ -431,6 +431,7 @@ def flux_conservation_config(tmp_path):
             "gain": "2.0",
             "quantum_efficiency": "0.8",
             "photons_to_e": "1.0",
+            "e_per_ph": "1.0",
             "size": "1024",
             "pitch_pix": "25",
             "pix_per_wavel_bin": "2.2",
@@ -557,6 +558,53 @@ def _independent_detector_flux_from_prop_dict(instr, source_name, qe, flux_rate_
     return total
 
 
+def _photons_and_adu_from_detector_footprint(instr, sources_to_include, t_frame, gain, e_per_ph):
+    """
+    Sum QE-inclusive photon rates over each channel's spectral footprint, then
+    convert integrated photons to ADU (ph -> e- via e_per_ph, e- -> ADU via gain).
+
+    Uses the same per-wavelength-bin bookkeeping as _build_base_astro_table /
+    combine_astro_and_instrum_signals: ph/sec/pixel × n_pix_per_wavel_bin.
+    """
+    ph_rate_unit = u.ph / u.s
+    adu_unit = u.adu
+    gain_q = gain * (u.electron / u.adu)
+    e_per_ph_q = e_per_ph * (u.electron / u.ph)
+
+    total_ph_rate = 0.0 * ph_rate_unit
+    total_adu = 0.0 * adu_unit
+    for channel in instr.output_channels.values():
+        footprint = channel.detector.footprint_cube
+        n_pix_per_wavel_bin = np.sum(footprint, axis=(1, 2)) * u.pix
+        for source_name in sources_to_include:
+            sig = channel.astroph_signal.get(source_name)
+            if sig is None:
+                continue
+            ph_sec_pixel = sig["flux_astro_1d_interpolated_ph_sec_pixel"]
+            ph_rate_per_wavel_bin = ph_sec_pixel * n_pix_per_wavel_bin
+            total_ph_rate += np.sum(ph_rate_per_wavel_bin).to(ph_rate_unit)
+            total_adu += np.sum(
+                ph_rate_per_wavel_bin * t_frame * e_per_ph_q / gain_q
+            ).to(adu_unit)
+
+    total_ph = (total_ph_rate * t_frame).to(u.ph)
+    return total_ph, total_adu
+
+
+def _independent_adu_from_combine_tables(instr, sources_to_include):
+    """Sum astro ADU columns from combine_astro_and_instrum_signals (production path)."""
+    instr.combine_astro_and_instrum_signals(plot=False)
+    total_adu = 0.0 * u.adu
+    for channel in instr.output_channels.values():
+        dc_rate = next(iter(channel.tables_by_dark_current))
+        table = channel.tables_by_dark_current[dc_rate]
+        for source_name in sources_to_include:
+            col = f"astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot"
+            if col in table.colnames:
+                total_adu += np.sum(table[col])
+    return total_adu
+
+
 class TestRunSingleCalculation:
 
     def test_flux_conserved_when_no_manual_masking(
@@ -655,7 +703,6 @@ class TestRunSingleCalculation:
             err_msg="flux not conserved before and after the aperture, modulo throughput and the finite collecting area",
         )
 
-
         # is flux conserved between dispersed detector and independent recomputation from prop_dict, modulo quantum efficiency? (per source and total)
         qe = float(flux_conservation_config["detector"]["quantum_efficiency"])
         flux_rate_unit = u.ph / (u.s * u.um)
@@ -663,7 +710,9 @@ class TestRunSingleCalculation:
         dispersed_all_sources_ph_sec_um = np.zeros(n_detector_bins) * flux_rate_unit
         independent_all_sources_ph_sec_um = np.zeros(n_detector_bins) * flux_rate_unit
         for source_name in sources_to_include:
+            # QE already included in dispersed flux
             dispersed_flux_ph_sec_um = _dispersed_flux_from_channels(instr, source_name, flux_rate_unit)
+            # explicitly includes QE
             independent_flux_ph_sec_um = _independent_detector_flux_from_prop_dict(
                 instr, source_name, qe, flux_rate_unit
             )
@@ -678,6 +727,32 @@ class TestRunSingleCalculation:
             dispersed_all_sources_ph_sec_um.value,
             independent_all_sources_ph_sec_um.value,
             err_msg="total flux not conserved across all sources (detector level)",
+        )
+
+        # is flux conserved between dispersed detector photons and ADU on the footprint, via gain?
+        t_frame = float(flux_conservation_config["observation"]["t_int_frame"]) * u.s
+        gain = float(flux_conservation_config["detector"]["gain"])
+        e_per_ph = float(flux_conservation_config["detector"]["photons_to_e"])
+        total_ph_on_footprint, total_adu_on_footprint = (
+            _photons_and_adu_from_detector_footprint(
+                instr, sources_to_include, t_frame, gain, e_per_ph
+            )
+        )
+        independent_adu = _independent_adu_from_combine_tables(instr, sources_to_include)
+        np.testing.assert_allclose(
+            total_adu_on_footprint.value,
+            independent_adu.value,
+            err_msg="footprint ADU should match combine_astro_and_instrum_signals tables",
+        )
+        bin_widths = next(iter(instr.output_channels.values())).bin_widths
+        independent_ph_rate = np.sum(independent_all_sources_ph_sec_um * bin_widths)
+        e_per_ph_q = e_per_ph * (u.electron / u.ph)
+        gain_q = gain * (u.electron / u.adu)
+        prop_dict_adu = (independent_ph_rate * t_frame * e_per_ph_q / gain_q).to(u.adu)
+        np.testing.assert_allclose(
+            total_adu_on_footprint.value,
+            prop_dict_adu.value,
+            err_msg="footprint ADU should match prop_dict photon oracle scaled by gain",
         )
 
 
