@@ -1,0 +1,6 @@
+*.pyc
+felix_yields/input/Brysonhab2high_500uni_PlanetPopulation.txt
+coverage.xml
+htmlcov/
+sim_pipeline/coverage.xml
+sim_pipeline/htmlcov/

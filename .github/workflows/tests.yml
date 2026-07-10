@@ -1,0 +1,48 @@
+name: Tests and Coveralls
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pandas h5py matplotlib
+
+      - name: Run tests with coverage
+        working-directory: sim_pipeline
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m pytest tests \
+            --cov=batch_process \
+            --cov=modules \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -o addopts=
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          format: cobertura
+          file: sim_pipeline/coverage.xml
