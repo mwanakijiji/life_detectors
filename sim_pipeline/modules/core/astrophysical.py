@@ -578,18 +578,19 @@ class AstrophysicalSources:
             '''
             return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
 
-        # save the scene to FITS file
-        wavel_array = incident_dict['exoplanet_model_10pc']['wavel'] ## ## TODO: GENERALIZE THIS
-        file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
-        hdul = fits.HDUList([
-            fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
-            fits.ImageHDU(_cube_values(dict_source_layered_scene["star"]), name="STAR"),
-            fits.ImageHDU(_cube_values(dict_source_layered_scene["exoplanet_model_10pc"]), name="PLANET"),
-            fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
-            fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
-            fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),
-        ])
-        hdul.writeto(file_name_fits, overwrite=True)
-        logger.info(f"Saved scene to {file_name_fits}")
+        if plot:
+            # save the scene to FITS file
+            wavel_array = incident_dict['exoplanet_model_10pc']['wavel'] ## ## TODO: GENERALIZE THIS
+            file_name_fits = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"scene_no_screen.fits"
+            hdul = fits.HDUList([
+                fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
+                fits.ImageHDU(_cube_values(dict_source_layered_scene["star"]), name="STAR"),
+                fits.ImageHDU(_cube_values(dict_source_layered_scene["exoplanet_model_10pc"]), name="PLANET"),
+                fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
+                fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
+                fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),
+            ])
+            hdul.writeto(file_name_fits, overwrite=True)
+            logger.info(f"Saved scene to {file_name_fits}")
     
         return dict_source_layered_scene

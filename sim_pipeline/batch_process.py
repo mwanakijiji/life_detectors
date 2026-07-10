@@ -267,21 +267,6 @@ def run_single_calculation(
                 plot=plot
                 )
 
-            # debugging
-            '''
-            integrated_post_screen_spectrum = None
-            for output_channel_name in instrument_dep_terms.output_channels.keys():
-                if integrated_post_screen_spectrum is None:
-                    integrated_post_screen_spectrum = instrument_dep_terms.sources_astroph['star']['flux_integrated_post_screen_ph_sec_m2_um'][output_channel_name]
-                else:
-                    integrated_post_screen_spectrum += instrument_dep_terms.sources_astroph['star']['flux_integrated_post_screen_ph_sec_m2_um'][output_channel_name]
-            status_bool = np.allclose(integrated_post_screen_spectrum, instrument_dep_terms.sources_astroph["star"]["pre_screen_astro_flux_ph_sec_m2_um"])
-            ipdb.set_trace()
-            if not status_bool:
-                logger.error("Flux conservation check failed")
-                exit()
-            '''
-
             # Pass through telescope aperture
             logger.info("Passing through telescope aperture (incl. telescope throughput)...")
             instrument_dep_terms.pass_through_aperture(plot=plot)

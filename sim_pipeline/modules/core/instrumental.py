@@ -933,24 +933,25 @@ class InstrumentDepTerms:
             )
         '''
 
-        # save all responses to FITS files
-        # output_all_responses contains output_1_bright, output_2_bright, output_3_dark, output_4_dark
-        for output_name, transmission_instrument_response in output_all_responses.items():
+        if plot:
+            # save all responses to FITS files
+            # output_all_responses contains output_1_bright, output_2_bright, output_3_dark, output_4_dark
             save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+            for output_name, transmission_instrument_response in output_all_responses.items():
+                fits.writeto(
+                    save_dir + f"transmission_instrument_response_{output_name}.fits",
+                    transmission_instrument_response,
+                    overwrite=True,
+                )
+                logging.info(f"Saved transmission instrument response for {output_name} to {save_dir}transmission_instrument_response_{output_name}.fits")
+            # save the differential dark
+            differential_dark = output_all_responses['output_3_dark'] - output_all_responses['output_4_dark']
             fits.writeto(
-                save_dir + f"transmission_instrument_response_{output_name}.fits",
-                transmission_instrument_response,
+                save_dir + f"differential_dark.fits",
+                differential_dark,
                 overwrite=True,
             )
-            logging.info(f"Saved transmission instrument response for {output_name} to {save_dir}transmission_instrument_response_{output_name}.fits")
-        # save the differential dark
-        differential_dark = output_all_responses['output_3_dark'] - output_all_responses['output_4_dark']
-        fits.writeto(
-            save_dir + f"differential_dark.fits",
-            differential_dark,
-            overwrite=True,
-        )
-        logging.info(f"Saved differential dark to {save_dir}differential_dark.fits")
+            logging.info(f"Saved differential dark to {save_dir}differential_dark.fits")
 
         # arrange outputs into a cube, shape (4, n_pix, n_pix), slices order 0 = output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark
         # for-loop to preserve order

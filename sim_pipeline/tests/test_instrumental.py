@@ -363,37 +363,6 @@ class TestInstrumentDepTerms:
         # check flux conservation
         np.testing.assert_allclose(net_flux.value, scene.value)
 
-    '''
-    def test_photons_to_e_converts_legacy_post_aperture_flux(self, unit_converter, instrum_base_config):
-        config = {
-            **instrum_base_config,
-            "detector": {
-                **instrum_base_config["detector"],
-                "photons_to_e": "1.0",
-                "quantum_efficiency": "0.8",
-            },
-        }
-        instr = InstrumentDepTerms(config, unit_converter, sources_astroph={}, sources_to_include=[])
-
-        wavel = np.array([1.0, 2.0, 3.0]) * u.um
-        flux_ph = np.array([10.0, 20.0, 30.0]) * u.ph / (u.um * u.s)
-        instr.prop_dict = {
-            "star": {"wavel": wavel, "flux_post_aperture_ph_sec_um": flux_ph},
-            "bad": {
-                "wavel": wavel,
-                "flux_post_aperture_ph_sec_um": np.array([1.0, 2.0, 3.0]) * u.W,
-            },
-        }
-
-        instr.photons_to_e()
-
-        expected = flux_ph * 0.8 * (u.electron / u.ph)
-        got = instr.prop_dict["star"]["flux_e_sec_um"]
-        assert got.unit.is_equivalent(u.electron / (u.um * u.s))
-        assert np.allclose(got.value, expected.value)
-        assert "flux_e_sec_um" not in instr.prop_dict["bad"]
-    '''
-
 
     def test_chop_signal_builds_post_chop_tables(self, unit_converter, instrum_base_config):
         instr = InstrumentDepTerms(
@@ -549,6 +518,21 @@ class TestGenerateInstrumentTransmission:
         assert np.max(cube[0]) <= 1.0 + 1e-12
         assert np.any(cube[4] != 0.0)
         assert np.any(cube[5] != 0.0)
+        assert mock_writeto.call_count == 0
+
+    @patch("modules.core.instrumental.fits.writeto")
+    def test_writes_fits_when_plot_true(
+        self, mock_writeto, unit_converter, transmission_config
+    ):
+        instr = InstrumentDepTerms(
+            transmission_config,
+            unit_converter,
+            sources_astroph={},
+            sources_to_include=[],
+        )
+
+        instr.generate_instrument_transmission(wavel_m=11e-6, plot=True)
+
         assert mock_writeto.call_count >= 5  # 4 outputs + differential dark
 
     @patch("modules.core.instrumental.fits.writeto")
