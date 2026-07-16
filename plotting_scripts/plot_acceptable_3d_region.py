@@ -993,7 +993,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 from load_s2n_cube import load_s2n_cube, print_cube_statistics
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
-s2n_hdf5_path = "/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.80_s2n_cube.hdf5"
+s2n_hdf5_path = "/Users/eckhartspalding/Documents/git.repos/life_detectors/plotting_scripts/large_sweep_test/qe_0.80_s2n_cube.hdf5"
 
 detectors_dict = _read_csv(filename='/Users/eckhartspalding/Documents/git.repos/life_detectors/dev_notebooks/data/detector_catalog_truncated_for_paper.csv')
 

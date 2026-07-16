@@ -14,7 +14,7 @@ from load_s2n_cube import format_cube_plot_title, load_s2n_cube, print_cube_stat
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
 #s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/dc_5_qe_0.90_s2n_cube.hdf5'
-s2n_hdf5_path = '/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.05_s2n_cube.hdf5'
+s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/plotting_scripts/large_sweep_test/qe_0.80_s2n_cube.hdf5'
 
 cube = load_s2n_cube(s2n_hdf5_path)
 print_cube_statistics(cube)
@@ -29,7 +29,7 @@ qe_list = cube.qe
 # (wavelength, DC, QE)
 
 s2n_min = 3.
-qe_idx = 3
+qe_idx = 4
 qe_choice = qe_list[qe_idx]
 snr_2d_at_qe = snr_cube[:, :, qe_idx]          # shape (n_wavel, n_dc)
 good = snr_2d_at_qe > s2n_min
@@ -65,8 +65,10 @@ plt.title(
 )
 #plt.legend()
 #plt.show()
+file_name_plot = f"/Users/eckhartspalding/Downloads/junk_max_dc_vs_wavelength_{qe_choice:.2f}.pdf"
 plt.savefig(
-    f"/Users/eckhartspalding/Downloads/junk_max_dc_vs_wavelength_{qe_choice:.2f}.pdf",
+    file_name_plot,
     bbox_inches="tight",
     pad_inches=0.5,
 )
+print('Saved ',file_name_plot)
