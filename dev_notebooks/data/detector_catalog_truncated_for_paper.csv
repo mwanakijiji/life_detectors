@@ -1,27 +1,16 @@
-﻿Column1,Column2,Column3,Column4,Column5,Column6,Column7,Column15
-plot_string_name,Detector,Company,Technology,Dark current (e/pix/sec),QE,Blue wavel,Red wavele,Examples
-plot_string_name,string_name,company,string_tech,dark_current_single_val,qe,cutoff_blue_um,cutoff_red_um,examples
+﻿plot_string_name,string_name,company,string_tech,dark_current_single_val,qe,cutoff_blue_um,cutoff_red_um,examples
 Raytheon VIRGO SWIR MCT (VISTA),RVS VIRGO,Raytheon,SWIR MCT,1.7,0.74,0.85,2.5,VISTA
 Raytheon Orion InS (dev for JWST),RVS Orion InSb,Raytheon,InSb,0.03,0.8,0.6,5,dev for JWST
-Raytheon Si:As IBC (JWST/MIRI),Raytheon,Si:As IBC,0.2,0.6,5,28,JWST/MIRI
+Raytheon Si:As IBC (JWST/MIRI),Raytheon Si:As IBC,Raytheon,Si:As IBC,0.2,0.6,5,28,JWST/MIRI
 Teledyne MCT H2RG (JWST/NIRspec),Teledyne H2RG JWST,Teledyne,MCT H2RG ,0.009,0.8,0.6,5.3,JWST/NIRspec
 Teledyne Geosnap-18 (dev for ELT/METIS), Geosnap-18 (aka A0 ROIC or UM Geosnap),Teledyne,MCT,10000,0.7,1,13,ELT/METIS
 Teledyne Geosnap SN23260 (dev for ELT/METIS),Geosnap SN23260 (DC ~330k),Teledyne,MCT,330000,0.8,3,13,ELT/METIS
 Teledyne MCT H2RG (NEOWISE/NeoCAM),NeoCAM LWIR (NC2),Teledyne,MCT,23,0.7,6,10,NEOWISE
 Leonardo DRS Si:As (SOFIA/FORCAST),SOFIA/FORCAST DRS Si:As (SWC; DC ~70k),Leonardo,Si:As,70000,0.3,5,25,SOFIA/FORCAST 
-Teledyne MCT (Cabrera, LW 13),LW 13 um arrays,Teledyne,MCT,20,0.73,?,12.6,
-Teledyne MCT (Cabrera, LW 15),LW 15 um arrays,Teledyne,MCT,100,0.8,?,15.5,
+Teledyne MCT (Cabrera LW 13),LW 13 um arrays,Teledyne,MCT,20,0.73,11.6,12.6,
+Teledyne MCT (Cabrera LW 15),LW 15 um arrays,Teledyne,MCT,100,0.8,14.5,15.5,
 Goddard QWIP (Landsat-9/TIRS-2),Landsat 9 QWIP,Goddard,QWIP,500000000,0.015,7,14,Landsat-9/TIRS-2
 Raytheon/SBRC InSb (Spitzer/IRAC Ch1),Spitzer IRAC Channel 1,Raytheon/SBRC,InSb,0.1,0.426,3.2,3.9,Spitzer IRAC
 Raytheon/SBRC InSb (Spitzer/IRAC Ch2),Spitzer IRAC Channel 2,Raytheon/SBRC,InSb,0.28,0.462,4,5,Spitzer IRAC
 Raytheon/SBRC Si:As (Spitzer/IRAC Ch3),Spitzer IRAC Channel 3,Raytheon/SBRC,Si:As,1,0.15,5,6.4,Spitzer IRAC
 Raytheon/SBRC Si:As (Spitzer/IRAC Ch4),Spitzer IRAC Channel 4,Raytheon/SBRC,Si:As,3.8,0.28,6.2,9.2,Spitzer IRAC
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
-,,,,,,,
