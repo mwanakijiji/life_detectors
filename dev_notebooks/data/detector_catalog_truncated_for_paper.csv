@@ -1,0 +1,17 @@
+﻿Detector,Company,Technology,Dark current (e/pix/sec),QE,Blue wavel,Red wavele,Examples
+string_name,company,string_tech,dark_current_single_val,qe,cutoff_blue_um,cutoff_red_um,examples
+RVS VIRGO,Raytheon,SWIR MCT,1.7,0.74,,,VISTA
+RVS Orion InSb,Raytheon,InSb,0.03,0.8,0.6,5,dev for JWST
+Si:As IBC,Raytheon,Si:As IBC,0.2,0.6,5,28,JWST/MIRI
+Teledyne H2RG JWST,Teledyne,MCT H2RG ,0.009,0.8,0.6,5.3,JWST/NIRspec
+Geosnap-18 (aka A0 ROIC or UM Geosnap),Teledyne,MCT,10000,0.7,1,13,ELT/METIS
+Geosnap SN23260 (DC ~330k),Teledyne,MCT,330000,0.8,3,13,ELT/METIS
+NeoCAM LWIR (NC2),Teledyne,MCT,23,0.7,6,10,NEOWISE
+SOFIA/FORCAST DRS Si:As (SWC; DC ~70k),Leonardo,Si:As,70000,0.3,5,25,SOFIA/FORCAST 
+LW 13 um arrays,Teledyne,MCT,20,0.73,?,12.6,
+LW 15 um arrays,Teledyne,MCT,100,0.8,?,15.5,
+Landsat 9 QWIP,Goddard,QWIP,500000000,0.015,7,14,Landsat-9/TIRS-2
+Spitzer IRAC Channel 1,Raytheon/Santa Barbara Research Center,InSb,0.1,0.426,3.2,3.9,Spitzer IRAC
+Spitzer IRAC Channel 2,Raytheon/Santa Barbara Research Center,InSb,0.28,0.462,4,5,Spitzer IRAC
+Spitzer IRAC Channel 3,Raytheon/Santa Barbara Research Center,Si:As,1,0.15,5,6.4,Spitzer IRAC
+Spitzer IRAC Channel 4,Raytheon/Santa Barbara Research Center,Si:As,3.8,0.28,6.2,9.2,Spitzer IRAC
