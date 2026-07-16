@@ -15,7 +15,7 @@ from load_s2n_cube import load_s2n_cube, print_cube_statistics
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
 #s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/dc_5_qe_0.90_s2n_cube.hdf5'
-s2n_hdf5_path = '/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.50_s2n_cube.hdf5'
+s2n_hdf5_path = '/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.80_s2n_cube.hdf5'
 
 cube = load_s2n_cube(s2n_hdf5_path)
 print_cube_statistics(cube)
@@ -56,7 +56,7 @@ plt.savefig('/Users/eckhartspalding/Downloads/junk_s2n_vs_dc.pdf')
 # S/N vs wavelength for one QE, varying DC
 from matplotlib import rcParams
 
-qe_idx = 2
+qe_idx = 6
 colors = rcParams["axes.prop_cycle"].by_key()["color"]
 color_idx = -1
 current_color = colors[0]
@@ -114,7 +114,9 @@ ax.text(
 plt.legend(fontsize=16)
 #plt.show()
 #plt.savefig('/Users/eckhartspalding/Downloads/junk_s2n_vs_dc.pdf')
-plt.savefig(f'/Users/eckhartspalding/Downloads/junk_s2n_vs_dc_qe_{qe_choice:.2f}.png', bbox_inches='tight', dpi=300)
+file_name = f'/Users/eckhartspalding/Downloads/junk_s2n_vs_dc_qe_{qe_choice:.2f}.png'
+plt.savefig(file_name, bbox_inches='tight', dpi=300)
+print(f"Saved figure to {file_name}")
 
 '''
 # plot the maximum DC for a given S/N = N at a given wavelength bin
