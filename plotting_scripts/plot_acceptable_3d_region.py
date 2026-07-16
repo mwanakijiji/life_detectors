@@ -15,7 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import ipdb
 
-# High-contrast categorical palette (easy to tell apart; still name-hashed for reproducibility).
+# Maximally distinct categorical palette (spaced hues; sequential assignment).
 _DETECTOR_COLORS = [
     mcolors.to_rgb(c)
     for c in (
@@ -26,24 +26,48 @@ _DETECTOR_COLORS = [
         "#ff7f00",  # orange
         "#a65628",  # brown
         "#f781bf",  # pink
-        "#66c2a5",  # teal
-        "#fc8d62",  # coral
-        "#8da0cb",  # periwinkle
-        "#e78ac3",  # magenta
-        "#a6d854",  # lime
-        "#ffd92f",  # gold
-        "#e5c494",  # tan
-        "#1b9e77",  # sea green
-        "#d95f02",  # dark orange
+        "#00a9e0",  # cyan
+        "#1b9e77",  # teal
+        "#e6ab02",  # gold
         "#7570b3",  # indigo
-        "#e7298a",  # deep pink
         "#66a61e",  # olive
-        "#a6761d",  # ochre
+        "#d95f02",  # dark orange
+        "#e7298a",  # deep pink
+        "#666666",  # gray
+        "#a6d854",  # lime
+        "#8da0cb",  # periwinkle
+        "#b15928",  # rust
+        "#6a3d9a",  # deep purple
+        "#33a02c",  # strong green
+        "#ff1493",  # fuchsia
+        "#008080",  # deep teal
+        "#b2df8a",  # pale green
+        "#cab2d6",  # lavender
+        "#ffff33",  # yellow
+        "#fb9a99",  # light red
+        "#1f78b4",  # medium blue
+        "#b8860b",  # dark goldenrod
+        "#00ced1",  # turquoise
+        "#8b0000",  # dark red
+        "#7cfc00",  # chartreuse
+        "#4169e1",  # royal blue
     )
 ]
 
 
+def _color_for_index(i):
+    """Return a high-contrast RGB color unique for consecutive indices."""
+    if i < len(_DETECTOR_COLORS):
+        return _DETECTOR_COLORS[i]
+    # Golden-angle hue spacing for overflow beyond the fixed palette.
+    hue = (i * 0.618033988749895) % 1.0
+    sat = 0.85 if (i % 2 == 0) else 0.65
+    val = 0.9 if (i % 3 != 2) else 0.55
+    return tuple(mcolors.hsv_to_rgb((hue, sat, val)))
+
+
 def _color_from_name(name):
+    """Fallback name-hashed color (prefer ``_color_for_index`` for uniqueness)."""
     idx = zlib.adler32(name.encode("utf-8")) % len(_DETECTOR_COLORS)
     return _DETECTOR_COLORS[idx]
 
@@ -502,7 +526,110 @@ def _detector_box_mesh3d(detector, z_max=None):
     )
 
 
-def _plot_acceptable_volume_plotly(
+# Per-detector label nudges in 3D data coords (wavelength, QE, dark current).
+# Positive QE/DC shifts move the label up along those axes.
+_ANNOTATION_OFFSETS_3D = {
+    # Lower in QE so it clears a neighboring label.
+    "Teledyne": (0.0, -0.5, 0.0),
+    # Shift left along wavelength to reduce overlap.
+    "Raytheon Si:As": (-9.0, 0.0, 0.0),
+}
+
+
+def _annotation_offset_3d(name):
+    """Return (dx, dy, dz) data-coord nudge for a detector label, if any."""
+    for key, offset in _ANNOTATION_OFFSETS_3D.items():
+        if key.lower() in name.lower():
+            return offset
+    return (0.0, 0.0, 0.0)
+
+
+def _detector_label_annotation3d(detector, z_max=None, bold=False):
+    """
+    Scene annotation at the top-center of a detector ROI box.
+
+    Returns a one-element list (or None). Uses a white backing so colored
+    labels stay readable over the blue volume — Plotly scene annotations
+    have no true letter stroke.
+    """
+    x0, x1 = float(detector.wavelength_0), float(detector.wavelength_1)
+    y0, y1 = float(detector.qe_0), float(detector.qe_1)
+    z0, z1 = float(detector.dc_0), float(detector.dc_1)
+    if z_max is not None:
+        z0 = min(z0, z_max)
+        z1 = min(z1, z_max)
+        if z1 <= z0:
+            return None
+    dx, dy, dz = _annotation_offset_3d(detector.name)
+    text = f"<b>{detector.name}</b>" if bold else detector.name
+    return [
+        dict(
+            x=0.5 * (x0 + x1) + dx,
+            y=y1 + dy,
+            z=z1 + dz,
+            text=text,
+            showarrow=False,
+            font=dict(color=_rgb_to_plotly(detector.color, alpha=1.0), size=11),
+            bgcolor="rgba(255,255,255,0.45)",
+            bordercolor="rgba(255,255,255,0.45)",
+            borderwidth=1,
+            borderpad=1,
+            xanchor="left",
+            yanchor="bottom",
+        )
+    ]
+
+
+def _camera_from_zoom_and_angles(
+    zoom=1.0,
+    angles_deg=(0.0, 0.0, 0.0),
+    *,
+    base_eye=(2.2, -1.7, 1.4),
+    center=(0.0, 0.0, -0.08),
+):
+    """
+    Plotly scene camera from a single zoom and x/y/z rotation vector.
+
+    ``zoom`` scales the camera distance: values > 1 zoom in, values < 1 zoom out.
+    ``angles_deg`` is (rx, ry, rz), rotating around wavelength, QE, and dark
+    current axes respectively.
+    """
+    if zoom <= 0:
+        raise ValueError(f"Camera zoom must be positive, got {zoom!r}")
+
+    rx, ry, rz = np.deg2rad(np.asarray(angles_deg, dtype=float))
+    cx, sx = np.cos(rx), np.sin(rx)
+    cy, sy = np.cos(ry), np.sin(ry)
+    cz, sz = np.cos(rz), np.sin(rz)
+    rot_x = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, cx, -sx],
+            [0.0, sx, cx],
+        ]
+    )
+    rot_y = np.array(
+        [
+            [cy, 0.0, sy],
+            [0.0, 1.0, 0.0],
+            [-sy, 0.0, cy],
+        ]
+    )
+    rot_z = np.array(
+        [
+            [cz, -sz, 0.0],
+            [sz, cz, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    eye = (rot_z @ rot_y @ rot_x @ np.asarray(base_eye, dtype=float)) / float(zoom)
+    return dict(
+        eye=dict(x=float(eye[0]), y=float(eye[1]), z=float(eye[2])),
+        center=dict(x=float(center[0]), y=float(center[1]), z=float(center[2])),
+    )
+
+
+def _build_acceptable_volume_figure(
     snr_plot,
     wavel,
     qe,
@@ -511,19 +638,18 @@ def _plot_acceptable_volume_plotly(
     detectors_dict,
     *,
     z_max=0.5,
-    width=800,
-    height=650,
-    scale=1,
     wavel_stride=2,
     dc_stride=2,
+    annotate_detectors=False,
+    show_detector_legend=False,
+    title=None,
+    bold_fonts=False,
+    camera_zoom=1.0,
+    camera_angles_deg=(0.0, 0.0, 0.0),
 ):
     """
-    Static Plotly rendering of SNR >= s2n_min for embedding in matplotlib.
+    Build a Plotly 3D figure of SNR >= s2n_min with detector ROI boxes.
 
-    Uses nested ``Isosurface`` layers (much faster to export than ``Volume``)
-    to approximate a filled region, plus a crisp boundary at ``s2n_min``.
-
-    Returns a numpy RGB(A) image array suitable for ``ax.imshow``.
     Axes: x=wavelength, y=QE, z=dark current.
     """
     dc_plot = np.asarray(dc)
@@ -546,7 +672,7 @@ def _plot_acceptable_volume_plotly(
     values = snr_clip.astype(float)
     n_pts = values.size
     print(
-        f"Rendering static 3D panel via Plotly "
+        f"Building 3D Plotly figure "
         f"({values.shape[0]}×{values.shape[1]}×{values.shape[2]} = {n_pts} samples)..."
     )
 
@@ -583,27 +709,115 @@ def _plot_acceptable_volume_plotly(
     )
 
     traces = [fill, iso]
+    annotations = []
     for detector in detectors_dict.values():
         mesh = _detector_box_mesh3d(detector, z_max=z_max)
         if mesh is not None:
-            mesh.showlegend = False
+            mesh.showlegend = bool(show_detector_legend)
+            if bold_fonts:
+                mesh.name = f"<b>{detector.name}</b>"
             traces.append(mesh)
+        if annotate_detectors:
+            anns = _detector_label_annotation3d(
+                detector, z_max=z_max, bold=bold_fonts
+            )
+            if anns:
+                annotations.extend(anns)
 
+    def _maybe_bold(text):
+        return f"<b>{text}</b>" if bold_fonts else text
+
+    axis_label_font = dict(size=14)
+    axis_tick_font = dict(size=11)
+    title_text = _maybe_bold(title) if title else title
     fig = go.Figure(data=traces)
     fig.update_layout(
-        title=None,
+        title=dict(text=title_text, font=dict(size=14)) if title else None,
         scene=dict(
-            xaxis_title="Wavelength (um)",
-            yaxis_title="QE",
-            zaxis_title="Dark current (e/pix/s)",
-            xaxis=dict(range=[float(np.min(wavel)), float(np.max(wavel))]),
-            yaxis=dict(range=[float(np.min(qe)), 1.0]),
-            zaxis=dict(range=[float(np.min(dc_plot)), float(z_max)]),
+            xaxis=dict(
+                title=dict(text="Wavelength (um)", font=axis_label_font),
+                tickfont=axis_tick_font,
+                range=[float(np.min(wavel)), float(np.max(wavel))],
+            ),
+            yaxis=dict(
+                title=dict(text="QE", font=axis_label_font),
+                tickfont=axis_tick_font,
+                dtick=0.2,
+                range=[float(np.min(qe)), 1.0],
+            ),
+            zaxis=dict(
+                title=dict(text="Dark current (e/pix/s)", font=axis_label_font),
+                tickfont=axis_tick_font,
+                dtick=0.1,
+                range=[float(np.min(dc_plot)), float(z_max)],
+            ),
             aspectmode="manual",
             aspectratio=dict(x=1.4, y=1.0, z=1.0),
-            camera=dict(eye=dict(x=1.6, y=-1.4, z=0.9)),
+            camera=_camera_from_zoom_and_angles(
+                zoom=camera_zoom,
+                angles_deg=camera_angles_deg,
+            ),
+            annotations=annotations,
         ),
-        margin=dict(l=0, r=0, t=0, b=0),
+        margin=dict(l=80, r=80, t=60, b=90),
+        showlegend=bool(show_detector_legend),
+        legend=dict(
+            itemsizing="constant",
+            font=dict(size=10, family="Arial Black" if bold_fonts else None),
+        ),
+        font=dict(size=10),
+    )
+    return fig
+
+
+def _plot_acceptable_volume_plotly(
+    snr_plot,
+    wavel,
+    qe,
+    dc,
+    s2n_min,
+    detectors_dict,
+    *,
+    z_max=0.5,
+    width=3200,
+    height=2600,
+    # NB: kaleido renders width*scale × height*scale pixels; above roughly
+    # 16000 px per side the export silently emits non-PNG data
+    # ("SyntaxError: not a PNG file"), so keep the product modest.
+    scale=1,
+    wavel_stride=2,
+    dc_stride=2,
+    camera_zoom=1.0,
+    camera_angles_deg=(0.0, 0.0, 0.0),
+):
+    """
+    Static Plotly rendering of SNR >= s2n_min for embedding in matplotlib.
+
+    Returns a numpy RGB(A) image array suitable for ``ax.imshow``.
+    """
+    fig = _build_acceptable_volume_figure(
+        snr_plot,
+        wavel,
+        qe,
+        dc,
+        s2n_min,
+        detectors_dict,
+        z_max=z_max,
+        wavel_stride=wavel_stride,
+        dc_stride=dc_stride,
+        annotate_detectors=False,
+        show_detector_legend=False,
+        title=None,
+        camera_zoom=camera_zoom,
+        camera_angles_deg=camera_angles_deg,
+    )
+    # Match matplotlib default axis label / tick sizes used in the 2D panels.
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(title=dict(font=dict(size=24)), tickfont=dict(size=18)),
+            yaxis=dict(title=dict(font=dict(size=24)), tickfont=dict(size=18)),
+            zaxis=dict(title=dict(font=dict(size=24)), tickfont=dict(size=18)),
+        ),
         showlegend=False,
     )
     print("Exporting Plotly figure to PNG (kaleido)...")
@@ -612,6 +826,110 @@ def _plot_acceptable_volume_plotly(
     buf.seek(0)
     print("3D panel export done.")
     return mpimg.imread(buf, format="png")
+
+
+def _show_interactive_volume_plotly(
+    snr_plot,
+    wavel,
+    qe,
+    dc,
+    s2n_min,
+    detectors_dict,
+    *,
+    z_max=0.5,
+    wavel_stride=2,
+    dc_stride=2,
+    output_html=None,
+    camera_zoom=1.0,
+    camera_angles_deg=(0.0, 0.0, 0.0),
+):
+    """Save and open a standalone interactive 3D plot (no local server needed)."""
+    fig = _build_acceptable_volume_figure(
+        snr_plot,
+        wavel,
+        qe,
+        dc,
+        s2n_min,
+        detectors_dict,
+        z_max=z_max,
+        wavel_stride=wavel_stride,
+        dc_stride=dc_stride,
+        annotate_detectors=True,
+        show_detector_legend=True,
+        title=f"Acceptable S/N region (interactive, S/N ≥ {s2n_min:g})",
+        bold_fonts=True,
+        camera_zoom=camera_zoom,
+        camera_angles_deg=camera_angles_deg,
+    )
+    if output_html is None:
+        output_html = (
+            Path.home()
+            / "Downloads"
+            / "acceptable_s2n_region_3d_interactive.html"
+        )
+    output_html = Path(output_html).expanduser().resolve()
+    print(f"Saving interactive 3D Plotly figure to {output_html}...")
+    fig.write_html(
+        str(output_html),
+        include_plotlyjs=True,
+        full_html=True,
+        auto_open=True,
+    )
+    return fig
+
+
+def _save_annotated_volume_png(
+    snr_plot,
+    wavel,
+    qe,
+    dc,
+    s2n_min,
+    detectors_dict,
+    *,
+    z_max=0.5,
+    wavel_stride=2,
+    dc_stride=2,
+    output_png=None,
+    width=800,
+    height=600,
+    scale=5,
+    camera_zoom=1.0,
+    camera_angles_deg=(0.0, 0.0, 0.0),
+):
+    """Save the annotated 3D volume (with detector labels) as a high-res PNG."""
+    fig = _build_acceptable_volume_figure(
+        snr_plot,
+        wavel,
+        qe,
+        dc,
+        s2n_min,
+        detectors_dict,
+        z_max=z_max,
+        wavel_stride=wavel_stride,
+        dc_stride=dc_stride,
+        annotate_detectors=True,
+        show_detector_legend=True,
+        title=f"Acceptable S/N region (S/N ≥ {s2n_min:g})",
+        bold_fonts=True,
+        camera_zoom=camera_zoom,
+        camera_angles_deg=camera_angles_deg,
+    )
+    if output_png is None:
+        output_png = (
+            Path.home()
+            / "Downloads"
+            / "junk_acceptable_s2n_region_3d_annotated.png"
+        )
+    output_png = Path(output_png).expanduser().resolve()
+    print(
+        f"Exporting annotated 3D Plotly figure to PNG "
+        f"({width}×{height} @ scale={scale})..."
+    )
+    fig.write_image(
+        str(output_png), format="png", width=width, height=height, scale=scale
+    )
+    print(f"Saved annotated 3D plot to {output_png}")
+    return fig
 
 
 def _plot_roi_rectangle(ax, x0, x1, y0, y1, **rect_kwargs):
@@ -630,7 +948,7 @@ def _read_csv(filename):
     df = pd.read_csv(filename, delimiter=',')
     detectors_dict = {}
 
-    for index, row in df.iterrows():
+    for i, (_index, row) in enumerate(df.iterrows()):
         # define detectors
         
         offset = 0.02 # sets line thickness in plot
@@ -642,7 +960,8 @@ def _read_csv(filename):
                                                     qe_0=row['qe']-offset, 
                                                     qe_1=row['qe'], 
                                                     dc_0=row['dark_current_single_val']-offset, 
-                                                    dc_1=row['dark_current_single_val']
+                                                    dc_1=row['dark_current_single_val'],
+                                                    color=_color_for_index(i),
                                                     )
 
 
@@ -659,9 +978,10 @@ def _plot_marginalized_panel(ax, x, y, snr_2d, xlabel, ylabel, title):
         alpha=0.85,
     )
     ax.contour(x, y, snr_2d.T, levels=[s2n_min], colors="navy", linewidths=1)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    ax.set_xlabel(xlabel, fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
+    ax.set_title(title, pad=12, fontsize=14)
+    ax.tick_params(axis="both", which="major", labelsize=14)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -673,7 +993,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 from load_s2n_cube import load_s2n_cube, print_cube_statistics
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
-s2n_hdf5_path = "/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.50_s2n_cube.hdf5"
+s2n_hdf5_path = "/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.80_s2n_cube.hdf5"
 
 detectors_dict = _read_csv(filename='/Users/eckhartspalding/Documents/git.repos/life_detectors/dev_notebooks/data/detector_catalog_truncated_for_paper.csv')
 
@@ -711,25 +1031,16 @@ if snr_plot.min() >= s2n_min:
 snr_wavel_dc = np.max(snr_plot, axis=1)  # shape (wavelength, DC)
 snr_wavel_qe = np.max(snr_plot, axis=2)  # shape (wavelength, QE)
 
-# Static Plotly volume image for the first subplot.
-vol_img = _plot_acceptable_volume_plotly(
-    snr_plot,
-    wavel_vis,
-    qe_list,
-    dc_vis,
-    s2n_min,
-    detectors_dict,
-    z_max=0.5,
-)
+# 3D camera controls for the annotated high-res PNG.
+# camera_zoom > 1 zooms in; < 1 zooms out.
+# camera_angles_deg = (wavelength-axis, QE-axis, dark-current-axis) in degrees.
+camera_zoom = 1.0
+camera_angles_deg = (10.0, 20.0, -30.0)
 
-fig = plt.figure(figsize=(16, 5))
+fig = plt.figure(figsize=(14, 5.5))
+gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.28)
 
-ax3d = fig.add_subplot(1, 3, 1)
-ax3d.imshow(vol_img)
-ax3d.set_axis_off()
-ax3d.set_title(f"3D volume (S/N ≥ {s2n_min:g})")
-
-ax_dc = fig.add_subplot(1, 3, 2)
+ax_dc = fig.add_subplot(gs[0, 0])
 _plot_marginalized_panel(
     ax_dc,
     wavel_vis,
@@ -744,7 +1055,7 @@ for detector in detectors_dict.values():
 ax_dc.set_xlim(wavel_vis.min(), wavel_vis.max())
 ax_dc.set_ylim(dc_vis.min(), 0.5)
 
-ax_qe = fig.add_subplot(1, 3, 3)
+ax_qe = fig.add_subplot(gs[0, 1])
 _plot_marginalized_panel(
     ax_qe,
     wavel_vis,
@@ -767,7 +1078,21 @@ bold_names = _detectors_visible_on_both_panels(ax_dc, ax_qe, detectors_dict.valu
 _place_detector_labels(ax_dc, detectors_dict.values(), mode="wavel_dc", bold_names=bold_names)
 _place_detector_labels(ax_qe, detectors_dict.values(), mode="wavel_qe", bold_names=bold_names)
 
-out_path = "/Users/eckhartspalding/Downloads/acceptable_s2n_region_3d_isosurface.png"
+out_path = "/Users/eckhartspalding/Downloads/junk_acceptable_s2n_region_3d_isosurface.png"
 plt.savefig(out_path, bbox_inches="tight", dpi=200)
 print(f"Saved plot to {out_path}")
-plt.show()
+
+# Annotated 3D Plotly view, saved as a separate high-res PNG.
+_save_annotated_volume_png(
+    snr_plot,
+    wavel_vis,
+    qe_list,
+    dc_vis,
+    s2n_min,
+    detectors_dict,
+    z_max=0.5,
+    camera_zoom=camera_zoom,
+    camera_angles_deg=camera_angles_deg,
+)
+
+#plt.show()
