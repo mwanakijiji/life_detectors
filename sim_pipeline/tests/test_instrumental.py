@@ -550,7 +550,11 @@ class TestGenerateInstrumentTransmission:
             wavel_m=11e-6, override_stellar_mask=True, plot=False
         )
         center = cube.shape[-1] // 2
-        assert cube[0, center, center] == pytest.approx(0.001)
+        # Cube order: 0/1 bright, 2/3 dark — stellar mask applies to darks only.
+        assert cube[0, center, center] == pytest.approx(1.0)
+        assert cube[1, center, center] == pytest.approx(1.0)
+        assert cube[2, center, center] == pytest.approx(0.001)
+        assert cube[3, center, center] == pytest.approx(0.001)
 
 
 class TestDisperseAstroSignalsOnDetector:
