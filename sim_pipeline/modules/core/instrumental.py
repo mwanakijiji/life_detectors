@@ -744,7 +744,7 @@ class InstrumentDepTerms:
         output_all_responses = {}
 
         # Sum over all pairs of apertures (j, k) where j < k
-        def R_m(phase_vector_rad: np.ndarray, wavel_m: float):
+        def R_m(phase_vector_rad: np.ndarray, wavel_m: float, output_name: str):
             # response of output m
             # N_apertures: number of apertures N
             # phase_vector_deg: phase vector for output m (total number of outputs is not nec. same as apertures N)
@@ -834,9 +834,12 @@ class InstrumentDepTerms:
 
             # a small override mask is put over the star for now to avoid geometrical leakage ## ## TODO: remove this once the geometry is properly implemented
             # (important to do this after rotation, to avoid numerical errors)
-            if override_stellar_mask:
+            # Apply only to dark outputs; bright ports should keep their geometric response.
+            if override_stellar_mask and output_name in ("output_3_dark", "output_4_dark"):
                 nulling_factor = float(self.config['nulling']['nulling_factor'])
-                logging.info(f'Star is manually being nulled to {nulling_factor}')
+                logging.info(
+                    f'Star is manually being nulled to {nulling_factor} on {output_name}'
+                )
                 # mask a central circular region over the star
                 mask_radius_pix = 4
                 cy, cx = transmission_instrument_response.shape[1] // 2, transmission_instrument_response.shape[2] // 2
@@ -849,7 +852,11 @@ class InstrumentDepTerms:
 
         for output in aperture_array_definition['outputs']:
             phase_vector_rad = np.deg2rad(output['phase_vector_deg'])
-            transmission_instrument_response = R_m(phase_vector_rad=phase_vector_rad, wavel_m=wavel_m)
+            transmission_instrument_response = R_m(
+                phase_vector_rad=phase_vector_rad,
+                wavel_m=wavel_m,
+                output_name=output['name'],
+            )
             output_all_responses[output['name']] = transmission_instrument_response
 
 
@@ -1477,7 +1484,8 @@ class InstrumentDepTerms:
 
                 ax.set_xlim(4.0, 18.5)
                 ax.set_yscale('log')
-                ax.set_ylim([1e-2, 1e5])
+                if "dark" in output_name:
+                    ax.set_ylim([1e-2, 1e5])
                 ax.yaxis.set_minor_locator(LogLocator(subs=np.arange(2, 10)))
                 ax.grid(which="both", linestyle='--', linewidth=0.5, alpha=0.7)
                 ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=22)

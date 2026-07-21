@@ -1,6 +1,6 @@
 ﻿plot_string_name,string_name,company,string_tech,dark_current_single_val,qe,cutoff_blue_um,cutoff_red_um,examples
 Raytheon VIRGO SWIR MCT (VISTA),RVS VIRGO,Raytheon,SWIR MCT,1.7,0.74,0.85,2.5,VISTA
-Raytheon Orion InS (dev for JWST),RVS Orion InSb,Raytheon,InSb,0.03,0.8,0.6,5,dev for JWST
+Raytheon Orion InSb (dev for JWST),RVS Orion InSb,Raytheon,InSb,0.03,0.8,0.6,5,dev for JWST
 Raytheon Si:As IBC (JWST/MIRI),Raytheon Si:As IBC,Raytheon,Si:As IBC,0.2,0.6,5,28,JWST/MIRI
 Teledyne MCT H2RG (JWST/NIRspec),Teledyne H2RG JWST,Teledyne,MCT H2RG ,0.009,0.8,0.6,5.3,JWST/NIRspec
 Teledyne Geosnap-18 (dev for ELT/METIS), Geosnap-18 (aka A0 ROIC or UM Geosnap),Teledyne,MCT,10000,0.7,1,13,ELT/METIS
