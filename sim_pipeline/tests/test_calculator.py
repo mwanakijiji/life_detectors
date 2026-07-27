@@ -356,11 +356,11 @@ class TestS2nE:
         assert mock_plt.close.called
 
 
-PLANET_COL = "astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"
+PLANET_COL = "astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
 CHOPPED_PLANET_COL = f"chopped_{PLANET_COL}"
-STAR_COL_OUT3 = "astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"
-STAR_COL_3 = "output_3_dark_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"
-STAR_COL_4 = "output_4_dark_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"
+STAR_COL_OUT3 = "astro_star_flux_adu_for_wavel_bin_and_integration_tot"
+STAR_COL_3 = "output_3_dark_astro_star_flux_adu_for_wavel_bin_and_integration_tot"
+STAR_COL_4 = "output_4_dark_astro_star_flux_adu_for_wavel_bin_and_integration_tot"
 
 
 def _make_wavelength_meta(n_bins: int = 1):

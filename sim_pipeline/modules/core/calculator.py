@@ -113,10 +113,10 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
                 else:
                     angle = parse_angle_from_hdf5_path(hdf5_file)
                 S_p = chopped[
-                    "chopped_astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"
+                    "chopped_astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
                 ]
                 S_p_3 = out3[
-                    "astro_exoplanet_model_10pc_flux_adu_sec_for_wavel_bin_and_integration_tot"
+                    "astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
                 ]
 
                 slot = by_dc_qe.setdefault(
@@ -143,12 +143,12 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
                 sym_tags = ("star", "exozodiacal", "zodiacal")
                 slot.setdefault("sources_sym", {})
                 for source_name in sym_tags:
-                    col = f"astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot"
+                    col = f"astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot"
                     if col not in out3.colnames:
                         continue
                     slot["sources_sym"].setdefault(source_name, {"Ssym_dark_3": {}})
                     slot["sources_sym"][source_name]["Ssym_dark_3"][angle] = chopped[
-                        f"output_3_dark_astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot"
+                        f"output_3_dark_astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot"
                     ]
 
     return by_dc_qe

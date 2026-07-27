@@ -246,18 +246,25 @@ def run_single_calculation(
                 )
 
             # Pass through telescope aperture
+            # output units: photons/sec/etc.
             logger.info("Passing through telescope aperture (incl. telescope throughput)...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
             # set instrumental noise terms and update the OutputChannel objects
+            # output units: e/pix/sec
             logger.info("Assigning intrinsic instrumental noise ...")
             instrument_dep_terms.calculate_instrinsic_instrumental_noise()
 
             # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
+            # output units: 
+            #   ph/sec/um
+            #   ph/sec/wavel_bin
+            #   ph/sec/pix
             logger.info("Dispersing signals on channel detectors ...")
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
             # pack the signals together (and convert photons to electrons)
+            # output units: ADU total in each wavel bin
             instrument_dep_terms.combine_astro_and_instrum_signals(plot=plot)
 
             # chop the signal between dark outputs

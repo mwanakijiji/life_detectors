@@ -375,7 +375,7 @@ class TestInstrumentDepTerms:
             qt["wavel_bin_center"] = np.array([5.0, 6.0]) * u.um
             qt["wavel_bin_width"] = np.array([0.1, 0.1]) * u.um
             qt["n_pix_per_wavel_bin"] = np.array([4.0, 4.0]) * u.pix
-            qt["astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"] = (
+            qt["astro_star_flux_adu_for_wavel_bin_and_integration_tot"] = (
                 np.array([astro_scale, astro_scale + 1.0]) * u.adu
             )
             qt["instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"] = (
@@ -399,9 +399,9 @@ class TestInstrumentDepTerms:
         instr.chop_signal(plot=False)
 
         chopped = instr.post_chop_tables_by_dark_current[0.1]
-        assert "chopped_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot" in chopped.colnames
+        assert "chopped_astro_star_flux_adu_for_wavel_bin_and_integration_tot" in chopped.colnames
         assert np.allclose(
-            chopped["chopped_astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot"].value,
+            chopped["chopped_astro_star_flux_adu_for_wavel_bin_and_integration_tot"].value,
             np.array([2.0, 2.0]),
         )
 
@@ -493,7 +493,7 @@ class TestCombineAstroAndInstrumSignals:
         final = channel.tables_by_dark_current[0.0]
         assert "instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot" in final.colnames
         assert "instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot" in final.colnames
-        assert "astro_star_flux_adu_sec_for_wavel_bin_and_integration_tot" in final.colnames
+        assert "astro_star_flux_adu_for_wavel_bin_and_integration_tot" in final.colnames
         assert len(final) == 3
         mock_subplots.assert_called()
 

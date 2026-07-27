@@ -599,7 +599,7 @@ def _independent_adu_from_combine_tables(instr, sources_to_include):
         dc_rate = next(iter(channel.tables_by_dark_current))
         table = channel.tables_by_dark_current[dc_rate]
         for source_name in sources_to_include:
-            col = f"astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot"
+            col = f"astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot"
             if col in table.colnames:
                 total_adu += np.sum(table[col])
     return total_adu

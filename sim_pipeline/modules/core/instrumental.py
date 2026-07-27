@@ -28,7 +28,7 @@ import logging
 from modules.utils.helpers import enable_plot_units
 from scipy import ndimage
 from matplotlib.ticker import LogLocator
-
+import pickle
 
 
 from ..data.units import UnitConverter
@@ -597,7 +597,7 @@ class InstrumentDepTerms:
             ##########################################
 
         # loop over each of the tables and make a new table that keeps some of the columns for bookkeeping,
-        # and then multiplies others by the appropriate factor to get the total signal in electrons
+        # and then multiplies others by the appropriate factor to get the total signal in ADU
         for output_name, output_channel in self.output_channels.items():
 
             for dc_rate, table in output_channel.tables_by_dark_current_orig.items():
@@ -625,7 +625,7 @@ class InstrumentDepTerms:
                 # loop over astrophysical sources:
                 for source_name in self.sources_to_include:
                     astro_sig = output_channel.astroph_signal[source_name]
-                    final_table[f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
+                    final_table[f'astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
 
                 final_table.meta.update(table.meta)
 
@@ -649,7 +649,7 @@ class InstrumentDepTerms:
                         if hasattr(y_col, "unit"):
                             y_unit = y_col.unit
                     for source_name in self.sources_to_include:
-                        col_name = f'astro_{source_name}_flux_adu_sec_for_wavel_bin_and_integration_tot'
+                        col_name = f'astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot'
                         if col_name in final_table.colnames:
                             y_col = final_table[col_name]
                             y_vals = y_col.value if hasattr(y_col, "value") else y_col
@@ -671,6 +671,14 @@ class InstrumentDepTerms:
                     fig.savefig(file_name_plot)
                     plt.close(fig)
                     logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
+        # for pickling data for Kira
+        out = Path("/Users/eckhartspalding/Downloads/kira/output_channels.pkl")
+        payload = {
+            name: ch.tables_by_dark_current[0.2]
+            for name, ch in self.output_channels.items()
+        }
+        with out.open("wb") as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
          
 
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False, angle_deg: float = 0):
