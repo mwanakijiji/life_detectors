@@ -216,7 +216,7 @@ class TestInstrumentDepTerms:
         assert np.allclose(dc_rate.value, [0.05])
         assert np.allclose(dc_total.value, [1.0])  # 20 s * 0.05 e-/pix/s
 
-    @patch("modules.core.instrumental.compute_collecting_area_m2", return_value=25.0)
+    @patch("modules.core.instrumental.aperture.compute_collecting_area_m2", return_value=25.0)
     def test_pass_through_aperture_scales_flux_cubes_by_collecting_area_and_throughput(
         self, _mock_area, unit_converter, instrum_base_config
     ):
@@ -466,9 +466,9 @@ class TestCombineAstroAndInstrumSignals:
                 qe=1.0,
             )
 
-    @patch("modules.core.instrumental.plt.close")
-    @patch("modules.core.instrumental.plt.savefig")
-    @patch("modules.core.instrumental.plt.subplots")
+    @patch("modules.core.instrumental.tables.plt.close")
+    @patch("modules.core.instrumental.tables.plt.savefig")
+    @patch("modules.core.instrumental.tables.plt.subplots")
     @patch("builtins.print")
     def test_combine_builds_per_dc_tables_with_instrumental_and_astro_columns(
         self, _mock_print, mock_subplots, _mock_savefig, _mock_close,
@@ -501,7 +501,7 @@ class TestCombineAstroAndInstrumSignals:
 
 
 class TestGenerateInstrumentTransmission:
-    @patch("modules.core.instrumental.fits.writeto")
+    @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_returns_six_slice_cube_and_writes_fits(
         self, mock_writeto, unit_converter, transmission_config
     ):
@@ -522,7 +522,7 @@ class TestGenerateInstrumentTransmission:
         assert np.any(cube[5] != 0.0)
         assert mock_writeto.call_count == 0
 
-    @patch("modules.core.instrumental.fits.writeto")
+    @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_writes_fits_when_plot_true(
         self, mock_writeto, unit_converter, transmission_config
     ):
@@ -537,7 +537,7 @@ class TestGenerateInstrumentTransmission:
 
         assert mock_writeto.call_count >= 5  # 4 outputs + differential dark
 
-    @patch("modules.core.instrumental.fits.writeto")
+    @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_override_stellar_mask_reduces_center_transmission(
         self, mock_writeto, unit_converter, transmission_config
     ):
@@ -560,7 +560,7 @@ class TestGenerateInstrumentTransmission:
 
 
 class TestDisperseAstroSignalsOnDetector:
-    @patch("modules.core.instrumental.Detector")
+    @patch("modules.core.instrumental.aperture.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
         self, mock_detector_cls, unit_converter, disperse_config
     ):
@@ -654,7 +654,7 @@ class TestDetector:
         assert vector[0] > 0.0
         assert np.isclose(vector[1], 0.0)
 
-    @patch("modules.core.instrumental.fits.getdata")
+    @patch("modules.core.instrumental.detector.fits.getdata")
     def test_init_loads_enabled_2d_systematics_maps(
         self, mock_getdata, detector_geometry_config
     ):

@@ -169,7 +169,7 @@ class TestS2nVal:
             ["star", "exoplanet_psg", "exozodiacal", "zodiacal"],
         ],
     )
-    @patch("modules.core.calculator.ipdb.set_trace")
+    @patch("modules.core.calculator.noise_calculator.ipdb.set_trace")
     def test_planet_model_branches_return_unitless_array(
         self, _mock_set_trace, sources_to_include
     ):
@@ -238,21 +238,21 @@ class TestS2nE:
         self, monkeypatch, s2n_e_config, unit_sources_all
     ):
         DummyDetector.instances = []
-        monkeypatch.setattr("modules.core.calculator.Detector", DummyDetector)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.Detector", DummyDetector)
 
         class DummyHeader(dict):
             def add_blank(self, *args, **kwargs):
                 return None
 
         monkeypatch.setattr(
-            "modules.core.calculator.fits.PrimaryHDU",
+            "modules.core.calculator.noise_calculator.fits.PrimaryHDU",
             lambda: SimpleNamespace(
                 header=DummyHeader(),
                 data=None,
                 writeto=lambda *args, **kwargs: None,
             ),
         )
-        monkeypatch.setattr("modules.core.calculator.fits.Card", lambda *args, **kwargs: None)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.fits.Card", lambda *args, **kwargs: None)
 
         calc = NoiseCalculator(
             config=s2n_e_config,
@@ -273,7 +273,7 @@ class TestS2nE:
     def test_s2n_e_writes_fits_and_returns_s2n(self, monkeypatch, s2n_e_config, unit_sources_all):
         """Test s2n_e FITS output path with mocked detector and FITS IO."""
         DummyDetector.instances = []
-        monkeypatch.setattr("modules.core.calculator.Detector", DummyDetector)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.Detector", DummyDetector)
 
         calc = NoiseCalculator(
             config=s2n_e_config,
@@ -304,8 +304,8 @@ class TestS2nE:
             hdu_holder["hdu"] = hdu
             return hdu
 
-        monkeypatch.setattr("modules.core.calculator.fits.PrimaryHDU", fake_primary_hdu)
-        monkeypatch.setattr("modules.core.calculator.fits.Card", lambda *args, **kwargs: None)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.fits.PrimaryHDU", fake_primary_hdu)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.fits.Card", lambda *args, **kwargs: None)
 
         out = calc.s2n_e(file_name_fits_unique="/tmp/s2n_unique.fits", plot=False)
 
@@ -321,21 +321,21 @@ class TestS2nE:
         self, monkeypatch, s2n_e_config, unit_sources_all
     ):
         DummyDetector.instances = []
-        monkeypatch.setattr("modules.core.calculator.Detector", DummyDetector)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.Detector", DummyDetector)
 
         class DummyHeader(dict):
             def add_blank(self, *args, **kwargs):
                 return None
 
         monkeypatch.setattr(
-            "modules.core.calculator.fits.PrimaryHDU",
+            "modules.core.calculator.noise_calculator.fits.PrimaryHDU",
             lambda: SimpleNamespace(
                 header=DummyHeader(),
                 data=None,
                 writeto=lambda *args, **kwargs: None,
             ),
         )
-        monkeypatch.setattr("modules.core.calculator.fits.Card", lambda *args, **kwargs: None)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.fits.Card", lambda *args, **kwargs: None)
 
         mock_plt = MagicMock()
         mock_fig = MagicMock()
@@ -343,7 +343,7 @@ class TestS2nE:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_plt.gca.return_value = mock_ax
         mock_plt.gcf.return_value = mock_fig
-        monkeypatch.setattr("modules.core.calculator.plt", mock_plt)
+        monkeypatch.setattr("modules.core.calculator.noise_calculator.plt", mock_plt)
 
         calc = NoiseCalculator(
             config=s2n_e_config,
@@ -511,12 +511,12 @@ def s2n_config(tmp_path):
 
 @pytest.fixture
 def patch_plotting():
-    with patch("modules.core.calculator.plt.savefig"), patch(
-        "modules.core.calculator.plt.figure"
-    ), patch("modules.core.calculator.plt.clf"), patch(
-        "modules.core.calculator.plt.stairs"
+    with patch("modules.core.calculator.snr_from_hdf5.plt.savefig"), patch(
+        "modules.core.calculator.snr_from_hdf5.plt.figure"
+    ), patch("modules.core.calculator.snr_from_hdf5.plt.clf"), patch(
+        "modules.core.calculator.snr_from_hdf5.plt.stairs"
     ), patch(
-        "modules.core.calculator.plt.tight_layout"
+        "modules.core.calculator.snr_from_hdf5.plt.tight_layout"
     ):
         yield
 
