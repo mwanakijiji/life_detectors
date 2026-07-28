@@ -672,6 +672,7 @@ class InstrumentDepTerms:
                     plt.close(fig)
                     logging.info(f"Saved plot of binned fluxes from output {output_name} at dark current {dc_rate:.3f} e/pix/s to {file_name_plot}")
         # for pickling data for Kira
+        '''
         out = Path("/Users/eckhartspalding/Downloads/kira/output_channels.pkl")
         payload = {
             name: ch.tables_by_dark_current[0.2]
@@ -679,6 +680,8 @@ class InstrumentDepTerms:
         }
         with out.open("wb") as f:
             pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        ipdb.set_trace()
+        '''
          
 
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False, angle_deg: float = 0):
