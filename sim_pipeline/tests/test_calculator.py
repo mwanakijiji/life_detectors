@@ -52,7 +52,9 @@ def s2n_e_config():
         "dark_current": "0.0, 0.2, 0.1",
         "read_noise": "6.0",
         "gain": "4.5",
+        "size": "400",
         "pix_per_wavel_bin": "2.2",
+        "pix_spectral_width": "2",
     }
     config["observation"] = {
         "N_angles": "10",
@@ -82,13 +84,13 @@ class DummyDetector:
     def __init__(self, config, num_wavel_bins):
         self.config = config
         self.num_wavel_bins = num_wavel_bins
-        self.footprint_calls = []
+        self.side_length_pix = int(config["detector"]["size"]) if "detector" in config else 2
+        self.footprint_cube = None
         self.systematics_calls = 0
         DummyDetector.instances.append(self)
 
-    def footprint_spectral(self, file_name_plot, plot):
-        self.footprint_calls.append((file_name_plot, plot))
-        return np.ones((self.num_wavel_bins, 2, 2))
+    def set_footprint(self, footprint_cube):
+        self.footprint_cube = footprint_cube
 
     def convert_2d_systematics_to_1d_vector(self):
         self.systematics_calls += 1
@@ -263,8 +265,8 @@ class TestS2nE:
 
         assert len(DummyDetector.instances) == 4
         for detector in DummyDetector.instances:
-            assert len(detector.footprint_calls) == 1
-            assert detector.footprint_calls[0][1] is True
+            assert detector.footprint_cube is not None
+            assert detector.footprint_cube.shape[0] == detector.num_wavel_bins
             assert detector.systematics_calls == 1
 
         n_bins = _geometric_n_bins(1.0, 4.0, 2.0)

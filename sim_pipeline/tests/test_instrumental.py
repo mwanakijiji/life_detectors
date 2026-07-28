@@ -17,6 +17,7 @@ sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
 from modules.core.instrumental.detector import Detector
+from modules.core.instrumental.dispersion import DispersionLaw
 from modules.core.instrumental.channels import OutputChannel
 from modules.core.instrumental.pipeline import InstrumentDepTerms
 
@@ -47,6 +48,7 @@ def detector_geometry_config():
             "pitch_pix": "25",
             "pix_per_wavel_bin": "2.2",
             "pix_spectral_width": "3",
+            "quantum_efficiency": "0.8",
         }
     }
 
@@ -86,7 +88,8 @@ def _output_flux_dict(cube):
 
 def _attach_detector_footprint(channel: OutputChannel, detector_geometry_config, n_bins: int = 3):
     det = Detector(config=detector_geometry_config, num_wavel_bins=n_bins)
-    det.footprint_spectral(file_name_plot="/tmp/footprint.png", plot=False)
+    law = DispersionLaw(detector_geometry_config)
+    det.set_footprint(law.make_footprint(det.side_length_pix, det.num_wavel_bins))
     channel.detector = det
     return det
 
@@ -548,17 +551,26 @@ class TestGenerateInstrumentTransmission:
 
 
 class TestDisperseAstroSignalsOnDetector:
+    @patch("modules.core.instrumental.aperture.DispersionLaw")
     @patch("modules.core.instrumental.aperture.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
-        self, mock_detector_cls, disperse_config
+        self, mock_detector_cls, mock_law_cls, disperse_config
     ):
         n_bins = 3
         footprint = np.ones((n_bins, 5, 5))
         n_pix_per_bin = np.sum(footprint, axis=(1, 2)) * u.pix
 
         mock_det = MagicMock()
+        mock_det.side_length_pix = 5
+        mock_det.num_wavel_bins = n_bins
         mock_det.footprint_cube = footprint
+        mock_det.apply_qe.side_effect = lambda x: x * 0.8
         mock_detector_cls.return_value = mock_det
+
+        mock_law = MagicMock()
+        mock_law.make_footprint.return_value = footprint
+        mock_law_cls.return_value = mock_law
+        mock_law_cls.n_pix_per_bin.return_value = n_pix_per_bin
 
         wavel = np.array([5.0, 10.0, 15.0]) * u.um
         post_cube = np.array([[[10.0]], [[20.0]], [[30.0]]]) * u.ph / (u.um * u.s)
@@ -593,7 +605,8 @@ class TestDisperseAstroSignalsOnDetector:
             sig["flux_astro_1d_interpolated_ph_sec_pixel"][0].value,
             expected_pixel.value,
         )
-        assert mock_det.footprint_spectral.call_count == 4
+        assert mock_law.make_footprint.call_count == 4
+        assert mock_det.set_footprint.call_count == 4
 
 
 class TestDetector:
@@ -601,25 +614,27 @@ class TestDetector:
         det = Detector(config=detector_geometry_config, num_wavel_bins=17)
         assert det.side_length_pix == 400
         assert det.pitch_pix == 25.0
-        assert det.pix_per_wavel_bin == 2.2
-        assert det.pix_spectral_width == 3
         assert det.num_wavel_bins == 17
+        assert det.quantum_efficiency == 0.8
 
-    def test_footprint_spectral_stores_expected_cube(self, detector_geometry_config):
+
+class TestDispersionLaw:
+    def test_make_footprint_stores_expected_cube(self, detector_geometry_config):
+        law = DispersionLaw(detector_geometry_config)
         det = Detector(config=detector_geometry_config, num_wavel_bins=3)
-        det.footprint_spectral(file_name_plot="/tmp/ignore.png", plot=False)
-        cube = det.footprint_cube
+        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins)
+        det.set_footprint(cube)
 
         assert cube.shape == (3, 400, 400)
         assert cube.dtype == float
         assert np.min(cube) >= 0.0
         assert np.max(cube) <= 1.0
 
-        expected_sum = det.pix_spectral_width * det.pix_per_wavel_bin
+        expected_sum = law.pix_spectral_width * law.pix_per_wavel_bin
         for wbin in range(det.num_wavel_bins):
             assert np.isclose(cube[wbin].sum(), expected_sum)
 
-        rows = slice(100, 100 + det.pix_spectral_width)
+        rows = slice(100, 100 + law.pix_spectral_width)
         assert np.allclose(cube[0, rows, 300], 1.0)
         assert np.allclose(cube[0, rows, 301], 1.0)
         assert np.allclose(cube[0, rows, 302], 0.2)
@@ -627,8 +642,9 @@ class TestDetector:
     def test_convert_2d_systematics_to_1d_vector_sums_within_footprint(
         self, detector_geometry_config
     ):
+        law = DispersionLaw(detector_geometry_config)
         det = Detector(config=detector_geometry_config, num_wavel_bins=2)
-        det.footprint_spectral(file_name_plot="/tmp/ignore.png", plot=False)
+        det.set_footprint(law.make_footprint(det.side_length_pix, det.num_wavel_bins))
 
         read_noise_map = np.zeros((400, 400))
         # Place map only under wavelength bin 0 footprint (cols 300-301), not bin 1 (starts ~302.2)
