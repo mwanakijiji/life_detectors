@@ -52,7 +52,6 @@ from modules.utils.helpers.spectra import (
     merge_psg_spectra_to_planet_population,
     plot_planet_population_sample,
 )
-from modules.data.units import UnitConverter
 
 
 
@@ -186,7 +185,7 @@ def run_single_calculation(
         
         # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
-        astrophysical_sources = astrophysical.AstrophysicalSources(config, unit_converter=UnitConverter())
+        astrophysical_sources = astrophysical.AstrophysicalSources(config)
         
         # Calculate incident flux for each source, and add on 2D positions as projected on sky
         sources_astroph = {}
@@ -205,8 +204,7 @@ def run_single_calculation(
         # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")
         instrument_dep_terms = InstrumentDepTerms(
-            config, 
-            unit_converter=UnitConverter(),
+            config,
             sources_astroph=sources_astroph,
             sources_to_include=sources_to_include
         )

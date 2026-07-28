@@ -22,7 +22,6 @@ from modules.core.astrophysical import (
     generate_zodiacal_scene,
 )
 from modules.core.instrumental.pipeline import InstrumentDepTerms
-from modules.data.units import UnitConverter
 from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
 from modules.utils.helpers.spectra import compute_collecting_area_m2
 
@@ -416,9 +415,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
 
 
-@pytest.fixture
-def unit_converter():
-    return UnitConverter()
 
 
 @pytest.fixture
@@ -609,7 +605,7 @@ def _independent_adu_from_combine_tables(instr, sources_to_include):
 class TestRunSingleCalculation:
 
     def test_flux_conserved_when_no_manual_masking(
-        self, flux_conservation_config, unit_converter
+        self, flux_conservation_config
     ):
         wavel = np.array([1.0, 2.0]) * u.um
         sources_to_include = [
@@ -626,7 +622,6 @@ class TestRunSingleCalculation:
 
         instr = InstrumentDepTerms(
             flux_conservation_config,
-            unit_converter,
             sources_astroph=sources_astroph,
             sources_to_include=sources_to_include,
         )

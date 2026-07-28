@@ -23,7 +23,6 @@ from astropy.visualization import ZScaleInterval
 
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
-from ..data.units import UnitConverter
 from ..utils.helpers.formatting import format_plot_title
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
 
@@ -195,17 +194,15 @@ class AstrophysicalSources:
     Calculates photon flux from astrophysical sources (incl. noise)
     """
     
-    def __init__(self, config: configparser.ConfigParser, unit_converter: UnitConverter):
+    def __init__(self, config: configparser.ConfigParser):
         """
         Initialize astrophysical noise calculator.
         
         Args:
             config: Configuration dictionary
-            unit_converter: Unit conversion utility
         """
 
         self.config = config
-        self.unit_converter = unit_converter
         self.spectra = {}
         self._load_spectra()
     

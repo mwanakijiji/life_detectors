@@ -19,7 +19,6 @@ sys.modules["ipdb"].set_trace = lambda: None
 from modules.core.instrumental.detector import Detector
 from modules.core.instrumental.channels import OutputChannel
 from modules.core.instrumental.pipeline import InstrumentDepTerms
-from modules.data.units import UnitConverter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
@@ -29,9 +28,6 @@ def _geometric_n_bins(lambda_min: float, lambda_max: float, spec_res: float) -> 
     return int(np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / spec_res)))
 
 
-@pytest.fixture
-def unit_converter():
-    return UnitConverter()
 
 
 @pytest.fixture
@@ -137,17 +133,15 @@ def disperse_config(instrum_base_config, detector_geometry_config):
 
 class TestInstrumentDepTerms:
     def test_init_creates_output_channels_with_wavelength_bins(
-        self, instrum_base_config, unit_converter
+        self, instrum_base_config
     ):
         instr = InstrumentDepTerms(
             instrum_base_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=["star"],
         )
 
         assert instr.config is instrum_base_config
-        assert instr.unit_converter is unit_converter
         assert instr.sources_to_include == ["star"]
         assert isinstance(instr.sources_instrum, dict)
         assert isinstance(instr.prop_dict, dict)
@@ -167,11 +161,10 @@ class TestInstrumentDepTerms:
             assert len(channel.bin_widths) == n_bins
 
     def test_calculate_intrinsic_instrumental_noise_parses_arrays(
-        self, noise_calc_config, unit_converter
+        self, noise_calc_config
     ):
         instr = InstrumentDepTerms(
             noise_calc_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=[],
         )
@@ -194,7 +187,7 @@ class TestInstrumentDepTerms:
             assert "dark_current_e_pix-1_sec-1" in channel.instrum_noise
 
     def test_calculate_intrinsic_instrumental_noise_parses_single_values(
-        self, unit_converter, instrum_base_config
+        self, instrum_base_config
     ):
         config = {
             **instrum_base_config,
@@ -206,7 +199,7 @@ class TestInstrumentDepTerms:
             },
             "observation": {"t_int_obs_total": "200", "t_int_frame": "20"},
         }
-        instr = InstrumentDepTerms(config, unit_converter, sources_astroph={}, sources_to_include=[])
+        instr = InstrumentDepTerms(config, sources_astroph={}, sources_to_include=[])
 
         instr.calculate_instrinsic_instrumental_noise()
 
@@ -220,7 +213,7 @@ class TestInstrumentDepTerms:
 
     @patch("modules.core.instrumental.aperture.compute_collecting_area_m2", return_value=25.0)
     def test_pass_through_aperture_scales_flux_cubes_by_collecting_area_and_throughput(
-        self, _mock_area, unit_converter, instrum_base_config
+        self, _mock_area, instrum_base_config
     ):
         config = {**instrum_base_config, "telescope": {"eta_t": "0.5"}}
         wavel = np.array([1.0, 2.0, 3.0]) * u.um
@@ -234,7 +227,7 @@ class TestInstrumentDepTerms:
         }
 
         instr = InstrumentDepTerms(
-            config, unit_converter, sources_astroph=sources_astroph, sources_to_include=["star"]
+            config, sources_astroph=sources_astroph, sources_to_include=["star"]
         )
         instr.pass_through_aperture(plot=False)
 
@@ -246,7 +239,7 @@ class TestInstrumentDepTerms:
         assert np.allclose(post.value, expected.value)
 
     def test_generate_instrument_transmission(
-        self, unit_converter, instrum_base_config, transmission_config
+        self, instrum_base_config, transmission_config
         ):
         # make sure sum of transmission screens is 1.0 (except for very center where star is)
 
@@ -257,7 +250,6 @@ class TestInstrumentDepTerms:
 
         instr = InstrumentDepTerms(
             transmission_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=[],
         )
@@ -292,7 +284,7 @@ class TestInstrumentDepTerms:
 
 
     def test_pass_through_transmission_screens_multiplies_scene_by_each_output(
-        self, unit_converter, instrum_base_config, transmission_config
+        self, instrum_base_config, transmission_config
     ):
         wavel = np.array([1.0, 2.0]) * u.um
         scene = np.zeros((2, 1001, 1001)) * u.ph / (u.um * u.m**2 * u.s)
@@ -309,7 +301,6 @@ class TestInstrumentDepTerms:
 
         instr = InstrumentDepTerms(
             transmission_config, 
-            unit_converter, 
             sources_astroph=sources_astroph, 
             sources_to_include=["star"]
         )
@@ -366,9 +357,9 @@ class TestInstrumentDepTerms:
         np.testing.assert_allclose(net_flux.value, scene.value)
 
 
-    def test_chop_signal_builds_post_chop_tables(self, unit_converter, instrum_base_config):
+    def test_chop_signal_builds_post_chop_tables(self, instrum_base_config):
         instr = InstrumentDepTerms(
-            instrum_base_config, unit_converter, sources_astroph={}, sources_to_include=["star"]
+            instrum_base_config, sources_astroph={}, sources_to_include=["star"]
         )
 
         def _table(astro_scale: float, instrum_scale: float):
@@ -410,11 +401,10 @@ class TestInstrumentDepTerms:
 
 class TestBuildBaseAstroTable:
     def test_build_base_astro_table_includes_metadata_and_source_columns(
-        self, unit_converter, instrum_base_config, detector_geometry_config
+        self, instrum_base_config, detector_geometry_config
     ):
         instr = InstrumentDepTerms(
             instrum_base_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=["star", "exozodiacal"],
         )
@@ -474,13 +464,12 @@ class TestCombineAstroAndInstrumSignals:
     @patch("builtins.print")
     def test_combine_builds_per_dc_tables_with_instrumental_and_astro_columns(
         self, _mock_print, mock_subplots, _mock_savefig, _mock_close,
-        combine_config, unit_converter, detector_geometry_config,
+        combine_config, detector_geometry_config,
     ):
         mock_subplots.return_value = (MagicMock(), MagicMock())
 
         instr = InstrumentDepTerms(
             combine_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=["star"],
         )
@@ -505,11 +494,10 @@ class TestCombineAstroAndInstrumSignals:
 class TestGenerateInstrumentTransmission:
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_returns_six_slice_cube_and_writes_fits(
-        self, mock_writeto, unit_converter, transmission_config
+        self, mock_writeto, transmission_config
     ):
         instr = InstrumentDepTerms(
             transmission_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=[],
         )
@@ -526,11 +514,10 @@ class TestGenerateInstrumentTransmission:
 
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_writes_fits_when_plot_true(
-        self, mock_writeto, unit_converter, transmission_config
+        self, mock_writeto, transmission_config
     ):
         instr = InstrumentDepTerms(
             transmission_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=[],
         )
@@ -541,11 +528,10 @@ class TestGenerateInstrumentTransmission:
 
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_override_stellar_mask_reduces_center_transmission(
-        self, mock_writeto, unit_converter, transmission_config
+        self, mock_writeto, transmission_config
     ):
         instr = InstrumentDepTerms(
             transmission_config,
-            unit_converter,
             sources_astroph={},
             sources_to_include=[],
         )
@@ -564,7 +550,7 @@ class TestGenerateInstrumentTransmission:
 class TestDisperseAstroSignalsOnDetector:
     @patch("modules.core.instrumental.aperture.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
-        self, mock_detector_cls, unit_converter, disperse_config
+        self, mock_detector_cls, disperse_config
     ):
         n_bins = 3
         footprint = np.ones((n_bins, 5, 5))
@@ -580,7 +566,6 @@ class TestDisperseAstroSignalsOnDetector:
 
         instr = InstrumentDepTerms(
             disperse_config,
-            unit_converter,
             sources_astroph={"star": {"wavel": wavel}},
             sources_to_include=["star"],
         )
