@@ -19,22 +19,14 @@ pip install -e .
 
 ## Usage
 
-### Command Line Interface
+Run a batch parameter sweep from `sim_pipeline/`:
 
 ```bash
-python -m modules.cli --config config.yaml --output results.json
+python batch_run.py
 ```
 
-### Python API
-
-```python
-from modules.core import NoiseCalculator
-from modules.config import load_config
-
-config = load_config("config.yaml")
-calculator = NoiseCalculator(config)
-results = calculator.calculate_snr()
-```
+S/N after rotation is assembled from per-angle HDF5 outputs via
+`modules.core.calculator.snr_from_hdf5.calculate_s2n_post_rotation`.
 
 ## Package Structure
 

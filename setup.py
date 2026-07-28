@@ -42,9 +42,4 @@ setup(
             "sphinx-rtd-theme>=1.0",
         ],
     },
-    entry_points={
-        "console_scripts": [
-            "life-detectors=modules.cli.main:main",
-        ],
-    },
 ) 

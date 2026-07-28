@@ -41,9 +41,6 @@ docs = [
     "sphinx-rtd-theme>=1.0",
 ]
 
-[project.scripts]
-life-detectors = "modules.cli.main:main"
-
 [tool.black]
 line-length = 88
 target-version = ['py38']
