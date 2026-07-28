@@ -371,17 +371,17 @@ class TestInstrumentDepTerms:
 
         def _table(astro_scale: float, instrum_scale: float):
             qt = QTable()
-            qt["wavel_bin_num"] = [0, 1]
-            qt["wavel_bin_center"] = np.array([5.0, 6.0]) * u.um
-            qt["wavel_bin_width"] = np.array([0.1, 0.1]) * u.um
-            qt["n_pix_per_wavel_bin"] = np.array([4.0, 4.0]) * u.pix
-            qt["astro_star_flux_adu_for_wavel_bin_and_integration_tot"] = (
+            qt["bin"] = [0, 1]
+            qt["center"] = np.array([5.0, 6.0]) * u.um
+            qt["width"] = np.array([0.1, 0.1]) * u.um
+            qt["npix"] = np.array([4.0, 4.0]) * u.pix
+            qt["astro_star_adu"] = (
                 np.array([astro_scale, astro_scale + 1.0]) * u.adu
             )
-            qt["instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"] = (
+            qt["instrum_dc_rms_adu"] = (
                 np.array([instrum_scale, instrum_scale + 2.0]) * u.adu
             )
-            qt["instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"] = (
+            qt["instrum_rn_rms_adu"] = (
                 np.array([1.0, 1.0]) * u.adu
             )
             return qt
@@ -399,9 +399,9 @@ class TestInstrumentDepTerms:
         instr.chop_signal(plot=False)
 
         chopped = instr.post_chop_tables_by_dark_current[0.1]
-        assert "chopped_astro_star_flux_adu_for_wavel_bin_and_integration_tot" in chopped.colnames
+        assert "chopped_astro_star_adu" in chopped.colnames
         assert np.allclose(
-            chopped["chopped_astro_star_flux_adu_for_wavel_bin_and_integration_tot"].value,
+            chopped["chopped_astro_star_adu"].value,
             np.array([2.0, 2.0]),
         )
 
@@ -431,14 +431,16 @@ class TestBuildBaseAstroTable:
         table = instr._build_base_astro_table(channel)
 
         assert len(table) == n_bins
-        assert "wavel_bin_num" in table.colnames
-        assert "n_pix_per_wavel_bin" in table.colnames
-        assert "astro_star_flux_ph_sec_um" in table.colnames
-        assert "astro_star_flux_ph_sec_wavel_bin" in table.colnames
-        assert "astro_star_flux_ph_sec_pixel" in table.colnames
-        assert "astro_exozodiacal_flux_ph_sec_um" not in table.colnames
-        assert np.allclose(table["n_pix_per_wavel_bin"].value, n_pix_per_bin.value)
+        assert "bin" in table.colnames
+        assert "npix" in table.colnames
+        assert "astro_star_ph_s_um" in table.colnames
+        assert "astro_star_ph_s_bin" in table.colnames
+        assert "astro_star_ph_s_pix" in table.colnames
+        assert "astro_exozodiacal_ph_s_um" not in table.colnames
+        assert np.allclose(table["npix"].value, n_pix_per_bin.value)
         assert table.meta["wavel_bin_edges"] is channel.bin_edges
+        assert table["bin"].info.description
+        assert table["astro_star_ph_s_um"].info.description
 
 
 class TestCombineAstroAndInstrumSignals:
@@ -491,9 +493,9 @@ class TestCombineAstroAndInstrumSignals:
         assert np.all(channel.tables_by_dark_current_orig[0.0]["qe"] == 0.8)
 
         final = channel.tables_by_dark_current[0.0]
-        assert "instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot" in final.colnames
-        assert "instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot" in final.colnames
-        assert "astro_star_flux_adu_for_wavel_bin_and_integration_tot" in final.colnames
+        assert "instrum_dc_rms_adu" in final.colnames
+        assert "instrum_rn_rms_adu" in final.colnames
+        assert "astro_star_adu" in final.colnames
         assert len(final) == 3
         mock_subplots.assert_called()
 

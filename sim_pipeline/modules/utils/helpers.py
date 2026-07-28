@@ -1165,8 +1165,8 @@ def record_info_at_angle_and_qe(
     if plot and post_chop_tables_by_dark_current: # pragma: no cover
         dc_rate = next(iter(post_chop_tables_by_dark_current))
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate]
-        wavel_center = chopped_tbl['wavel_bin_center'].value
-        wavel_width = chopped_tbl['wavel_bin_width'].value
+        wavel_center = chopped_tbl['center'].value
+        wavel_width = chopped_tbl['width'].value
         wavel_edges = np.empty(len(wavel_center) + 1)
         wavel_edges[1:-1] = 0.5 * (wavel_center[:-1] + wavel_center[1:])
         wavel_edges[0] = wavel_center[0] - 0.5 * wavel_width[0]

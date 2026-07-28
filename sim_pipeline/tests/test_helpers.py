@@ -410,8 +410,8 @@ class TestRecordInfoAtAngleAndQe:
         def _table(signal):
             return QTable(
                 {
-                    "wavel_bin_center": wavel,
-                    "wavel_bin_width": width,
+                    "center": wavel,
+                    "width": width,
                     "signal_adu": np.ones(n_bins) * signal * u.adu,
                 }
             )
@@ -459,8 +459,8 @@ class TestRecordInfoAtAngleAndQe:
         def _table(signal):
             return QTable(
                 {
-                    "wavel_bin_center": wavel,
-                    "wavel_bin_width": width,
+                    "center": wavel,
+                    "width": width,
                     "signal_adu": np.ones(n_bins) * signal * u.adu,
                 }
             )

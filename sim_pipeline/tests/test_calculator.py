@@ -356,11 +356,11 @@ class TestS2nE:
         assert mock_plt.close.called
 
 
-PLANET_COL = "astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
+PLANET_COL = "astro_exoplanet_model_10pc_adu"
 CHOPPED_PLANET_COL = f"chopped_{PLANET_COL}"
-STAR_COL_OUT3 = "astro_star_flux_adu_for_wavel_bin_and_integration_tot"
-STAR_COL_3 = "output_3_dark_astro_star_flux_adu_for_wavel_bin_and_integration_tot"
-STAR_COL_4 = "output_4_dark_astro_star_flux_adu_for_wavel_bin_and_integration_tot"
+STAR_COL_OUT3 = "astro_star_adu"
+STAR_COL_3 = "output_3_dark_astro_star_adu"
+STAR_COL_4 = "output_4_dark_astro_star_adu"
 
 
 def _make_wavelength_meta(n_bins: int = 1):
@@ -376,10 +376,10 @@ def _make_wavelength_meta(n_bins: int = 1):
 def _base_table(n_bins: int = 1) -> QTable:
     centers, widths, edges = _make_wavelength_meta(n_bins)
     tbl = QTable()
-    tbl["wavel_bin_num"] = np.arange(n_bins)
-    tbl["wavel_bin_center"] = centers
-    tbl["wavel_bin_width"] = widths
-    tbl["n_pix_per_wavel_bin"] = np.full(n_bins, 100) * u.pix
+    tbl["bin"] = np.arange(n_bins)
+    tbl["center"] = centers
+    tbl["width"] = widths
+    tbl["npix"] = np.full(n_bins, 100) * u.pix
     tbl.meta["wavel_bin_edges"] = edges
     tbl.meta["qe"] = 0.70
     tbl.meta["angle_deg"] = 0.0
@@ -435,10 +435,10 @@ def _write_angle_hdf5(
     chopped[CHOPPED_PLANET_COL] = np.asarray(planet_chopped) * u.adu
     chopped[STAR_COL_3] = np.asarray(star_out3) * u.adu
     chopped[STAR_COL_4] = np.asarray(star_out4) * u.adu
-    chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"] = (
+    chopped["chopped_instrum_dc_rms_adu"] = (
         np.full(n_bins, instrum_dark) * u.adu
     )
-    chopped["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"] = (
+    chopped["chopped_instrum_rn_rms_adu"] = (
         np.full(n_bins, instrum_read) * u.adu
     )
     _write_table(chopped, "chopped", overwrite=False)

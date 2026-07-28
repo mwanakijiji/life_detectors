@@ -112,43 +112,35 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
                     angle = canonical_angle_deg(meta_angle)
                 else:
                     angle = parse_angle_from_hdf5_path(hdf5_file)
-                S_p = chopped[
-                    "chopped_astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
-                ]
-                S_p_3 = out3[
-                    "astro_exoplanet_model_10pc_flux_adu_for_wavel_bin_and_integration_tot"
-                ]
+                S_p = chopped["chopped_astro_exoplanet_model_10pc_adu"]
+                S_p_3 = out3["astro_exoplanet_model_10pc_adu"]
 
                 slot = by_dc_qe.setdefault(
                     dc_qe_str,
                     {
-                        "wavel": chopped["wavel_bin_center"].value,
+                        "wavel": chopped["center"].value,
                         "wavel_bin_edges": chopped.meta["wavel_bin_edges"],
                         "S_p": {},
                         "S_p_3": {},
-                        "chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot": {},
-                        "chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot": {},
+                        "chopped_instrum_dc_rms_adu": {},
+                        "chopped_instrum_rn_rms_adu": {},
                     },
                 )
                 slot["S_p"][angle] = S_p
                 slot["S_p_3"][angle] = S_p_3
-                slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][angle] = (
-                    chopped["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"]
-                )
-                slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][angle] = (
-                    chopped["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"]
-                )
-                slot["wavel_bin_width"] = chopped["wavel_bin_width"]
+                slot["chopped_instrum_rn_rms_adu"][angle] = chopped["chopped_instrum_rn_rms_adu"]
+                slot["chopped_instrum_dc_rms_adu"][angle] = chopped["chopped_instrum_dc_rms_adu"]
+                slot["wavel_bin_width"] = chopped["width"]
 
                 sym_tags = ("star", "exozodiacal", "zodiacal")
                 slot.setdefault("sources_sym", {})
                 for source_name in sym_tags:
-                    col = f"astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot"
+                    col = f"astro_{source_name}_adu"
                     if col not in out3.colnames:
                         continue
                     slot["sources_sym"].setdefault(source_name, {"Ssym_dark_3": {}})
                     slot["sources_sym"][source_name]["Ssym_dark_3"][angle] = chopped[
-                        f"output_3_dark_astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot"
+                        f"output_3_dark_{col}"
                     ]
 
     return by_dc_qe
@@ -201,20 +193,14 @@ def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]
 
         S_dark_noise_var = (
             np.power(
-                slot["chopped_instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot"][
-                    ref_angle
-                ][wavel_bin_num]
-                * gain,
+                slot["chopped_instrum_dc_rms_adu"][ref_angle][wavel_bin_num] * gain,
                 2,
             ).value
             * u.electron
         )
         S_read_noise_var = (
             np.power(
-                slot["chopped_instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot"][
-                    ref_angle
-                ][wavel_bin_num]
-                * gain,
+                slot["chopped_instrum_rn_rms_adu"][ref_angle][wavel_bin_num] * gain,
                 2,
             ).value
             * u.electron

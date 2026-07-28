@@ -29,6 +29,7 @@ from modules.utils.helpers import enable_plot_units
 from scipy import ndimage
 from matplotlib.ticker import LogLocator
 import pickle
+from astropy.table import Column  # or MaskedColumn
 
 
 from ..data.units import UnitConverter
@@ -476,20 +477,39 @@ class InstrumentDepTerms:
     def _build_base_astro_table(self, output_channel) -> QTable:
         # builds a table that consolidates astrophysical signals, before including instrumental noise
         qt = QTable()
-        qt['wavel_bin_num'] = np.arange(len(output_channel.bin_centers))
-        qt['wavel_bin_center'] = output_channel.bin_centers
-        qt['wavel_bin_width'] = output_channel.bin_widths
+        qt['bin'] = Column(
+            data=np.arange(len(output_channel.bin_centers)),
+            description="Wavelength bin index (0-based)",
+        )
+        qt['center'] = Column(
+            data=output_channel.bin_centers,
+            description="Wavelength bin center",
+        )
+        qt['width'] = Column(
+            data=output_channel.bin_widths,
+            description="Wavelength bin width",
+        )
         qt.meta['wavel_bin_edges'] = output_channel.bin_edges
-        qt['n_pix_per_wavel_bin'] = np.sum(
-            output_channel.detector.footprint_cube, axis=(1, 2)
-        ) * u.pix
+        qt['npix'] = Column(
+            data=np.sum(output_channel.detector.footprint_cube, axis=(1, 2)) * u.pix,
+            description="Number of detector pixels in wavelength bin footprint",
+        )
         for source_name in self.sources_to_include:
             if source_name not in output_channel.astroph_signal:
                 continue
             sig = output_channel.astroph_signal[source_name]
-            qt[f'astro_{source_name}_flux_ph_sec_um'] = sig['flux_astro_1d_interpolated_ph_sec_um']
-            qt[f'astro_{source_name}_flux_ph_sec_wavel_bin'] = sig['flux_astro_1d_interpolated_ph_sec_wavel_bin']
-            qt[f'astro_{source_name}_flux_ph_sec_pixel'] = sig['flux_astro_1d_interpolated_ph_sec_pixel']
+            qt[f'astro_{source_name}_ph_s_um'] = Column(
+                data=sig['flux_astro_1d_interpolated_ph_sec_um'],
+                description=f"{source_name}: photon rate per micron (all pixels in bin)",
+            )
+            qt[f'astro_{source_name}_ph_s_bin'] = Column(
+                data=sig['flux_astro_1d_interpolated_ph_sec_wavel_bin'],
+                description=f"{source_name}: photon rate integrated over wavelength bin (all pixels)",
+            )
+            qt[f'astro_{source_name}_ph_s_pix'] = Column(
+                data=sig['flux_astro_1d_interpolated_ph_sec_pixel'],
+                description=f"{source_name}: photon rate per pixel (mean over bin footprint)",
+            )
         return qt
 
 
@@ -607,25 +627,56 @@ class InstrumentDepTerms:
                 # 2) dark current
                 # 3) rotation angle
                 final_table = QTable()
-                final_table['wavel_bin_num'] = table['wavel_bin_num']
-                final_table['wavel_bin_center'] = table['wavel_bin_center']
-                final_table['wavel_bin_width'] = table['wavel_bin_width']
-                final_table['n_pix_per_wavel_bin'] = table['n_pix_per_wavel_bin']
-                # total dark current within the wavelength bin for the entire integration
+                final_table['bin'] = Column(
+                    data=table['bin'],
+                    description="Wavelength bin index (0-based)",
+                )
+                final_table['center'] = Column(
+                    data=table['center'],
+                    description="Wavelength bin center",
+                )
+                final_table['width'] = Column(
+                    data=table['width'],
+                    description="Wavelength bin width",
+                )
+                final_table['npix'] = Column(
+                    data=table['npix'],
+                    description="Number of detector pixels in wavelength bin footprint",
+                )
+                # carry upstream photon-rate columns through
+                for source_name in self.sources_to_include:
+                    for suffix in ('ph_s_um', 'ph_s_bin', 'ph_s_pix'):
+                        col = f'astro_{source_name}_{suffix}'
+                        if col in table.colnames:
+                            final_table[col] = Column(
+                                data=table[col],
+                                description=table[col].info.description,
+                            )
 
-                # 'dark current' is an additive pedestal value, not an rms term
-                # 'dark current rms' is what we calculate here by taking the square root, so that we can propagate the noise as if dark-subtraction were already being carried out
-                # dark current 'pedestal' to make clear that this is not an rms term, but a constant offset
-                # total dark current for wavelength bin: multiply rate of single pixel by sqrt(dc_rate × N_pix × t_frame) for N_pix in the wavelength bin
-                final_table['instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot'] = np.sqrt((dc_rate * u.electron/u.pix) * table['n_pix_per_wavel_bin'] * t_frame).value*u.electron / gain 
-                # total read noise within the wavelength bin for the entire integration
-                # the .value*u.pix is to avoid resulting in sqrt(pix)
-                final_table['instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot'] = read_noise_scalar * np.sqrt(table['n_pix_per_wavel_bin']).value*u.pix / gain
+                # 'dark current' pedestal vs RMS: here we store Poisson RMS so dark-subtraction
+                # noise can be propagated as if subtraction were already performed
+                final_table['instrum_dc_rms_adu'] = Column(
+                    data=np.sqrt((dc_rate * u.electron / u.pix) * table['npix'] * t_frame).value * u.electron / gain,
+                    description="Dark-current Poisson RMS over bin for one integration (ADU)",
+                )
+                final_table['instrum_rn_rms_adu'] = Column(
+                    data=read_noise_scalar * np.sqrt(table['npix']).value * u.pix / gain,
+                    description="Read-noise RMS over bin for one integration (ADU)",
+                )
 
-                # loop over astrophysical sources:
+                # astrophysical sources → ADU per integration (includes × t_frame)
                 for source_name in self.sources_to_include:
                     astro_sig = output_channel.astroph_signal[source_name]
-                    final_table[f'astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot'] = astro_sig['flux_astro_1d_interpolated_ph_sec_pixel'] * table['n_pix_per_wavel_bin'] * t_frame * (e_per_ph) * (1./gain)
+                    final_table[f'astro_{source_name}_adu'] = Column(
+                        data=(
+                            astro_sig['flux_astro_1d_interpolated_ph_sec_pixel']
+                            * table['npix']
+                            * t_frame
+                            * e_per_ph
+                            / gain
+                        ),
+                        description=f"{source_name}: signal in bin for one integration (ADU)",
+                    )
 
                 final_table.meta.update(table.meta)
 
@@ -634,14 +685,11 @@ class InstrumentDepTerms:
 
                 # plot of final signal in the detector
                 if plot:  # pragma: no cover
-                    wavel_bin_center = final_table['wavel_bin_center']
-                    wavel_bin_width = final_table['wavel_bin_width']
+                    wavel_bin_center = final_table['center']
                     wavel_bin_edges = output_channel.bin_edges
                     fig, ax = plt.subplots(figsize=(10, 5))
-                    debug_cols = [
-                        'instrum_dark_current_rms_for_wavel_bin_and_integration_adu_tot',
-                        'instrum_read_noise_rms_for_wavel_bin_and_integration_adu_tot',
-                    ]
+                    debug_cols = ['instrum_dc_rms_adu', 'instrum_rn_rms_adu']
+                    y_unit = u.adu
                     for col_name in debug_cols:
                         y_col = final_table[col_name]
                         y_vals = y_col.value if hasattr(y_col, "value") else y_col
@@ -649,7 +697,7 @@ class InstrumentDepTerms:
                         if hasattr(y_col, "unit"):
                             y_unit = y_col.unit
                     for source_name in self.sources_to_include:
-                        col_name = f'astro_{source_name}_flux_adu_for_wavel_bin_and_integration_tot'
+                        col_name = f'astro_{source_name}_adu'
                         if col_name in final_table.colnames:
                             y_col = final_table[col_name]
                             y_vals = y_col.value if hasattr(y_col, "value") else y_col
@@ -1203,26 +1251,22 @@ class InstrumentDepTerms:
             chopped = QTable()
 
             # copy wavelength metadata once
-            for col in ('wavel_bin_num', 'wavel_bin_center', 'wavel_bin_width', 'n_pix_per_wavel_bin'):
+            for col in ('bin', 'center', 'width', 'npix'):
                 chopped[col] = t3[col]
 
             # keep outputs, but add the chopped signal
             # consolidate signals from dark outputs, and the chopped signal
             for col in t3.colnames:
-                if col.startswith(('astro_')):
+                if col.startswith('astro_') and col.endswith('_adu'):
                     chopped[f'output_1_bright_{col}'] = t1[col]
                     chopped[f'output_2_bright_{col}'] = t2[col]
                     chopped[f'output_3_dark_{col}'] = t3[col]
                     chopped[f'output_4_dark_{col}'] = t4[col]
                     chopped[f'chopped_{col}'] = t3[col] - t4[col]
-                if col.startswith(('instrum_')):
-                    # copy over instrumental terms from the dark outputs
-                    chopped[f'instrum_output_3_dark_{col}'] = t3[col]
-                    chopped[f'instrum_output_4_dark_{col}'] = t4[col]
-                    if 'dark_current' in col:
-                        chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2) ## ## TODO: MAKE SURE THIS IS CORRECT
-                    if 'read_noise' in col:
-                        chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2) ## ## TODO: MAKE SURE THIS IS CORRECT
+                if col in ('instrum_dc_rms_adu', 'instrum_rn_rms_adu'):
+                    chopped[f'output_3_dark_{col}'] = t3[col]
+                    chopped[f'output_4_dark_{col}'] = t4[col]
+                    chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2)  ## ## TODO: MAKE SURE THIS IS CORRECT
 
             chopped.meta.update(t3.meta)
 
