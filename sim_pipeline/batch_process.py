@@ -263,12 +263,14 @@ def run_single_calculation(
             logger.info("Dispersing signals on channel detectors ...")
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
+            ipdb.set_trace()
             # pack the signals together (and convert photons to electrons)
             # output units: ADU total in each wavel bin
             instrument_dep_terms.combine_astro_and_instrum_signals(plot=plot)
-
+            ipdb.set_trace()
             # chop the signal between dark outputs
             instrument_dep_terms.chop_signal(plot=plot)
+            ipdb.set_trace()
 
             # write condensed information at this transmission screen angle (to avoid mem leak)
             # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value

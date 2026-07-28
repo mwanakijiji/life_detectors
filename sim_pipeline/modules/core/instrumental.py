@@ -567,7 +567,17 @@ class InstrumentDepTerms:
 
 
     def combine_astro_and_instrum_signals(self, plot: bool = False):
-        # combines astrophysical signals and instrumental noise
+        '''
+        Combines astrophysical signals and instrumental noise into one table for permutations of
+            1) output
+            2) dark current
+            3) rotation angle
+
+        INPUTS:
+
+        OUTPUTS:
+        - none; updates output_channel.tables_by_dark_current[canonical_dc_rate(dc_rate)]
+        '''
 
         t_frame = float(self.config['observation']['t_int_frame']) * u.second
         read_noise_scalar = self.sources_instrum['read_noise_e_pix-1'] # just one value here
@@ -593,28 +603,18 @@ class InstrumentDepTerms:
                 #qt['instrum_dark_current_e_pix_sec'] = dc_rate * np.ones(n_bins)
                 #qt['instrum_dark_current_e_pix'] = np.full(n_bins, dc_rate * t_frame)
                 #qt['instrum_read_noise_e_pix'] = read_noise * np.ones(n_bins)
-                qt['t_int_frame'] = t_frame # integration time of one frame ## ## TODO: enable multiple reads
-                qt['qe'] = float(self.config['detector']['quantum_efficiency'])
+                ## ## TODO: enable multiple reads
+                qt['t_int_frame'] = Column(
+                    data=t_frame,
+                    description="Integration time of one frame",
+                )
+                qt['qe'] = Column(
+                    data=float(self.config['detector']['quantum_efficiency']),
+                    description="Detector quantum efficiency",
+                )
                 tables_by_dc[canonical_dc_rate(dc_rate_this.value)] = qt
 
             output_channel.tables_by_dark_current_orig = tables_by_dc # _orig meaning that we have not modified the units here
-
-            ##########################################
-            # begin debug: summary function
-            for name, ch in self.output_channels.items():
-                print(f"\n=== {name} ===")
-                print(f"  angle_deg: {ch.angle_deg}")
-                print(f"  spec_R: {ch.spec_R}")
-                print(f"  n_bins: {len(ch.bin_centers) if ch.bin_centers is not None else None}")
-                print(f"  instrum_noise keys: {list(ch.instrum_noise.keys())}")
-                print(f"  astroph_signal keys: {list(ch.astroph_signal.keys())}")
-                print(f"  tables_by_dark_current DC rates: {list(ch.tables_by_dark_current.keys())}")
-                for dc, tbl in ch.tables_by_dark_current.items():
-                    print(f"    dc={dc:g}: {len(tbl)} rows, columns:")
-                    for col in tbl.colnames:
-                        print(f"      - {col}")
-            # end debug: summary function
-            ##########################################
 
         # loop over each of the tables and make a new table that keeps some of the columns for bookkeeping,
         # and then multiplies others by the appropriate factor to get the total signal in ADU
@@ -626,48 +626,23 @@ class InstrumentDepTerms:
                 # 1) output
                 # 2) dark current
                 # 3) rotation angle
-                final_table = QTable()
-                final_table['bin'] = Column(
-                    data=table['bin'],
-                    description="Wavelength bin index (0-based)",
-                )
-                final_table['center'] = Column(
-                    data=table['center'],
-                    description="Wavelength bin center",
-                )
-                final_table['width'] = Column(
-                    data=table['width'],
-                    description="Wavelength bin width",
-                )
-                final_table['npix'] = Column(
-                    data=table['npix'],
-                    description="Number of detector pixels in wavelength bin footprint",
-                )
-                # carry upstream photon-rate columns through
-                for source_name in self.sources_to_include:
-                    for suffix in ('ph_s_um', 'ph_s_bin', 'ph_s_pix'):
-                        col = f'astro_{source_name}_{suffix}'
-                        if col in table.colnames:
-                            final_table[col] = Column(
-                                data=table[col],
-                                description=table[col].info.description,
-                            )
+                qt = table.copy() 
 
                 # 'dark current' pedestal vs RMS: here we store Poisson RMS so dark-subtraction
                 # noise can be propagated as if subtraction were already performed
-                final_table['instrum_dc_rms_adu'] = Column(
+                qt['instrum_dc_rms_adu'] = Column(
                     data=np.sqrt((dc_rate * u.electron / u.pix) * table['npix'] * t_frame).value * u.electron / gain,
-                    description="Dark-current Poisson RMS over bin for one integration (ADU)",
+                    description="Dark-current Poisson RMS over wavel bin and detector footprint, for one integration (ADU)",
                 )
-                final_table['instrum_rn_rms_adu'] = Column(
+                qt['instrum_rn_rms_adu'] = Column(
                     data=read_noise_scalar * np.sqrt(table['npix']).value * u.pix / gain,
-                    description="Read-noise RMS over bin for one integration (ADU)",
+                    description="Read-noise RMS over wavel bin and detector footprint, for one integration (ADU)",
                 )
 
                 # astrophysical sources → ADU per integration (includes × t_frame)
                 for source_name in self.sources_to_include:
                     astro_sig = output_channel.astroph_signal[source_name]
-                    final_table[f'astro_{source_name}_adu'] = Column(
+                    qt[f'astro_{source_name}_adu'] = Column(
                         data=(
                             astro_sig['flux_astro_1d_interpolated_ph_sec_pixel']
                             * table['npix']
@@ -675,31 +650,31 @@ class InstrumentDepTerms:
                             * e_per_ph
                             / gain
                         ),
-                        description=f"{source_name}: signal in bin for one integration (ADU)",
+                        description=f"{source_name}: signal in wavel bin and detector footprint for one integration (ADU)",
                     )
 
-                final_table.meta.update(table.meta)
+                qt.meta.update(table.meta)
 
                 # store the final table for this permutation of output, dark current, and rotation angle
-                output_channel.tables_by_dark_current[canonical_dc_rate(dc_rate)] = final_table
+                output_channel.tables_by_dark_current[canonical_dc_rate(dc_rate)] = qt
 
                 # plot of final signal in the detector
                 if plot:  # pragma: no cover
-                    wavel_bin_center = final_table['center']
+                    wavel_bin_center = qt['center']
                     wavel_bin_edges = output_channel.bin_edges
                     fig, ax = plt.subplots(figsize=(10, 5))
                     debug_cols = ['instrum_dc_rms_adu', 'instrum_rn_rms_adu']
                     y_unit = u.adu
                     for col_name in debug_cols:
-                        y_col = final_table[col_name]
+                        y_col = qt[col_name]
                         y_vals = y_col.value if hasattr(y_col, "value") else y_col
                         ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
                         if hasattr(y_col, "unit"):
                             y_unit = y_col.unit
                     for source_name in self.sources_to_include:
                         col_name = f'astro_{source_name}_adu'
-                        if col_name in final_table.colnames:
-                            y_col = final_table[col_name]
+                        if col_name in qt.colnames:
+                            y_col = qt[col_name]
                             y_vals = y_col.value if hasattr(y_col, "value") else y_col
                             ax.stairs(y_vals, edges=wavel_bin_edges.value if hasattr(wavel_bin_edges, "value") else wavel_bin_edges, label=col_name)
                             if hasattr(y_col, "unit"):
@@ -1242,6 +1217,14 @@ class InstrumentDepTerms:
 
 
     def chop_signal(self, plot: bool = False):
+        '''
+        Subtracts the dark 3 and 4 outputs
+
+        INPUTS:
+
+        OUTPUTS:
+        - None; makes a new chopped table self.post_chop_tables_by_dark_current[dc_rate]
+        '''
 
         self.post_chop_tables_by_dark_current = {}
         for dc_rate, t3 in self.output_channels['output_3_dark'].tables_by_dark_current.items():
@@ -1252,7 +1235,11 @@ class InstrumentDepTerms:
 
             # copy wavelength metadata once
             for col in ('bin', 'center', 'width', 'npix'):
-                chopped[col] = t3[col]
+                chopped[col] = Column(
+                    data=t3[col],
+                    description=t3[col].info.description,
+                )
+
 
             # keep outputs, but add the chopped signal
             # consolidate signals from dark outputs, and the chopped signal
@@ -1262,11 +1249,19 @@ class InstrumentDepTerms:
                     chopped[f'output_2_bright_{col}'] = t2[col]
                     chopped[f'output_3_dark_{col}'] = t3[col]
                     chopped[f'output_4_dark_{col}'] = t4[col]
-                    chopped[f'chopped_{col}'] = t3[col] - t4[col]
+                    chopped[f'chopped_{col}'] = Column(
+                        data=t3[col] - t4[col],
+                        description=f"Chopped (output_3 − output_4) for {col}",
+                    )
                 if col in ('instrum_dc_rms_adu', 'instrum_rn_rms_adu'):
                     chopped[f'output_3_dark_{col}'] = t3[col]
                     chopped[f'output_4_dark_{col}'] = t4[col]
-                    chopped[f'chopped_{col}'] = np.sqrt(t3[col]**2 + t4[col]**2)  ## ## TODO: MAKE SURE THIS IS CORRECT
+
+                     ## ## TODO: MAKE SURE THIS IS CORRECT
+                    chopped[f'chopped_{col}'] = Column(
+                        data=np.sqrt(t3[col]**2 + t4[col]**2),
+                        description=f"Combined dark-pair RMS for {col}: sqrt(out3^2 + out4^2)",
+                    )
 
             chopped.meta.update(t3.meta)
 
