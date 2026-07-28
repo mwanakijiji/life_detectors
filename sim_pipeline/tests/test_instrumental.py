@@ -214,7 +214,7 @@ class TestInstrumentDepTerms:
         assert np.allclose(dc_rate.value, [0.05])
         assert np.allclose(dc_total.value, [1.0])  # 20 s * 0.05 e-/pix/s
 
-    @patch("modules.core.instrumental.aperture.compute_collecting_area_m2", return_value=25.0)
+    @patch("modules.core.instrumental.transfer.compute_collecting_area_m2", return_value=25.0)
     def test_pass_through_aperture_scales_flux_cubes_by_collecting_area_and_throughput(
         self, _mock_area, instrum_base_config
     ):
@@ -551,8 +551,8 @@ class TestGenerateInstrumentTransmission:
 
 
 class TestDisperseAstroSignalsOnDetector:
-    @patch("modules.core.instrumental.aperture.DispersionLaw")
-    @patch("modules.core.instrumental.aperture.Detector")
+    @patch("modules.core.instrumental.transfer.DispersionLaw")
+    @patch("modules.core.instrumental.transfer.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
         self, mock_detector_cls, mock_law_cls, disperse_config
     ):
