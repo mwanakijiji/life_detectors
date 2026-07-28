@@ -458,9 +458,9 @@ class TestCombineAstroAndInstrumSignals:
                 qe=1.0,
             )
 
-    @patch("modules.core.instrumental.tables.plt.close")
-    @patch("modules.core.instrumental.tables.plt.savefig")
-    @patch("modules.core.instrumental.tables.plt.subplots")
+    @patch("modules.viz.tables.plt.close")
+    @patch("modules.viz.tables.plt.savefig")
+    @patch("modules.viz.tables.plt.subplots")
     @patch("builtins.print")
     def test_combine_builds_per_dc_tables_with_instrumental_and_astro_columns(
         self, _mock_print, mock_subplots, _mock_savefig, _mock_close,

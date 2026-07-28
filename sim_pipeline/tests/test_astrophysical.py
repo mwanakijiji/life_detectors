@@ -426,8 +426,8 @@ class TestAstrophysicalSources:
         assert result.size == 0
 
 
-    @patch("modules.core.astrophysical.plt.savefig")
-    @patch("modules.core.astrophysical.plt.plot")
+    @patch("modules.viz.astrophysical.plt.savefig")
+    @patch("modules.viz.astrophysical.plt.plot")
     def test_calculate_incident_flux_plot_saves_figure(
         self, mock_plot, mock_savefig, config_for_incident_flux
     ):
@@ -664,11 +664,11 @@ class TestGenerateOnskyScene:
             },
         }
 
-    @patch("modules.core.astrophysical.plt.close")
-    @patch("modules.core.astrophysical.plt.colorbar")
+    @patch("modules.viz.astrophysical.plt.close")
+    @patch("modules.viz.astrophysical.plt.colorbar")
     @patch("modules.core.astrophysical.fits.HDUList.writeto")
-    @patch("modules.core.astrophysical.plt.savefig")
-    @patch("modules.core.astrophysical.plt.subplots")
+    @patch("modules.viz.astrophysical.plt.savefig")
+    @patch("modules.viz.astrophysical.plt.subplots")
     def test_builds_scene_for_all_sources(
         self, mock_subplots, mock_savefig, mock_writeto, mock_colorbar, mock_close,
         onsky_config, incident_dict
@@ -690,8 +690,8 @@ class TestGenerateOnskyScene:
             assert cube.shape == (5, 11, 11)
 
     @patch("modules.core.astrophysical.fits.HDUList.writeto")
-    @patch("modules.core.astrophysical.plt.savefig")
-    @patch("modules.core.astrophysical.plt.subplots")
+    @patch("modules.viz.astrophysical.plt.savefig")
+    @patch("modules.viz.astrophysical.plt.subplots")
     def test_raises_when_source_flux_units_differ(
         self, mock_subplots, mock_savefig, mock_writeto, onsky_config, incident_dict
     ):

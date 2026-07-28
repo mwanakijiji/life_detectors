@@ -13,18 +13,15 @@ from dataclasses import dataclass
 import logging
 import ipdb
 import configparser
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 from astropy import units as u
 import astropy.constants as const
 import pandas as pd
 from astropy.io import fits
-from astropy.visualization import ZScaleInterval
 
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
-from ..utils.helpers.formatting import format_plot_title
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
+from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
 
 logger = logging.getLogger(__name__)
 
@@ -400,25 +397,15 @@ class AstrophysicalSources:
 
         
         if plot: # pragma: no cover
-            plt.clf()
-            plt.figure(figsize=(8, 8)) 
-            plt.plot(incident_dict['wavel'], incident_dict['pre_screen_astro_flux_ph_sec_m2_um'])
-            plt.yscale('log')
-            plt.xlim([4, 18]) # for comparison with Dannert
-            plt.ylim([1e-3, 1e9]) # for comparison with Dannert
-            plt.xlabel(f"Wavelength ({incident_dict['wavel'].unit})")
-            plt.ylabel(f"Flux (" + str(incident_dict['pre_screen_astro_flux_ph_sec_m2_um'].unit) + ")")
-            plt.title(
-                format_plot_title(
-                    f"Incident flux from {source_name} (at Earth, rescaled for distance {float(self.config['target']['distance'])} pc)",
-                    self.config,
-                )
-            )
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"incident_{source_name}.png"
-            #ipdb.set_trace()
-            plt.tight_layout()
-            plt.savefig(file_name_plot)
-            logging.info("Saved plot of incident flux to " + file_name_plot)
+            plot_incident_flux(
+                incident_dict['wavel'],
+                incident_dict['pre_screen_astro_flux_ph_sec_m2_um'],
+                source_name,
+                self.config,
+                file_name_plot,
+                distance_pc=float(self.config['target']['distance']),
+            )
         
         return incident_dict
     
@@ -520,54 +507,15 @@ class AstrophysicalSources:
             else:
                 source_collapsed_scene_no_screen += source_array
 
-        dict_source_layered_scene = canvas_3D_dict # vestigial
-
         # Prepare list of all per-source 3D cubes
-        scene_cubes = list(canvas_3D_dict.values())
-        scene_names = list(canvas_3D_dict.keys())
-        # The total/collapsed scene as the last plot
+        dict_source_layered_scene = canvas_3D_dict # vestigial
         if plot:  # pragma: no cover
-            n_rows = 1
-            n_cols = len(scene_cubes) + 1
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 5), squeeze=False)
-            # Compute the 2D collapsed maps and store for the summary
-            for i, (source_cube, name) in enumerate(zip(scene_cubes, scene_names)):
-                ax = axes[0, i]
-                summed = np.sum(source_cube, axis=0)
-                im = ax.imshow(
-                    summed.value,
-                    origin='lower',
-                    norm=LogNorm(),
-                    aspect='equal',
-                    interpolation='none'
-                )
-                ax.set_title(f"{name}")
-                try:
-                    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-                except:
-                    logger.warning(f"No colorbar for {name}")
-            # Last subplot: sum across total/collapsed scene (z-scaled)
-            ax = axes[0, -1]
-            total_summed = np.sum(source_collapsed_scene_no_screen, axis=0)
-            total_data = np.asarray(total_summed.value, dtype=float)
-            vmin, vmax = ZScaleInterval().get_limits(total_data)
-            im = ax.imshow(
-                total_data,
-                origin='lower',
-                vmin=vmin,
-                vmax=vmax,
-                aspect='equal',
-                interpolation='none',
-            )
-            ax.set_title("Total (z-scale)")
-            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-            plt.tight_layout()
-            plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
-            plt.subplots_adjust(top=0.85)
             file_name_plot = str(self.config['dirs']['save_s2n_data_unique_dir']) + f"/scene_no_screen_fyi.png"
-            plt.savefig(file_name_plot, bbox_inches='tight')
-            logger.info(f"FYI scene plot written to {file_name_plot}")
-            plt.close(fig)
+            plot_onsky_scene_fyi(
+                canvas_3D_dict,
+                source_collapsed_scene_no_screen,
+                file_name_plot,
+            )
 
 
         def _cube_values(q):

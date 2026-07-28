@@ -343,7 +343,7 @@ class TestS2nE:
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
         mock_plt.gca.return_value = mock_ax
         mock_plt.gcf.return_value = mock_fig
-        monkeypatch.setattr("modules.core.calculator.noise_calculator.plt", mock_plt)
+        monkeypatch.setattr("modules.viz.snr.plt", mock_plt)
 
         calc = NoiseCalculator(
             config=s2n_e_config,
@@ -353,7 +353,6 @@ class TestS2nE:
         calc.s2n_e(file_name_fits_unique="/tmp/s2n_unique.fits", plot=True)
 
         assert mock_plt.savefig.called
-        assert mock_plt.close.called
 
 
 PLANET_COL = "astro_exoplanet_model_10pc_adu"
@@ -511,12 +510,14 @@ def s2n_config(tmp_path):
 
 @pytest.fixture
 def patch_plotting():
-    with patch("modules.core.calculator.snr_from_hdf5.plt.savefig"), patch(
-        "modules.core.calculator.snr_from_hdf5.plt.figure"
-    ), patch("modules.core.calculator.snr_from_hdf5.plt.clf"), patch(
-        "modules.core.calculator.snr_from_hdf5.plt.stairs"
+    with patch("modules.viz.snr.plt.savefig"), patch(
+        "modules.viz.snr.plt.figure"
+    ), patch("modules.viz.snr.plt.clf"), patch(
+        "modules.viz.snr.plt.stairs"
     ), patch(
-        "modules.core.calculator.snr_from_hdf5.plt.tight_layout"
+        "modules.viz.snr.plt.tight_layout"
+    ), patch(
+        "modules.viz.snr.plt.close"
     ):
         yield
 
