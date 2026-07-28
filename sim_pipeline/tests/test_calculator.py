@@ -20,14 +20,14 @@ from astropy.table import QTable
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.core.calculator import (
-    NoiseCalculator,
+from modules.core.calculator.noise_calculator import NoiseCalculator
+from modules.core.calculator.s2n_cube import (
     S2NCube,
-    calculate_s2n_post_rotation,
     load_s2n_cube,
     read_s2n_cube_hdf5,
     save_s2n_cube,
 )
+from modules.core.calculator.snr_from_hdf5 import calculate_s2n_post_rotation
 
 
 def _geometric_n_bins(lambda_min: float, lambda_max: float, spec_res: float) -> int:
@@ -642,8 +642,8 @@ class TestCalculateS2nPostRotation:
 
 class TestReadHdf5Slots:
     def test_angle_keys_use_meta_canonical_value(self, tmp_path):
-        from modules.core.calculator import read_hdf5_slots
-        from modules.utils.helpers import canonical_angle_deg, format_angle_qe_hdf5_name
+        from modules.core.calculator.snr_from_hdf5 import read_hdf5_slots
+        from modules.utils.helpers.keys import canonical_angle_deg, format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
@@ -663,8 +663,8 @@ class TestReadHdf5Slots:
         assert canonical != angle_linspace or angle_linspace == round(angle_linspace, 2)
 
     def test_read_hdf5_slots_filters_by_qe(self, tmp_path):
-        from modules.core.calculator import build_s2n_cube_from_hdf5, read_hdf5_slots
-        from modules.utils.helpers import format_angle_qe_hdf5_name
+        from modules.core.calculator.snr_from_hdf5 import build_s2n_cube_from_hdf5, read_hdf5_slots
+        from modules.utils.helpers.keys import format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
@@ -687,8 +687,8 @@ class TestReadHdf5Slots:
     def test_build_s2n_cube_uses_config_qe_not_other_angle_files(
         self, tmp_path, s2n_config, patch_plotting
     ):
-        from modules.core.calculator import build_s2n_cube_from_hdf5
-        from modules.utils.helpers import format_angle_qe_hdf5_name
+        from modules.core.calculator.snr_from_hdf5 import build_s2n_cube_from_hdf5
+        from modules.utils.helpers.keys import format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()

@@ -21,9 +21,10 @@ from modules.core.astrophysical import (
     generate_star_scene,
     generate_zodiacal_scene,
 )
-from modules.core.instrumental import InstrumentDepTerms
+from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.data.units import UnitConverter
-from modules.utils.helpers import compute_collecting_area_m2, parse_sky_position_arcsec_yx
+from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
+from modules.utils.helpers.spectra import compute_collecting_area_m2
 
 
 # Mock ipdb before importing batch_process (optional dev dependency)
@@ -388,7 +389,7 @@ def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data)
 
 
 def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
-    from modules.core.instrumental import OutputChannel
+    from modules.core.instrumental.channels import OutputChannel
 
     channel = OutputChannel(name=name, angle_deg=angle_deg)
     channel.instrum_noise = {"stale": 1}
@@ -817,7 +818,7 @@ class TestRunSingleCalculation:
         mock_s2n.assert_called_once()
 
     @patch("batch_process.record_info_at_angle_and_qe")
-    @patch("batch_process.instrumental.InstrumentDepTerms")
+    @patch("batch_process.InstrumentDepTerms")
     @patch("batch_process.astrophysical.AstrophysicalSources")
     @patch("batch_process.create_sample_data")
     @patch("batch_process.calculate_s2n_post_rotation")
@@ -871,7 +872,7 @@ class TestRunSingleCalculation:
         assert "generate_sims = True" in caplog.text
 
     @patch("batch_process.record_info_at_angle_and_qe")
-    @patch("batch_process.instrumental.InstrumentDepTerms")
+    @patch("batch_process.InstrumentDepTerms")
     @patch("batch_process.astrophysical.AstrophysicalSources")
     @patch("batch_process.create_sample_data")
     @patch("batch_process.calculate_s2n_post_rotation")
@@ -1158,8 +1159,8 @@ class TestParameterSweep:
         assert kwargs["overwrite"] is True
         assert kwargs["plot"] is True
 
-    @patch("batch_process.helpers.plot_planet_population_sample")
-    @patch("batch_process.helpers.merge_psg_spectra_to_planet_population", side_effect=lambda df, _: df)
+    @patch("batch_process.plot_planet_population_sample")
+    @patch("batch_process.merge_psg_spectra_to_planet_population", side_effect=lambda df, _: df)
     @patch("batch_process.pd.read_csv")
     @patch("batch_process.batch_qe_nint_process", return_value=True)
     def test_planet_population_calls_batch_per_planet(

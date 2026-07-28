@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.utils.helpers import generate_star_spectrum, generate_planet_bb_spectrum
+from modules.utils.helpers.spectra import generate_star_spectrum, generate_planet_bb_spectrum
 
 import numpy as np
 import pandas as pd

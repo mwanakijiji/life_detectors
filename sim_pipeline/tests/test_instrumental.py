@@ -16,7 +16,9 @@ from astropy.table import QTable
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.core.instrumental import Detector, InstrumentDepTerms, OutputChannel
+from modules.core.instrumental.detector import Detector
+from modules.core.instrumental.channels import OutputChannel
+from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.data.units import UnitConverter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

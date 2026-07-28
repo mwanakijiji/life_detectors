@@ -33,20 +33,26 @@ from astropy.table import QTable
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from modules.core import calculator, astrophysical, instrumental
-from modules.core.calculator import calculate_s2n_post_rotation
+from modules.core import astrophysical
+from modules.core.calculator.snr_from_hdf5 import calculate_s2n_post_rotation
+from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.utils import loader, validator
-from modules.utils.helpers import (
+from modules.utils.helpers.config_ops import (
     _normalize_output_root,
     apply_output_root_override,
-    create_sample_data,
-    ensure_plot_title_context,
+    get_sweep_range,
     modify_config_file_pl_system_params,
     modify_config_file_sweep,
-    record_info_at_angle_and_qe,
+)
+from modules.utils.helpers.formatting import ensure_plot_title_context
+from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
+from modules.utils.helpers.spectra import (
+    compute_collecting_area_m2,
+    create_sample_data,
+    merge_psg_spectra_to_planet_population,
+    plot_planet_population_sample,
 )
 from modules.data.units import UnitConverter
-from modules.utils import helpers
 
 
 
@@ -198,7 +204,7 @@ def run_single_calculation(
 
         # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")
-        instrument_dep_terms = instrumental.InstrumentDepTerms(
+        instrument_dep_terms = InstrumentDepTerms(
             config, 
             unit_converter=UnitConverter(),
             sources_astroph=sources_astroph,
@@ -433,7 +439,7 @@ def parameter_sweep(
     logging.info(f"Number of apertures: {n_apertures}")
 
     # calculate the total collecting area of the telescope
-    collecting_area = helpers.compute_collecting_area_m2(config_single_obs) * u.m**2
+    collecting_area = compute_collecting_area_m2(config_single_obs) * u.m**2
     logging.info(f"Total collecting area of telescope: {collecting_area}")
 
     # does the user want to look at a single planet or a planet population?
@@ -454,7 +460,7 @@ def parameter_sweep(
         logging.info(f"Reading planet population from {file_name_planet_population}")
         lum_types = config_planet_population["lum_type"]  # map luminosities with stellar types
         df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep=r"\s+")
-        df_planet_population = helpers.merge_psg_spectra_to_planet_population(
+        df_planet_population = merge_psg_spectra_to_planet_population(
             df_planet_population, config_planet_population
         )
 
@@ -462,7 +468,7 @@ def parameter_sweep(
         if plot:
             cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
             fyi_plot_path = config_planet_population["file_name_planet_population"]["fyi_plot_name"]
-            helpers.plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
+            plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
             logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
     elif systems_2_look_at == "single_system":
@@ -476,7 +482,7 @@ def parameter_sweep(
     # parameter sweep
     obs = config_sweep["observation"]
 
-    qe_values = helpers.get_sweep_range(obs, "qe")
+    qe_values = get_sweep_range(obs, "qe")
 
     # get the astrophysical sources to include from the config file
     sources_to_include = [

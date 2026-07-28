@@ -14,42 +14,48 @@ import yaml
 from astropy import units as u
 from astropy.table import QTable
 
-import modules.utils.helpers as helpers
-from modules.utils.helpers import (
+from modules.utils.helpers.config_ops import (
+    _normalize_output_root,
+    apply_output_root_override,
+    get_sweep_range,
+    modify_config_file_sweep,
+    validate_file_path,
+)
+from modules.utils.helpers.formatting import (
     _config_get,
     _config_set_plot_title_context,
     _get_plot_title_context,
-    _normalize_output_root,
-    apply_output_root_override,
     build_astrophysical_sources_to_use_title,
     build_observation_detector_title,
     build_system_params_title,
+    ensure_plot_title_context,
+    format_astro_source_label,
+    format_plot_title,
+)
+from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
+from modules.utils.helpers.keys import (
     canonical_angle_deg,
     canonical_dc_rate,
     canonical_qe,
+    format_angle_qe_hdf5_name,
+    hdf5_path_matches_qe,
+    lookup_float_key,
+    parse_angle_from_hdf5_path,
+    parse_dc_qe_group,
+    parse_qe_from_hdf5_path,
+    parse_sky_position_arcsec_yx,
+    resolve_float_key,
+)
+from modules.utils.helpers.spectra import (
+    GENERATED_SPECTRA_FILENAMES,
     compute_collecting_area_m2,
     create_sample_data,
-    ensure_plot_title_context,
-    format_angle_qe_hdf5_name,
-    format_astro_source_label,
-    format_plot_title,
     generate_exozodiacal_spectrum,
     generate_planet_bb_spectrum,
     generate_star_spectrum,
     generate_zodiacal_spectrum,
-    get_sweep_range,
-    lookup_float_key,
     merge_psg_spectra_to_planet_population,
-    modify_config_file_sweep,
-    parse_angle_from_hdf5_path,
-    parse_dc_qe_group,
-    parse_qe_from_hdf5_path,
-    hdf5_path_matches_qe,
-    parse_sky_position_arcsec_yx,
     plot_planet_population_sample,
-    record_info_at_angle_and_qe,
-    resolve_float_key,
-    validate_file_path,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -323,7 +329,7 @@ class TestMergePsgSpectra:
 
 
 class TestPlotPlanetPopulationSample:
-    @patch("modules.utils.helpers.plt.close")
+    @patch("modules.utils.helpers.spectra.plt.close")
     def test_saves_scatter_matrix_for_small_population(self, _mock_close, tmp_path):
         df = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
         out_path = tmp_path / "scatter.png"
@@ -727,23 +733,19 @@ class TestCreateSampleData:
         energy_w_um_m2 = np.ones(n) * u.W / (u.um * u.m**2)
 
         monkeypatch.setattr(
-            helpers,
-            "generate_star_spectrum",
+            "modules.utils.helpers.spectra.generate_star_spectrum",
             lambda config, wavelength_um, plot=False: (photons_um_s, energy_w_um),
         )
         monkeypatch.setattr(
-            helpers,
-            "generate_planet_bb_spectrum",
+            "modules.utils.helpers.spectra.generate_planet_bb_spectrum",
             lambda config, wavelength_um, plot=False: (2 * photons_um_s, 2 * energy_w_um),
         )
         monkeypatch.setattr(
-            helpers,
-            "generate_exozodiacal_spectrum",
+            "modules.utils.helpers.spectra.generate_exozodiacal_spectrum",
             lambda config, wavelength_um, plot=False: (3 * photons_um_s, 3 * energy_w_um),
         )
         monkeypatch.setattr(
-            helpers,
-            "generate_zodiacal_spectrum",
+            "modules.utils.helpers.spectra.generate_zodiacal_spectrum",
             lambda config, wavelength_um, plot=False: (
                 photons_um_s_m2,
                 energy_w_um_m2,
@@ -771,6 +773,6 @@ class TestCreateSampleData:
             assert "luminosity_photons" in df.columns
             assert len(df) == n
 
-        for source, filename in helpers.GENERATED_SPECTRA_FILENAMES.items():
+        for source, filename in GENERATED_SPECTRA_FILENAMES.items():
             assert cfg.get("astrophysical_sources_library", source) == str(out_dir / filename)
 

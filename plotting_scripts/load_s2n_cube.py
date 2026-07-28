@@ -20,14 +20,14 @@ def ensure_sim_pipeline_on_path(repo_root: Path | None = None) -> Path:
 
 
 def get_read_s2n_cube_fn(*, reload_calculator: bool = True) -> Callable[[str | Path], Any]:
-    """Return read_s2n_cube_hdf5, optionally reloading calculator for dev sessions."""
+    """Return read_s2n_cube_hdf5, optionally reloading s2n_cube for dev sessions."""
     ensure_sim_pipeline_on_path()
-    import modules.core.calculator as calculator
+    from modules.core.calculator import s2n_cube
 
     if reload_calculator:
-        importlib.reload(calculator)
+        importlib.reload(s2n_cube)
 
-    return getattr(calculator, "read_s2n_cube_hdf5", calculator.load_s2n_cube)
+    return getattr(s2n_cube, "read_s2n_cube_hdf5", s2n_cube.load_s2n_cube)
 
 
 def load_s2n_cube(path: str | Path, *, reload_calculator: bool = True) -> Any:
@@ -39,7 +39,7 @@ def load_s2n_cube(path: str | Path, *, reload_calculator: bool = True) -> Any:
 def format_cube_plot_title(cube: Any, base_title: str) -> str:
     """Build a multi-line plot title from cube metadata (like sim_pipeline plots)."""
     ensure_sim_pipeline_on_path()
-    from modules.utils.helpers import _join_two_column_text
+    from modules.utils.helpers.formatting import _join_two_column_text
 
     body = _join_two_column_text(cube.title_context, cube.sources_context)
     if not body:
