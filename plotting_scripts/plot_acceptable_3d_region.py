@@ -301,7 +301,7 @@ def _detectors_visible_on_both_panels(ax_dc, ax_qe, detectors):
 
 
 def _place_detector_labels(
-    ax, detectors, mode, fontsize=8, omit_top_stack=True, bold_names=None
+    ax, detectors, mode, fontsize=10, omit_top_stack=True, bold_names=None
 ):
     """
     Place detector name annotations just above the ROI lines.
@@ -443,6 +443,12 @@ def _place_detector_labels(
             rotation_mode="anchor",
             clip_on=True,
             zorder=5,
+            bbox={
+                "boxstyle": "round,pad=0.25",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.5,
+            },
         )
 
     # Optionally park overflowing / overlapping labels at the top-left.
@@ -466,9 +472,8 @@ def _place_detector_labels(
             bbox={
                 "boxstyle": "round,pad=0.25",
                 "facecolor": "white",
-                "edgecolor": color,
-                "linewidth": 1.2,
-                "alpha": 0.92,
+                "edgecolor": "none",
+                "alpha": 0.5,
             },
         )
 
@@ -629,6 +634,10 @@ def _camera_from_zoom_and_angles(
     )
 
 
+# Shared case label for the 2D marginalized panels and the 3D isosurface plot.
+CASE_ANNOTATION = "Case:\nEarth twin at 10 pc"
+
+
 def _build_acceptable_volume_figure(
     snr_plot,
     wavel,
@@ -646,6 +655,7 @@ def _build_acceptable_volume_figure(
     bold_fonts=False,
     camera_zoom=1.0,
     camera_angles_deg=(0.0, 0.0, 0.0),
+    case_annotation=None,
 ):
     """
     Build a Plotly 3D figure of SNR >= s2n_min with detector ROI boxes.
@@ -767,6 +777,20 @@ def _build_acceptable_volume_figure(
         ),
         font=dict(size=10),
     )
+    if case_annotation:
+        # Paper coords: top-left of the figure (matches ax_dc.text on the 2D panel).
+        fig.add_annotation(
+            text=case_annotation.replace("\n", "<br>"),
+            xref="paper",
+            yref="paper",
+            x=0.15,
+            y=0.75,
+            xanchor="left",
+            yanchor="top",
+            showarrow=False,
+            align="left",
+            font=dict(size=16, color="black"),
+        )
     return fig
 
 
@@ -860,6 +884,7 @@ def _show_interactive_volume_plotly(
         bold_fonts=True,
         camera_zoom=camera_zoom,
         camera_angles_deg=camera_angles_deg,
+        case_annotation=CASE_ANNOTATION,
     )
     if output_html is None:
         output_html = (
@@ -913,6 +938,7 @@ def _save_annotated_volume_png(
         bold_fonts=True,
         camera_zoom=camera_zoom,
         camera_angles_deg=camera_angles_deg,
+        case_annotation=CASE_ANNOTATION,
     )
     if output_png is None:
         output_png = (
@@ -1077,6 +1103,12 @@ fig.tight_layout()
 bold_names = _detectors_visible_on_both_panels(ax_dc, ax_qe, detectors_dict.values())
 _place_detector_labels(ax_dc, detectors_dict.values(), mode="wavel_dc", bold_names=bold_names)
 _place_detector_labels(ax_qe, detectors_dict.values(), mode="wavel_qe", bold_names=bold_names)
+ax_dc.text(
+    0.02, 0.98, CASE_ANNOTATION,
+    transform=ax_dc.transAxes,
+    ha="left", va="top",
+    fontsize=16, zorder=6,
+)
 
 out_path = "/Users/eckhartspalding/Downloads/junk_acceptable_s2n_region_3d_isosurface.png"
 plt.savefig(out_path, bbox_inches="tight", dpi=200)
