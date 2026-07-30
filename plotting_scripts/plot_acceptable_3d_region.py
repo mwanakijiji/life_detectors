@@ -999,11 +999,14 @@ def _plot_marginalized_panel(ax, x, y, snr_2d, xlabel, ylabel, title):
         x,
         y,
         snr_2d.T,
-        levels=np.linspace(s2n_min, snr_2d.max(), 20),
+        levels=s2n_levels,
         cmap="Blues",
         alpha=0.85,
     )
-    ax.contour(x, y, snr_2d.T, levels=[s2n_min], colors="navy", linewidths=1)
+    cs = ax.contour(
+        x, y, snr_2d.T, levels=s2n_levels, colors="navy", linewidths=0
+    )
+    ax.clabel(cs, fmt=lambda v: f"{v:g}", inline=True, fontsize=11)
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
     ax.set_title(title, pad=12, fontsize=14)
@@ -1031,7 +1034,8 @@ wavelength = cube.wavelength
 dark_current = cube.dark_current
 qe_list = cube.qe
 
-s2n_min = 3.0
+s2n_levels = np.arange(3,13)
+s2n_min = np.min(s2n_levels)
 
 # Subsample for display only (does not change the saved HDF5 data).
 dc_stride = 50   # 0.001 e/pix/s steps -> 0.05 e/pix/s bins
