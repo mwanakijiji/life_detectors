@@ -14,6 +14,9 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import pandas as pd
 import plotly.graph_objects as go
 import ipdb
+import glob
+
+from load_s2n_cube import load_s2n_cube, merge_s2n_cubes, print_cube_statistics
 
 # Maximally distinct categorical palette (spaced hues; sequential assignment).
 _DETECTOR_COLORS = [
@@ -635,7 +638,39 @@ def _camera_from_zoom_and_angles(
 
 
 # Shared case label for the 2D marginalized panels and the 3D isosurface plot.
-CASE_ANNOTATION = "Case:\nEarth twin at 10 pc"
+CASE_ANNOTATION = "Earth twin at 10 pc"
+
+
+def _format_case_annotation(base=CASE_ANNOTATION, *, qe_value=None, dc_value=None):
+    """Append chosen QE and/or DC slice values to the case annotation string."""
+    lines = [base.rstrip()]
+    if qe_value is not None:
+        lines.append(f"QE = {float(qe_value):g}")
+    if dc_value is not None:
+        lines.append(f"DC = {float(dc_value):g} e/pix/s")
+    return "\n".join(lines)
+
+
+def _place_case_annotation(ax, text):
+    """Case label overlapping the top-left axes corner, in a white outlined box."""
+    ax.text(
+        -0.12,
+        1.04,
+        text,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=16,
+        zorder=10,
+        clip_on=False,
+        bbox={
+            "boxstyle": "square,pad=0.35",
+            "facecolor": "white",
+            "edgecolor": "black",
+            "linewidth": 1.0,
+            "alpha": 1.0,
+        },
+    )
 
 
 def _build_acceptable_volume_figure(
@@ -783,13 +818,17 @@ def _build_acceptable_volume_figure(
             text=case_annotation.replace("\n", "<br>"),
             xref="paper",
             yref="paper",
-            x=0.15,
-            y=0.75,
+            x=0.02,
+            y=0.98,
             xanchor="left",
             yanchor="top",
             showarrow=False,
             align="left",
             font=dict(size=16, color="black"),
+            bgcolor="white",
+            bordercolor="black",
+            borderwidth=1,
+            borderpad=4,
         )
     return fig
 
@@ -866,6 +905,7 @@ def _show_interactive_volume_plotly(
     output_html=None,
     camera_zoom=1.0,
     camera_angles_deg=(0.0, 0.0, 0.0),
+    case_annotation=CASE_ANNOTATION,
 ):
     """Save and open a standalone interactive 3D plot (no local server needed)."""
     fig = _build_acceptable_volume_figure(
@@ -884,7 +924,7 @@ def _show_interactive_volume_plotly(
         bold_fonts=True,
         camera_zoom=camera_zoom,
         camera_angles_deg=camera_angles_deg,
-        case_annotation=CASE_ANNOTATION,
+        case_annotation=case_annotation,
     )
     if output_html is None:
         output_html = (
@@ -920,6 +960,7 @@ def _save_annotated_volume_png(
     scale=5,
     camera_zoom=1.0,
     camera_angles_deg=(0.0, 0.0, 0.0),
+    case_annotation=CASE_ANNOTATION,
 ):
     """Save the annotated 3D volume (with detector labels) as a high-res PNG."""
     fig = _build_acceptable_volume_figure(
@@ -938,7 +979,7 @@ def _save_annotated_volume_png(
         bold_fonts=True,
         camera_zoom=camera_zoom,
         camera_angles_deg=camera_angles_deg,
-        case_annotation=CASE_ANNOTATION,
+        case_annotation=case_annotation,
     )
     if output_png is None:
         output_png = (
@@ -993,7 +1034,81 @@ def _read_csv(filename):
 
     return detectors_dict
 
-def _plot_marginalized_panel(ax, x, y, snr_2d, xlabel, ylabel, title):
+def _contour_y_at_x(segs, x_target):
+    """Return y on contour segments at ``x_target`` (linear interp), or None."""
+    ys = []
+    nearest_y = None
+    nearest_dx = np.inf
+    for seg in segs:
+        if len(seg) == 0:
+            continue
+        for i in range(len(seg) - 1):
+            x0, y0 = float(seg[i, 0]), float(seg[i, 1])
+            x1, y1 = float(seg[i + 1, 0]), float(seg[i + 1, 1])
+            for x_v, y_v in ((x0, y0), (x1, y1)):
+                dx = abs(x_v - x_target)
+                if dx < nearest_dx:
+                    nearest_dx = dx
+                    nearest_y = y_v
+            # Segment crosses the target x: interpolate y onto the contour.
+            if (x0 - x_target) * (x1 - x_target) <= 0 and x0 != x1:
+                t = (x_target - x0) / (x1 - x0)
+                ys.append(y0 + t * (y1 - y0))
+        if len(seg) == 1:
+            dx = abs(float(seg[0, 0]) - x_target)
+            if dx < nearest_dx:
+                nearest_dx = dx
+                nearest_y = float(seg[0, 1])
+    if ys:
+        return float(np.median(ys))
+    return nearest_y
+
+
+def _nearest_grid_index(grid, value):
+    """Index of the grid sample closest to ``value``."""
+    grid = np.asarray(grid, dtype=float)
+    return int(np.argmin(np.abs(grid - float(value))))
+
+
+def _plot_marginalized_panel(
+    ax,
+    wavelength,
+    dark_current,
+    qe,
+    snr_cube,
+    *,
+    qe_value=None,
+    dc_value=None,
+    title=None,
+):
+    """
+    Contour S/N vs wavelength for a single fixed QE or DC slice.
+
+    ``snr_cube`` has shape ``(n_wavelength, n_dc, n_qe)``.
+    Pass exactly one of ``qe_value`` (plot y=DC) or ``dc_value`` (plot y=QE).
+    """
+    if (qe_value is None) == (dc_value is None):
+        raise ValueError("Pass exactly one of qe_value or dc_value")
+
+    x = np.asarray(wavelength, dtype=float)
+    if qe_value is not None:
+        i_qe = _nearest_grid_index(qe, qe_value)
+        snr_2d = np.asarray(snr_cube[:, :, i_qe], dtype=float)
+        y = np.asarray(dark_current, dtype=float)
+        ylabel = "Dark current (e/pix/s)"
+        qe_used = float(np.asarray(qe, dtype=float)[i_qe])
+        if title is None:
+            title = f"QE = {qe_used:g}, contour at {s2n_min:g}"
+    else:
+        i_dc = _nearest_grid_index(dark_current, dc_value)
+        snr_2d = np.asarray(snr_cube[:, i_dc, :], dtype=float)
+        y = np.asarray(qe, dtype=float)
+        ylabel = "QE"
+        dc_used = float(np.asarray(dark_current, dtype=float)[i_dc])
+        if title is None:
+            title = f"DC = {dc_used:g} e/pix/s, contour at {s2n_min:g}"
+
+    xlabel = "Wavelength (um)"
     # contourf expects Z shape (len(y), len(x)); snr_2d is (len(x), len(y)).
     ax.contourf(
         x,
@@ -1006,10 +1121,32 @@ def _plot_marginalized_panel(ax, x, y, snr_2d, xlabel, ylabel, title):
     cs = ax.contour(
         x, y, snr_2d.T, levels=s2n_levels, colors="navy", linewidths=0
     )
-    ax.clabel(cs, fmt=lambda v: f"{v:g}", inline=True, fontsize=11)
+    # Emphasize the S/N = 3 contour with a visible dark outline.
+    if 3 in np.asarray(s2n_levels):
+        ax.contour(
+            x, y, snr_2d.T, levels=[3], colors="black", linewidths=1.5, zorder=4
+        )
+    # Place level labels in a column near the right edge, on each contour.
+    x_min, x_max = float(x.min()), float(x.max())
+    x_label = x_max - 0.02 * (x_max - x_min)
+    for level, segs in zip(cs.levels, cs.allsegs):
+        y_label = _contour_y_at_x(segs, x_label)
+        if y_label is None:
+            continue
+        ax.text(
+            x_label,
+            y_label,
+            f"{level:g}",
+            ha="right",
+            va="center",
+            fontsize=11,
+            color="navy",
+            clip_on=True,
+            zorder=6,
+        )
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
-    ax.set_title(title, pad=12, fontsize=14)
+    #ax.set_title(title, pad=12, fontsize=14)
     ax.tick_params(axis="both", which="major", labelsize=14)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
 
@@ -1019,14 +1156,24 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 #################
 
-from load_s2n_cube import load_s2n_cube, print_cube_statistics
+# Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py.
+# Each file is one QE slice; load them in a loop and merge along QE.
+s2n_hdf5_dir = Path(
+    "/Users/eckhartspalding/Documents/git.repos/life_detectors/data/20260730_s2n_cube_sweep/"
+)
+s2n_hdf5_files = sorted(s2n_hdf5_dir.glob("*.hdf5"))
+if not s2n_hdf5_files:
+    raise FileNotFoundError(f"No HDF5 cubes found in {s2n_hdf5_dir}")
 
-# Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
-s2n_hdf5_path = "/Users/eckhartspalding/Documents/git.repos/life_detectors/plotting_scripts/large_sweep_test/qe_0.80_s2n_cube.hdf5"
+detectors_dict = _read_csv(
+    filename="/Users/eckhartspalding/Documents/git.repos/life_detectors/dev_notebooks/data/detector_catalog_truncated_for_paper.csv"
+)
 
-detectors_dict = _read_csv(filename='/Users/eckhartspalding/Documents/git.repos/life_detectors/dev_notebooks/data/detector_catalog_truncated_for_paper.csv')
-
-cube = load_s2n_cube(s2n_hdf5_path)
+cubes = []
+for s2n_hdf5_path in s2n_hdf5_files:
+    print(f"Loading {s2n_hdf5_path.name}")
+    cubes.append(load_s2n_cube(s2n_hdf5_path))
+cube = merge_s2n_cubes(cubes)
 print_cube_statistics(cube)
 
 snr_cube = cube.snr
@@ -1034,7 +1181,7 @@ wavelength = cube.wavelength
 dark_current = cube.dark_current
 qe_list = cube.qe
 
-s2n_levels = np.arange(3,13)
+s2n_levels = np.arange(3,15)
 s2n_min = np.min(s2n_levels)
 
 # Subsample for display only (does not change the saved HDF5 data).
@@ -1049,17 +1196,13 @@ print(
     f"(subsampled from {snr_cube.shape})"
 )
 
-# Plot axes: x=wavelength, y=QE, z=dark current (transpose from cube order wavel, DC, QE).
+# Plot axes for 3D: x=wavelength, y=QE, z=dark current (transpose from cube order).
 snr_plot = snr_vis.transpose(0, 2, 1)
 
 if snr_plot.max() < s2n_min:
     raise ValueError(f"No voxels reach S/N >= {s2n_min:g}; isosurface is empty.")
 if snr_plot.min() >= s2n_min:
     raise ValueError(f"All voxels exceed S/N >= {s2n_min:g}; no boundary to extract.")
-
-# Marginalize over QE and DC (max S/N projection onto each plane).
-snr_wavel_dc = np.max(snr_plot, axis=1)  # shape (wavelength, DC)
-snr_wavel_qe = np.max(snr_plot, axis=2)  # shape (wavelength, QE)
 
 # 3D camera controls for the annotated high-res PNG.
 # camera_zoom > 1 zooms in; < 1 zooms out.
@@ -1070,30 +1213,37 @@ camera_angles_deg = (10.0, 20.0, -30.0)
 fig = plt.figure(figsize=(14, 5.5))
 gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.28)
 
+# plot of DC vs. wavel
+qe_choice = 0.8
+dc_choice = 0.2
+# DC-vs-wavelength panel: annotate fixed QE only (not DC).
+case_annotation_dc = _format_case_annotation(CASE_ANNOTATION, qe_value=qe_choice)
+# QE-vs-wavelength panel: annotate fixed DC only (not QE).
+case_annotation_qe = _format_case_annotation(CASE_ANNOTATION, dc_value=dc_choice)
+
 ax_dc = fig.add_subplot(gs[0, 0])
 _plot_marginalized_panel(
     ax_dc,
     wavel_vis,
     dc_vis,
-    snr_wavel_dc,
-    "Wavelength (um)",
-    "Dark current (e/pix/s)",
-    f"Marginalized over QE (max S/N, contour at {s2n_min:g})",
+    qe_list,
+    snr_vis,
+    qe_value=qe_choice,
 )
 for detector in detectors_dict.values():
     detector.plot(ax_dc, mode="wavel_dc")
 ax_dc.set_xlim(wavel_vis.min(), wavel_vis.max())
 ax_dc.set_ylim(dc_vis.min(), 0.5)
 
+# Right: wavelength vs QE at a fixed DC.
 ax_qe = fig.add_subplot(gs[0, 1])
 _plot_marginalized_panel(
     ax_qe,
     wavel_vis,
+    dc_vis,
     qe_list,
-    snr_wavel_qe,
-    "Wavelength (um)",
-    "QE",
-    f"Marginalized over DC (max S/N, contour at {s2n_min:g})",
+    snr_vis,
+    dc_value=dc_choice,
 )
 for detector in detectors_dict.values():
     detector.plot(ax_qe, mode="wavel_qe")
@@ -1107,12 +1257,8 @@ fig.tight_layout()
 bold_names = _detectors_visible_on_both_panels(ax_dc, ax_qe, detectors_dict.values())
 _place_detector_labels(ax_dc, detectors_dict.values(), mode="wavel_dc", bold_names=bold_names)
 _place_detector_labels(ax_qe, detectors_dict.values(), mode="wavel_qe", bold_names=bold_names)
-ax_dc.text(
-    0.02, 0.98, CASE_ANNOTATION,
-    transform=ax_dc.transAxes,
-    ha="left", va="top",
-    fontsize=16, zorder=6,
-)
+_place_case_annotation(ax_dc, case_annotation_dc)
+_place_case_annotation(ax_qe, case_annotation_qe)
 
 out_path = "/Users/eckhartspalding/Downloads/junk_acceptable_s2n_region_3d_isosurface.png"
 plt.savefig(out_path, bbox_inches="tight", dpi=200)
@@ -1129,6 +1275,7 @@ _save_annotated_volume_png(
     z_max=0.5,
     camera_zoom=camera_zoom,
     camera_angles_deg=camera_angles_deg,
+    case_annotation=CASE_ANNOTATION,
 )
 
 #plt.show()

@@ -4,6 +4,7 @@ import configparser
 import json
 import logging
 import pickle
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Literal, Union
@@ -150,9 +151,95 @@ def read_s2n_cube_hdf5(path: Union[str, Path]) -> S2NCube:
         )
 
 
-def load_s2n_cube(path: Union[str, Path]) -> S2NCube:
-    """Load an S2NCube from pickle or HDF5."""
+def merge_s2n_cubes(cubes: Sequence[S2NCube]) -> S2NCube:
+    """
+    Concatenate one or more S2NCube objects along the QE axis.
+
+    Wavelength / dark-current grids must match. Resulting QE values are sorted
+    ascending; duplicate QEs raise ``ValueError``.
+    """
+    cubes = list(cubes)
+    if not cubes:
+        raise ValueError("No S2NCube objects to merge")
+    if len(cubes) == 1:
+        return cubes[0]
+
+    ref = cubes[0]
+    for cube in cubes[1:]:
+        if cube.snr.shape[:2] != ref.snr.shape[:2]:
+            raise ValueError(
+                "Cannot merge cubes with mismatched (wavelength, DC) shapes: "
+                f"{ref.snr.shape} vs {cube.snr.shape}"
+            )
+        if not np.allclose(cube.wavelength, ref.wavelength):
+            raise ValueError("Cannot merge cubes with mismatched wavelength grids")
+        if not np.allclose(cube.dark_current, ref.dark_current):
+            raise ValueError("Cannot merge cubes with mismatched dark-current grids")
+        if not np.allclose(cube.wavel_bin_width, ref.wavel_bin_width):
+            raise ValueError("Cannot merge cubes with mismatched wavel_bin_width")
+        if not np.allclose(cube.wavel_bin_edges, ref.wavel_bin_edges):
+            raise ValueError("Cannot merge cubes with mismatched wavel_bin_edges")
+
+    snr = np.concatenate([c.snr for c in cubes], axis=2)
+    snr_tot = np.concatenate([c.snr_tot for c in cubes], axis=1)
+    base_titles = np.concatenate([c.base_titles for c in cubes], axis=1)
+    qe = np.concatenate([c.qe for c in cubes])
+
+    if qe.size != np.unique(qe).size:
+        raise ValueError(f"Duplicate QE values when merging cubes: {qe}")
+
+    order = np.argsort(qe, kind="mergesort")
+    return S2NCube(
+        snr=snr[:, :, order],
+        wavelength=ref.wavelength,
+        wavel_bin_width=ref.wavel_bin_width,
+        wavel_bin_edges=ref.wavel_bin_edges,
+        dark_current=ref.dark_current,
+        qe=qe[order],
+        snr_tot=snr_tot[:, order],
+        base_titles=base_titles[:, order],
+        title_context=ref.title_context,
+        sources_context=ref.sources_context,
+        read_dir=ref.read_dir,
+        n_angles=ref.n_angles,
+        n_int_per_angle=ref.n_int_per_angle,
+        t_int_frame=ref.t_int_frame,
+        n_int_total=ref.n_int_total,
+        config=ref.config,
+    )
+
+
+def discover_s2n_cube_hdf5_files(directory: Union[str, Path]) -> List[Path]:
+    """Return HDF5 cube paths in ``directory`` (prefers ``*s2n_cube.hdf5``)."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise NotADirectoryError(f"Expected a directory of S/N cube HDF5 files: {directory}")
+    files = sorted(directory.glob("*s2n_cube.hdf5"))
+    if not files:
+        files = sorted(directory.glob("*.hdf5"))
+    if not files:
+        raise FileNotFoundError(f"No HDF5 S/N cube files found in {directory}")
+    return files
+
+
+def load_s2n_cube(
+    path: Union[str, Path, Sequence[Union[str, Path]]],
+) -> S2NCube:
+    """
+    Load an S2NCube from pickle, HDF5, a directory of per-QE HDF5 cubes, or a
+    sequence of cube paths (merged along the QE axis).
+    """
+    if not isinstance(path, (str, Path)) and isinstance(path, Sequence):
+        paths = [Path(p) for p in path]
+        if not paths:
+            raise ValueError("Empty path sequence for load_s2n_cube")
+        return merge_s2n_cubes([load_s2n_cube(p) for p in paths])
+
     path = Path(path)
+    if path.is_dir():
+        return merge_s2n_cubes(
+            [read_s2n_cube_hdf5(p) for p in discover_s2n_cube_hdf5_files(path)]
+        )
     if path.suffix == ".pkl":
         with open(path, "rb") as handle:
             return pickle.load(handle)

@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-
+from matplotlib import rcParams
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -15,7 +15,7 @@ from load_s2n_cube import load_s2n_cube, print_cube_statistics
 
 # Path to S/N cubes HDF5 written by save_s2n_cube() in calculator.py
 #s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/dc_5_qe_0.90_s2n_cube.hdf5'
-s2n_hdf5_path = '/Users/eckhartspalding/Downloads/large_sweep_test/qe_0.80_s2n_cube.hdf5'
+s2n_hdf5_path = '/Users/eckhartspalding/Documents/git.repos/life_detectors/plotting_scripts/large_sweep_test/qe_0.80_s2n_cube.hdf5'
 
 cube = load_s2n_cube(s2n_hdf5_path)
 print_cube_statistics(cube)
@@ -28,6 +28,8 @@ qe = cube.qe
 
 # S/N vs wavelength for one QE, varying DC
 qe_idx = 0
+
+'''
 plt.figure(figsize=(10, 5))
 for i_dc, dc_val in enumerate(dark_current):
     if dc_val <= 0.5:
@@ -52,9 +54,10 @@ plt.title('S/N for different DCs')
 #plt.legend()
 #plt.show()
 plt.savefig('/Users/eckhartspalding/Downloads/junk_s2n_vs_dc.pdf')
+'''
+
 
 # S/N vs wavelength for one QE, varying DC
-from matplotlib import rcParams
 
 qe_idx = 6
 colors = rcParams["axes.prop_cycle"].by_key()["color"]
@@ -64,12 +67,10 @@ current_color = colors[0]
 qe_choice = qe[qe_idx]
 plt.figure(figsize=(10, 5))
 for i_dc, dc_val in enumerate(dark_current):
-    if dc_val <= 0.5:
-        label_this = f"{dc_val:.2f} e/pix/s"
-    else:
-        label_this = None
+    
     # advance color only on 0.05 DC steps; reuse for values in between
     if dc_val % 0.05 == 0:
+        label_this = f"{dc_val:.2f} e/pix/s"
         color_idx += 1
         current_color = colors[color_idx % len(colors)]
         plt.stairs(
@@ -80,7 +81,8 @@ for i_dc, dc_val in enumerate(dark_current):
             alpha=1,
             color=current_color,
         )
-    else:
+    '''
+    elif dc_val % 0.01 == 0:
         plt.stairs(
             snr_cube[:, i_dc, qe_idx],
             edges=cube.wavel_bin_edges,
@@ -88,7 +90,7 @@ for i_dc, dc_val in enumerate(dark_current):
             alpha=0.3,
             color=current_color,
         )
-
+    '''
 plt.grid(which="both", linestyle="--", linewidth=0.5, alpha=0.7)
 plt.xlabel("Wavelength (um)", fontsize=18)
 plt.ylabel("S/N", fontsize=18)

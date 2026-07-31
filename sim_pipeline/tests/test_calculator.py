@@ -21,6 +21,7 @@ sys.modules["ipdb"].set_trace = lambda: None
 from modules.core.calculator.s2n_cube import (
     S2NCube,
     load_s2n_cube,
+    merge_s2n_cubes,
     read_s2n_cube_hdf5,
     save_s2n_cube,
 )
@@ -463,3 +464,57 @@ class TestSaveS2nCube:
             formatted = meta["formatted_plot_titles"][:].astype(str)
             assert formatted.shape == cube.base_titles.shape
             assert formatted[0, 0].startswith("title_a")
+
+
+class TestMergeS2nCubes:
+    def test_merge_along_qe_and_sort(self):
+        cube_hi = _make_sample_s2n_cube()
+        cube_hi.qe = np.array([0.9])
+        cube_hi.snr = cube_hi.snr[:, :, 0:1] + 10.0
+        cube_hi.snr_tot = cube_hi.snr_tot[:, 0:1] + 10.0
+        cube_hi.base_titles = cube_hi.base_titles[:, 0:1]
+
+        cube_lo = _make_sample_s2n_cube()
+        cube_lo.qe = np.array([0.4])
+        cube_lo.snr = cube_lo.snr[:, :, 0:1]
+        cube_lo.snr_tot = cube_lo.snr_tot[:, 0:1]
+        cube_lo.base_titles = cube_lo.base_titles[:, 0:1]
+
+        merged = merge_s2n_cubes([cube_hi, cube_lo])
+        assert merged.snr.shape == (2, 2, 2)
+        assert np.allclose(merged.qe, [0.4, 0.9])
+        assert np.allclose(merged.snr[:, :, 0], cube_lo.snr[:, :, 0])
+        assert np.allclose(merged.snr[:, :, 1], cube_hi.snr[:, :, 0])
+
+    def test_load_directory_of_per_qe_hdf5(self, tmp_path):
+        for qe_val, offset in ((0.8, 8.0), (0.3, 3.0)):
+            cube = _make_sample_s2n_cube()
+            cube.qe = np.array([qe_val])
+            cube.snr = cube.snr[:, :, 0:1] + offset
+            cube.snr_tot = cube.snr_tot[:, 0:1] + offset
+            cube.base_titles = cube.base_titles[:, 0:1]
+            save_s2n_cube(
+                cube,
+                tmp_path / f"qe_{qe_val:04.2f}_s2n_cube.hdf5",
+                file_format="hdf5",
+            )
+
+        merged = load_s2n_cube(tmp_path)
+        assert merged.snr.shape == (2, 2, 2)
+        assert np.allclose(merged.qe, [0.3, 0.8])
+        assert np.allclose(merged.snr[:, :, 0], _make_sample_s2n_cube().snr[:, :, 0] + 3.0)
+        assert np.allclose(merged.snr[:, :, 1], _make_sample_s2n_cube().snr[:, :, 0] + 8.0)
+
+    def test_merge_rejects_duplicate_qe(self):
+        a = _make_sample_s2n_cube()
+        a.qe = np.array([0.5])
+        a.snr = a.snr[:, :, 0:1]
+        a.snr_tot = a.snr_tot[:, 0:1]
+        a.base_titles = a.base_titles[:, 0:1]
+        b = _make_sample_s2n_cube()
+        b.qe = np.array([0.5])
+        b.snr = b.snr[:, :, 0:1]
+        b.snr_tot = b.snr_tot[:, 0:1]
+        b.base_titles = b.base_titles[:, 0:1]
+        with pytest.raises(ValueError, match="Duplicate QE"):
+            merge_s2n_cubes([a, b])

@@ -31,9 +31,28 @@ def get_read_s2n_cube_fn(*, reload_calculator: bool = True) -> Callable[[str | P
 
 
 def load_s2n_cube(path: str | Path, *, reload_calculator: bool = True) -> Any:
-    """Load an S/N cube from HDF5 (or .pkl via load_s2n_cube fallback)."""
-    read_s2n_cube_hdf5 = get_read_s2n_cube_fn(reload_calculator=reload_calculator)
-    return read_s2n_cube_hdf5(str(path))
+    """
+    Load an S/N cube from HDF5, pickle, a directory of per-QE HDF5 cubes, or a
+    sequence of paths (merged along QE).
+    """
+    ensure_sim_pipeline_on_path()
+    from modules.core.calculator import s2n_cube
+
+    if reload_calculator:
+        importlib.reload(s2n_cube)
+
+    return s2n_cube.load_s2n_cube(path)
+
+
+def merge_s2n_cubes(cubes, *, reload_calculator: bool = True) -> Any:
+    """Concatenate S2NCube objects along the QE axis (sorted by QE)."""
+    ensure_sim_pipeline_on_path()
+    from modules.core.calculator import s2n_cube
+
+    if reload_calculator:
+        importlib.reload(s2n_cube)
+
+    return s2n_cube.merge_s2n_cubes(cubes)
 
 
 def format_cube_plot_title(cube: Any, base_title: str) -> str:
