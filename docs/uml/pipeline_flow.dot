@@ -1,0 +1,51 @@
+digraph pipeline {
+  rankdir=LR;
+  node [shape=box, style="rounded,filled", fillcolor="white"];
+  edge [color="#444444"];
+
+  subgraph cluster_astrophysics {
+    label="astrophysics";
+    style="dashed";
+    color="#377eb8";
+    calculate_incident_flux;
+    generate_onsky_scene;
+  }
+
+  subgraph cluster_intrinsic_instrumental_noise {
+    label="intrinsic instrumental noise";
+    style="dashed";
+    color="#4daf4a";
+    calculate_instrinsic_instrumental_noise;
+  }
+
+  subgraph cluster_instrument_transmission_per_angle {
+    label="instrument transmission (per angle)";
+    style="dashed";
+    color="#e41a1c";
+    generate_instrument_transmission;
+  }
+
+  calculate_incident_flux [label="calculate_incident_flux"];
+  generate_onsky_scene [label="generate_onsky_scene"];
+  calculate_instrinsic_instrumental_noise [label="calculate_instrinsic_instrumental_noise"];
+  combine_astro_and_instrum_signals [label="combine_astro_and_instrum_signals"];
+  chop_signal [label="chop_signal"];
+  disperse_astro_signals_on_detector [label="disperse_astro_signals_on_detector"];
+  pass_through_aperture [label="pass_through_aperture"];
+  generate_instrument_transmission [label="generate_instrument_transmission"];
+  pass_through_transmission_screens [label="pass_through_transmission_screens"];
+  record_info_at_angle_and_qe [label="record_info_at_angle_and_qe"];
+  apply_detector_effects [label="apply_detector_effects", style="rounded,dashed,filled", fillcolor="#f0f0f0", fontcolor="#666666"];
+
+  calculate_incident_flux -> generate_onsky_scene;
+  pass_through_aperture -> calculate_instrinsic_instrumental_noise;
+  apply_detector_effects -> combine_astro_and_instrum_signals;
+  calculate_instrinsic_instrumental_noise -> combine_astro_and_instrum_signals;
+  combine_astro_and_instrum_signals -> chop_signal;
+  pass_through_aperture -> disperse_astro_signals_on_detector;
+  pass_through_transmission_screens -> pass_through_aperture;
+  generate_onsky_scene -> pass_through_transmission_screens;
+  generate_instrument_transmission -> pass_through_transmission_screens;
+  chop_signal -> record_info_at_angle_and_qe;
+  disperse_astro_signals_on_detector -> apply_detector_effects;
+}

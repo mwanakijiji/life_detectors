@@ -259,6 +259,11 @@ def run_single_calculation(
             logger.info("Assigning intrinsic instrumental noise ...")
             instrument_dep_terms.calculate_instrinsic_instrumental_noise()
 
+            for ch in instrument_dep_terms.output_channels.values():
+                for effect in instrument_dep_terms.detector_effects:
+                    i=0 # for now, only one readout index
+                    effect.apply(ch, readout_index=i)
+
             # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
             # output units: 
             #   ph/sec/um

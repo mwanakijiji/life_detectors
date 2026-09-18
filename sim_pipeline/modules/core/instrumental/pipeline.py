@@ -9,6 +9,109 @@ from .transfer import TransferMixin
 from .transmission import TransmissionMixin
 
 
+class DetectorEffect:
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class PersistenceEffect:
+    name = "persistence"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class GainVariabilityEffect:
+    name = "gain_variability"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class OneOverFNoiseEffect:
+    name = "one_over_f"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class TransferFunctionEffect:
+    name = "transfer_function"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class AgingPixelsEffect:
+    name = "aging_pixels"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class CosmicRaysEffect:
+    name = "cosmic_rays"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class HotPixelsEffect:
+    name = "hot_pixels"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+class ReadNoiseEffect:
+    name = "readnoise"
+    def __init__(self, config):
+        print('TBD')
+    def apply(self, channel, readout_index) -> None:
+        # mutate channel in place
+        print('TBD')
+    def reset(self) -> None:
+        print('TBD')
+
+
+EFFECT_REGISTRY: dict[str, type[DetectorEffect]] = {
+    "persistence": PersistenceEffect,
+    "gain_variability": GainVariabilityEffect,
+    "one_over_f": OneOverFNoiseEffect,
+    "transfer_function": TransferFunctionEffect,
+    "aging_pixels": AgingPixelsEffect,
+    "cosmic_rays": CosmicRaysEffect,
+    "hot_pixels": HotPixelsEffect,
+    "readnoise": ReadNoiseEffect,
+}
+
+
+
 class InstrumentDepTerms(TablesMixin, TransmissionMixin, TransferMixin):
     # Provides the effects of the instrument (including astro flux passed through the telescope aperture)
 
@@ -31,6 +134,20 @@ class InstrumentDepTerms(TablesMixin, TransmissionMixin, TransferMixin):
         self.prop_dict = {}
         # assume wavelengths are the same for the star and planet
         #self.prop_dict['wavel'] = self.star_flux['wavel']
+
+        # initialize list of detector effects
+        self.detector_effects = []
+        for effect_name in config["detector_systematics"]["enabled"].split(","):
+            if effect_name.strip() in EFFECT_REGISTRY:
+
+                # instantiate the detector effect
+                effect_inst = EFFECT_REGISTRY[effect_name.strip()](config)
+
+                # string the detector effects together
+                self.detector_effects.append(effect_inst)
+
+            else:
+                raise ValueError(f"Detector effect {effect_name.strip()} not found in registry")
 
         # initialize output channels
         self.output_channels = {
