@@ -5,11 +5,13 @@ charset="utf-8"
 "sim_pipeline.modules.core.astrophysical.AstrophysicalSources" [color="black", fontcolor="black", label=<AstrophysicalSources>, shape="record", style="solid"];
 "sim_pipeline.modules.utils.validator.ConfigValidator" [color="black", fontcolor="black", label=<ConfigValidator>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.CosmicRaysEffect" [color="black", fontcolor="black", label=<CosmicRaysEffect>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.pipeline.DarkCurrentEffect" [color="black", fontcolor="black", label=<DarkCurrentEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.detector.Detector" [color="black", fontcolor="black", label=<Detector>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [color="black", fontcolor="black", label=<DetectorEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.dispersion.DispersionLaw" [color="black", fontcolor="black", label=<DispersionLaw>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.GainVariabilityEffect" [color="black", fontcolor="black", label=<GainVariabilityEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.HotPixelsEffect" [color="black", fontcolor="black", label=<HotPixelsEffect>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.pipeline.InstrumentBackground" [color="black", fontcolor="black", label=<InstrumentBackground>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [color="black", fontcolor="black", label=<InstrumentDepTerms>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.OneOverFNoiseEffect" [color="black", fontcolor="black", label=<OneOverFNoiseEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.channels.OutputChannel" [color="black", fontcolor="black", label=<OutputChannel>, shape="record", style="solid"];
@@ -19,11 +21,24 @@ charset="utf-8"
 "sim_pipeline.modules.data.spectra.SpectralData" [color="black", fontcolor="black", label=<SpectralData>, shape="record", style="solid"];
 "sim_pipeline.modules.pipeline_registry.StageSpec" [color="black", fontcolor="black", label=<StageSpec>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.tables.TablesMixin" [color="black", fontcolor="black", label=<TablesMixin>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.pipeline.TelescopeThermalBackground" [color="black", fontcolor="black", label=<TelescopeThermalBackground>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.TransferFunctionEffect" [color="black", fontcolor="black", label=<TransferFunctionEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.transfer.TransferMixin" [color="black", fontcolor="black", label=<TransferMixin>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.aperture.TransferMixin" [color="black", fontcolor="black", label=<TransferMixin>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.transmission.TransmissionMixin" [color="black", fontcolor="black", label=<TransmissionMixin>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.pipeline.AgingPixelsEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.CosmicRaysEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.DarkCurrentEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.GainVariabilityEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.HotPixelsEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" -> "sim_pipeline.modules.core.instrumental.tables.TablesMixin" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" -> "sim_pipeline.modules.core.instrumental.transfer.TransferMixin" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" -> "sim_pipeline.modules.core.instrumental.transmission.TransmissionMixin" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.OneOverFNoiseEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.PersistenceEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.ReadNoiseEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.TelescopeThermalBackground" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentBackground" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.TransferFunctionEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.pipeline.DarkCurrentEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="dark_current_effect", style="solid"];
+"sim_pipeline.modules.core.instrumental.pipeline.ReadNoiseEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="readnoise_effect", style="solid"];
 }

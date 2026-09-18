@@ -32,6 +32,7 @@ digraph pipeline {
   chop_signal [label="chop_signal"];
   disperse_astro_signals_on_detector [label="disperse_astro_signals_on_detector"];
   pass_through_aperture [label="pass_through_aperture"];
+  pass_from_aperture_to_detector [label="pass_from_aperture_to_detector"];
   generate_instrument_transmission [label="generate_instrument_transmission"];
   pass_through_transmission_screens [label="pass_through_transmission_screens"];
   record_info_at_angle_and_qe [label="record_info_at_angle_and_qe"];
@@ -42,8 +43,9 @@ digraph pipeline {
   apply_detector_effects -> combine_astro_and_instrum_signals;
   calculate_instrinsic_instrumental_noise -> combine_astro_and_instrum_signals;
   combine_astro_and_instrum_signals -> chop_signal;
-  pass_through_aperture -> disperse_astro_signals_on_detector;
+  pass_from_aperture_to_detector -> disperse_astro_signals_on_detector;
   pass_through_transmission_screens -> pass_through_aperture;
+  pass_through_aperture -> pass_from_aperture_to_detector;
   generate_onsky_scene -> pass_through_transmission_screens;
   generate_instrument_transmission -> pass_through_transmission_screens;
   chop_signal -> record_info_at_angle_and_qe;

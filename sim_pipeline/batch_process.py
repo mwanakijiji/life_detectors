@@ -254,6 +254,10 @@ def run_single_calculation(
             logger.info("Passing through telescope aperture (incl. telescope throughput)...")
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
+            # Pass from aperture to detector
+            logger.info("Passing from aperture to detector...")
+            instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
+
             # set instrumental noise terms and update the OutputChannel objects
             # output units: e/pix/sec
             logger.info("Assigning intrinsic instrumental noise ...")

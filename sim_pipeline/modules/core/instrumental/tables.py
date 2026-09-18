@@ -56,55 +56,10 @@ class TablesMixin:
         cluster_color="#4daf4a",
     )
     def calculate_instrinsic_instrumental_noise(self):
-        # calculate intrinsic instrumental noise, and update self.sources_instrum
-
-        gain = float(self.config["detector"]["gain"]) * u.electron / u.adu  # e-/ADU
-
-        #########################################################################################################################
-        # read noise
-        # e-/pix rms
-        #self.instrum_dict['read_noise_e_rms'] = float(self.config["detector"]["read_noise"])
-        # e-/pix rms -> ADU rms
-        logging.info(f'Finding instrumental noise sources...')
-        #read_noise_e_rms = float(self.config["detector"]["read_noise"]) * u.electron / u.pix
-
-        read_noise_str = self.config["detector"]["read_noise"]
-        read_noise_e_rms = np.fromstring(read_noise_str, sep=',') * u.electron / u.pix # sep in case it's an array
-        self.sources_instrum['read_noise_e_pix-1'] = read_noise_e_rms
-        logging.info(f'Read noise is {read_noise_e_rms} rms')
-        #self.sources_instrum['read_noise_adu'] = read_noise_e_rms / gain
-        #read_noise_adu_rms = self.sources_instrum['read_noise_adu']
-        #logging.info(f'Read noise is {read_noise_adu_rms} rms')
-
-        #########################################################################################################################
-        # dark current rate 
-        # e/pix/sec
-        dark_current_str = self.config["detector"]["dark_current"]
-        if ',' in dark_current_str:
-            parts = [float(x.strip()) for x in dark_current_str.split(',')]
-            dark_current_rate_e_pix_sec = np.arange(parts[0], parts[1], parts[2]) * u.electron / (u.pix * u.second)
-        else:
-            dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array confirming to (start, stop, step)
-        #dark_current_rate_e_pix_sec = np.fromstring(dark_current_str, sep=',') * u.electron / (u.pix * u.second) # in case it's an array
-
-        logging.info(f'Dark current array is {dark_current_rate_e_pix_sec} e-/pix/sec')
-
-        # total dark current in e-, based on integration time
-        # e/pix/sec -> e/pix
-        integration_time_per_frame = float(self.config["observation"]["t_int_frame"]) * u.second  # seconds
-        self.sources_instrum['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
-        self.sources_instrum['dark_current_e_pix-1'] = dark_current_rate_e_pix_sec * integration_time_per_frame
-
-        # total dark current in ADU
-        # e/pix -> ADU/pix
-        #self.sources_instrum['dark_current_adu_pix-1'] = self.sources_instrum['dark_current_e_pix-1'] / gain
-
-        # assign all these noise terms to the output channels
-        for output_name, output_channel in self.output_channels.items():
-            output_channel.instrum_noise['dark_current_e_pix-1_sec-1'] = dark_current_rate_e_pix_sec
-            output_channel.instrum_noise['read_noise_e_pix-1'] = read_noise_e_rms
-
-        return 
+        # RN / DC live on DetectorEffect subclasses; this stage only registers them.
+        logging.info("Finding instrumental noise sources...")
+        self.readnoise_effect.register(self)
+        self.dark_current_effect.register(self) 
 
 
     @pipeline_stage(

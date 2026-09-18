@@ -16,7 +16,7 @@ from .detector import Detector
 from .dispersion import DispersionLaw
 
 class TransferMixin:
-    @pipeline_stage(depends_on=("pass_through_aperture",))
+    @pipeline_stage(depends_on=("pass_from_aperture_to_detector",))
     def disperse_astro_signals_on_detector(self, plot: bool = False):
         '''
         Disperse post-aperture flux onto each channel detector via DispersionLaw,
@@ -24,6 +24,10 @@ class TransferMixin:
         '''
         ## ## TODO: allow different dispersion laws for each output channel
         dispersion_law = DispersionLaw(self.config)
+
+        source_names = list(self.sources_astroph.keys()) + list(
+            getattr(self, "background_source_names", [])
+        )
 
         for output_channel in self.output_channels.values():
             if output_channel.detector is None:
@@ -51,20 +55,22 @@ class TransferMixin:
 
             n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint_cube)
 
-            for source_name, source_val in self.sources_astroph.items():
-                flux_astro_1d_ph_sec_um = np.sum(
-                    self.prop_dict[source_name][
-                        "flux_cube_post_screen_post_aperture_ph_sec_um"
-                    ][output_channel.name],
-                    axis=(1, 2),
-                )
+            for source_name in source_names:
+                if source_name not in self.prop_dict:
+                    continue
+                source_prop = self.prop_dict[source_name]
+                flux_cube = source_prop[
+                    "flux_cube_post_screen_post_aperture_ph_sec_um"
+                ][output_channel.name]
+
+                flux_astro_1d_ph_sec_um = np.sum(flux_cube, axis=(1, 2))
                 flux_unit = (
                     flux_astro_1d_ph_sec_um.unit
                     if hasattr(flux_astro_1d_ph_sec_um, "unit")
                     else u.ph / (u.um * u.s)
                 )
                 wavel_bins = output_channel.bin_centers
-                wavel_pts = self.prop_dict[source_name]["wavel"]
+                wavel_pts = source_prop["wavel"]
                 flux_astro_1d_interpolated_ph_sec_um = (
                     np.interp(
                         x=wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins,
@@ -84,7 +90,7 @@ class TransferMixin:
                     flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
                 )
 
-                # sensor response (not part of the optical dispersion law)
+                # Detector QE (intrinsic to the sensor)
                 det = output_channel.detector
                 flux_astro_1d_interpolated_ph_sec_pixel = det.apply_qe(
                     flux_astro_1d_interpolated_ph_sec_pixel
@@ -117,10 +123,13 @@ class TransferMixin:
                     else output_channel.bin_centers,
                     dtype=float,
                 )
+                plot_source_names = list(self.sources_to_include) + list(
+                    getattr(self, "background_source_names", [])
+                )
                 ref_source = next(
                     (
                         name
-                        for name in self.sources_to_include
+                        for name in plot_source_names
                         if name in output_channel.astroph_signal
                     ),
                     None,
@@ -140,7 +149,7 @@ class TransferMixin:
                 cumulative_signal = None
                 y_unit = u.ph / (u.s * u.pix)
                 source_name = None
-                for source_name in self.sources_to_include:
+                for source_name in plot_source_names:
                     if source_name not in output_channel.astroph_signal:
                         continue
                     sig = output_channel.astroph_signal[source_name]
@@ -260,5 +269,52 @@ class TransferMixin:
                 )
 
         logging.info(f'Passed astrophysical flux through telescope aperture...')
+
+        return
+
+    @pipeline_stage(depends_on=("pass_through_aperture",))
+    def pass_from_aperture_to_detector(self, plot: bool = False):
+        """
+        Inject enabled ``InstrumentBackground`` spectra into the post-aperture
+        beam (still in photon units). Detector QE is applied later in
+        ``disperse_astro_signals_on_detector``.
+        """
+        if not self.prop_dict:
+            logging.warning(
+                "pass_from_aperture_to_detector: prop_dict is empty; nothing to do"
+            )
+            return
+
+        ref_name = next(iter(self.prop_dict))
+        ref = self.prop_dict[ref_name]
+        wavel = ref["wavel"]
+        output_names = list(self.output_channels.keys())
+
+        # Add each configured background as its own prop_dict source (spatially uniform)
+        for bg in getattr(self, "instrument_backgrounds", []):
+            spectrum = bg.flux_ph_sec_um(wavel, self.config)
+            post_aperture_by_output = {}
+            for output_name in output_names:
+                ref_cube = ref["flux_cube_post_screen_post_aperture_ph_sec_um"][
+                    output_name
+                ]
+                n_y, n_x = ref_cube.shape[1], ref_cube.shape[2]
+                n_spatial = n_y * n_x
+                # Conserve total ph/s/um when later summing over the sky plane
+                per_pixel = spectrum / n_spatial
+                spatial = np.ones((n_y, n_x))
+                post_aperture_by_output[output_name] = (
+                    per_pixel[:, np.newaxis, np.newaxis] * spatial
+                )
+            self.prop_dict[bg.name] = {
+                "wavel": wavel,
+                "flux_cube_post_screen_post_aperture_ph_sec_um": post_aperture_by_output,
+            }
+            logging.info(
+                "Added instrument background %r into post-aperture beam", bg.name
+            )
+
+        if plot:
+            pass
 
         return
