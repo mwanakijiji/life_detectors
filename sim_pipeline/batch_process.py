@@ -53,6 +53,11 @@ from modules.utils.helpers.spectra import (
     plot_planet_population_sample,
 )
 
+from modules.core.planet_spectrum_provider import (
+    BlackbodySpectrumProvider,
+    PopulationSpectrumProvider,
+)
+
 
 
 # Module-level logger so it's available everywhere in this file
@@ -185,7 +190,15 @@ def run_single_calculation(
         
         # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
-        astrophysical_sources = astrophysical.AstrophysicalSources(config)
+        # planet spectra, or blackbody?
+        planet_source = config['system_options']
+        if planet_source == "BB":
+            provider = BlackbodySpectrumProvider()
+        else:
+            provider = PopulationSpectrumProvider()
+        astrophysical_sources = astrophysical.AstrophysicalSources(
+            config, planet_spectrum_provider=provider
+        )
         
         # Calculate incident flux for each source, and add on 2D positions as projected on sky
         sources_astroph = {}

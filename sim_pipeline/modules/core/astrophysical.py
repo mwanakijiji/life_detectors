@@ -23,6 +23,7 @@ from ..data.spectra import SpectralData, load_spectrum_from_file
 from ..pipeline_registry import pipeline_stage
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
 from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
+from ..core.planet_spectrum_provider import PlanetSpectrumProvider
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ class AstrophysicalSources:
     Calculates photon flux from astrophysical sources (incl. noise)
     """
     
-    def __init__(self, config: configparser.ConfigParser):
+    def __init__(self, config: configparser.ConfigParser, planet_spectrum_provider: PlanetSpectrumProvider):
         """
         Initialize astrophysical noise calculator.
         
@@ -201,6 +202,7 @@ class AstrophysicalSources:
         """
 
         self.config = config
+        self.planet_spectrum_provider = planet_spectrum_provider
         self.spectra = {}
         self._load_spectra()
     

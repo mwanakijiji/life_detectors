@@ -3,6 +3,7 @@ rankdir=BT
 charset="utf-8"
 "sim_pipeline.modules.core.instrumental.pipeline.AgingPixelsEffect" [color="black", fontcolor="black", label=<AgingPixelsEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.astrophysical.AstrophysicalSources" [color="black", fontcolor="black", label=<AstrophysicalSources>, shape="record", style="solid"];
+"sim_pipeline.modules.core.planet_spectrum_provider.BlackbodySpectrumProvider" [color="black", fontcolor="black", label=<BlackbodySpectrumProvider>, shape="record", style="solid"];
 "sim_pipeline.modules.utils.validator.ConfigValidator" [color="black", fontcolor="black", label=<ConfigValidator>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.CosmicRaysEffect" [color="black", fontcolor="black", label=<CosmicRaysEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.DarkCurrentEffect" [color="black", fontcolor="black", label=<DarkCurrentEffect>, shape="record", style="solid"];
@@ -16,6 +17,8 @@ charset="utf-8"
 "sim_pipeline.modules.core.instrumental.pipeline.OneOverFNoiseEffect" [color="black", fontcolor="black", label=<OneOverFNoiseEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.channels.OutputChannel" [color="black", fontcolor="black", label=<OutputChannel>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.PersistenceEffect" [color="black", fontcolor="black", label=<PersistenceEffect>, shape="record", style="solid"];
+"sim_pipeline.modules.core.planet_spectrum_provider.PlanetSpectrumProvider" [color="black", fontcolor="black", label=<PlanetSpectrumProvider>, shape="record", style="solid"];
+"sim_pipeline.modules.core.planet_spectrum_provider.PopulationSpectrumProvider" [color="black", fontcolor="black", label=<PopulationSpectrumProvider>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.ReadNoiseEffect" [color="black", fontcolor="black", label=<ReadNoiseEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.calculator.s2n_cube.S2NCube" [color="black", fontcolor="black", label=<S2NCube>, shape="record", style="solid"];
 "sim_pipeline.modules.data.spectra.SpectralData" [color="black", fontcolor="black", label=<SpectralData>, shape="record", style="solid"];
@@ -41,4 +44,5 @@ charset="utf-8"
 "sim_pipeline.modules.core.instrumental.pipeline.TransferFunctionEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.DetectorEffect" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.pipeline.DarkCurrentEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="dark_current_effect", style="solid"];
 "sim_pipeline.modules.core.instrumental.pipeline.ReadNoiseEffect" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="readnoise_effect", style="solid"];
+"sim_pipeline.modules.core.planet_spectrum_provider.PlanetSpectrumProvider" -> "sim_pipeline.modules.core.astrophysical.AstrophysicalSources" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="planet_spectrum_provider", style="solid"];
 }
