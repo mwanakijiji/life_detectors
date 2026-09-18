@@ -518,6 +518,7 @@ class AstrophysicalSources:
             )
 
 
+
         def _cube_values(q):
             '''
             Strip units (if any) for saving as FITS file
