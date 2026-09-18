@@ -378,8 +378,8 @@ class _WeirdRunConfig:
 def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data):
     mock_input.return_value = "n"
     mock_astro_instance = MagicMock()
-    mock_astro_instance.calculate_incident_flux.return_value = {"flux": 1.0}
-    mock_astro_instance.generate_onsky_scene.return_value = {"star": MagicMock()}
+    mock_astro_instance.calculate_received_astro_fluxes.return_value = {"flux": 1.0}
+    mock_astro_instance.arrange_onsky_scene.return_value = {"star": MagicMock()}
     mock_instrument = MagicMock()
     mock_instrument.output_channels = {}
     mock_instrument.post_chop_tables_by_dark_current = {}
@@ -837,8 +837,8 @@ class TestRunSingleCalculation:
         )
 
         mock_astro_instance = MagicMock()
-        mock_astro_instance.calculate_incident_flux.return_value = {"flux": 1.0}
-        mock_astro_instance.generate_onsky_scene.return_value = {"star": MagicMock()}
+        mock_astro_instance.calculate_received_astro_fluxes.return_value = {"flux": 1.0}
+        mock_astro_instance.arrange_onsky_scene.return_value = {"star": MagicMock()}
         mock_astro_sources_cls.return_value = mock_astro_instance
 
         mock_instrument = MagicMock()
@@ -890,8 +890,8 @@ class TestRunSingleCalculation:
         )
 
         mock_astro_instance = MagicMock()
-        mock_astro_instance.calculate_incident_flux.return_value = {"flux": 1.0}
-        mock_astro_instance.generate_onsky_scene.return_value = {"star": MagicMock()}
+        mock_astro_instance.calculate_received_astro_fluxes.return_value = {"flux": 1.0}
+        mock_astro_instance.arrange_onsky_scene.return_value = {"star": MagicMock()}
         mock_astro_sources_cls.return_value = mock_astro_instance
 
         mock_instrument = MagicMock()

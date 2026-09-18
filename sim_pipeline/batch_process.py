@@ -204,13 +204,13 @@ def run_single_calculation(
         sources_astroph = {}
         for source_name in sources_to_include:
             if source_name in ["star", "star_psg", "exoplanet_bb", "exoplanet_bb_psg", "exoplanet_model_10pc", "exoplanet_psg", "exozodiacal", "exozodiacal_psg", "zodiacal"]:
-                sources_astroph[source_name] = astrophysical_sources.calculate_incident_flux(
+                sources_astroph[source_name] = astrophysical_sources.calculate_received_astro_fluxes(
                     source_name=source_name, plot=plot, system_params=system_params
                 )
         
         # put all the objects into the scene
         logger.info("Generating on-sky scene...")
-        astro_scene_perfect_no_screen = astrophysical_sources.generate_onsky_scene(
+        astro_scene_perfect_no_screen = astrophysical_sources.arrange_onsky_scene(
                                                                     incident_dict=sources_astroph, 
                                                                     plot=plot)
 

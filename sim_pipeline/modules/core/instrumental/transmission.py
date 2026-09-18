@@ -318,7 +318,7 @@ class TransmissionMixin:
 
 
     @pipeline_stage(
-        depends_on=("generate_onsky_scene", "generate_instrument_transmission"),
+        depends_on=("arrange_onsky_scene", "generate_instrument_transmission"),
     )
     def pass_through_transmission_screens(self, fyi_angle, source_dict_pre_screen: dict, transmission_screens: np.ndarray, plot: bool = False):
         '''

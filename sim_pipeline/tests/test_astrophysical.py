@@ -301,7 +301,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def config_for_incident_flux(self):
-        """ConfigParser config for calculate_incident_flux source branches."""
+        """ConfigParser config for calculate_received_astro_fluxes source branches."""
         config = configparser.ConfigParser()
         config.add_section("nulling")
         config.set("nulling", "null", "True")
@@ -322,7 +322,7 @@ class TestAstrophysicalSources:
         return config
 
     @pytest.mark.parametrize("source_name", ["star", "exoplanet_bb", "exozodiacal", "zodiacal"])
-    def test_calculate_incident_flux_source_branch_returns_expected_units_and_values(
+    def test_calculate_received_astro_fluxes_source_branch_returns_expected_units_and_values(
         self, config_for_incident_flux, source_name
     ):
         expected_flux = np.array([11.0, 22.0, 33.0]) * u.ph / (u.um * u.m**2 * u.s)
@@ -333,7 +333,7 @@ class TestAstrophysicalSources:
         with patch.object(
             sources, "_calculate_flux_from_spectrum", return_value=expected_flux
         ) as flux_mock:
-            incident = sources.calculate_incident_flux(source_name=source_name, plot=False)
+            incident = sources.calculate_received_astro_fluxes(source_name=source_name, plot=False)
 
         # Assert call contract at line 143.
         flux_mock.assert_called_once()
@@ -348,7 +348,7 @@ class TestAstrophysicalSources:
         assert np.allclose(final_flux.to(u.ph / (u.s * u.m**2 * u.micron)).value, [11.0, 22.0, 33.0])
 
 
-    def test_calculate_incident_flux_exoplanet_model_10pc(self):
+    def test_calculate_received_astro_fluxes_exoplanet_model_10pc(self):
         """Test exoplanet_model_10pc branch using a mocked model dataframe."""
 
         # ersatz config file
@@ -378,7 +378,7 @@ class TestAstrophysicalSources:
             "modules.core.astrophysical.pd.read_csv", return_value=df_model
         ):
             sources = AstrophysicalSources(config)
-            incident = sources.calculate_incident_flux(
+            incident = sources.calculate_received_astro_fluxes(
                 source_name="exoplanet_model_10pc", plot=False
             )
 
@@ -393,7 +393,7 @@ class TestAstrophysicalSources:
 
         empirical = incident["pre_screen_astro_flux_ph_sec_m2_um"]
 
-        # calculate_incident_flux always uses 100 wavelength points (ignores n_points in config)
+        # calculate_received_astro_fluxes always uses 100 wavelength points (ignores n_points in config)
         wavelength = np.linspace(1.0, 3.0, 100) * u.micron
         flux_photons_expected = flux_photons_10pc * (10.0 / 20.0) ** 2
         expected = np.interp(
@@ -414,13 +414,13 @@ class TestAstrophysicalSources:
         assert not np.allclose(empirical_values, expected_bogus)
 
 
-    def test_calculate_incident_flux_unknown_source_returns_empty_array(
+    def test_calculate_received_astro_fluxes_unknown_source_returns_empty_array(
         self, config_for_incident_flux
     ):
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
             sources = AstrophysicalSources(config_for_incident_flux)
 
-        result = sources.calculate_incident_flux(source_name="not_a_source", plot=False)
+        result = sources.calculate_received_astro_fluxes(source_name="not_a_source", plot=False)
 
         assert isinstance(result, np.ndarray)
         assert result.size == 0
@@ -428,7 +428,7 @@ class TestAstrophysicalSources:
 
     @patch("modules.viz.astrophysical.plt.savefig")
     @patch("modules.viz.astrophysical.plt.plot")
-    def test_calculate_incident_flux_plot_saves_figure(
+    def test_calculate_received_astro_fluxes_plot_saves_figure(
         self, mock_plot, mock_savefig, config_for_incident_flux
     ):
         expected_flux = np.array([11.0, 22.0, 33.0]) * u.ph / (u.um * u.m**2 * u.s)
@@ -439,7 +439,7 @@ class TestAstrophysicalSources:
         with patch.object(
             sources, "_calculate_flux_from_spectrum", return_value=expected_flux
         ):
-            incident = sources.calculate_incident_flux(source_name="star", plot=True)
+            incident = sources.calculate_received_astro_fluxes(source_name="star", plot=True)
 
         assert "pre_screen_astro_flux_ph_sec_m2_um" in incident
         mock_plot.assert_called()
@@ -678,7 +678,7 @@ class TestGenerateOnskyScene:
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
             sources = AstrophysicalSources(onsky_config)
 
-        scene = sources.generate_onsky_scene(incident_dict, plot=False)
+        scene = sources.arrange_onsky_scene(incident_dict, plot=False)
 
         assert set(scene.keys()) == {
             "star",
@@ -704,4 +704,4 @@ class TestGenerateOnskyScene:
             sources = AstrophysicalSources(onsky_config)
 
         with pytest.raises(ValueError, match="flux units differ"):
-            sources.generate_onsky_scene(incident_dict, plot=False)
+            sources.arrange_onsky_scene(incident_dict, plot=False)

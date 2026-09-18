@@ -7,8 +7,8 @@ from modules.pipeline_registry import (
 
 
 EXPECTED_NODES = {
-    "calculate_incident_flux",
-    "generate_onsky_scene",
+    "calculate_received_astro_fluxes",
+    "arrange_onsky_scene",
     "generate_instrument_transmission",
     "pass_through_transmission_screens",
     "pass_through_aperture",
@@ -22,8 +22,8 @@ EXPECTED_NODES = {
 }
 
 EXPECTED_EDGES = {
-    ("calculate_incident_flux", "generate_onsky_scene"),
-    ("generate_onsky_scene", "pass_through_transmission_screens"),
+    ("calculate_received_astro_fluxes", "arrange_onsky_scene"),
+    ("arrange_onsky_scene", "pass_through_transmission_screens"),
     ("generate_instrument_transmission", "pass_through_transmission_screens"),
     ("pass_through_transmission_screens", "pass_through_aperture"),
     ("pass_through_aperture", "pass_from_aperture_to_detector"),
