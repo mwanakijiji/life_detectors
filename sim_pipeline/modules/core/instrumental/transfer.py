@@ -4,6 +4,7 @@ import numpy as np
 import astropy.units as u
 import pandas as pd
 
+from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.spectra import compute_collecting_area_m2
 from ...viz.aperture import (
     plot_astro_ph_sec_pixel,
@@ -15,6 +16,7 @@ from .detector import Detector
 from .dispersion import DispersionLaw
 
 class TransferMixin:
+    @pipeline_stage(depends_on=("pass_through_aperture",))
     def disperse_astro_signals_on_detector(self, plot: bool = False):
         '''
         Disperse post-aperture flux onto each channel detector via DispersionLaw,
@@ -192,6 +194,7 @@ class TransferMixin:
 
 
 
+    @pipeline_stage(depends_on=("pass_through_transmission_screens",))
     def pass_through_aperture(self, plot: bool = False):
         # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec

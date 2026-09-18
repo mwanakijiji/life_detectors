@@ -4,6 +4,7 @@ import numpy as np
 import astropy.units as u
 from astropy.table import QTable, Column
 
+from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.keys import canonical_dc_rate
 from ...viz.tables import plot_debug_final_table
 
@@ -49,6 +50,11 @@ class TablesMixin:
 
 
 
+    @pipeline_stage(
+        depends_on=("pass_through_aperture",),
+        cluster="intrinsic instrumental noise",
+        cluster_color="#4daf4a",
+    )
     def calculate_instrinsic_instrumental_noise(self):
         # calculate intrinsic instrumental noise, and update self.sources_instrum
 
@@ -101,6 +107,9 @@ class TablesMixin:
         return 
 
 
+    @pipeline_stage(
+        depends_on=("apply_detector_effects", "calculate_instrinsic_instrumental_noise"),
+    )
     def combine_astro_and_instrum_signals(self, plot: bool = False):
         '''
         Combines astrophysical signals and instrumental noise into one table for permutations of
@@ -220,6 +229,7 @@ class TablesMixin:
         '''
          
 
+    @pipeline_stage(depends_on=("combine_astro_and_instrum_signals",))
     def chop_signal(self, plot: bool = False):
         '''
         Subtracts the dark 3 and 4 outputs

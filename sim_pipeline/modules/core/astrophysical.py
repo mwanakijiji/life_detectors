@@ -20,6 +20,7 @@ from astropy.io import fits
 
 
 from ..data.spectra import SpectralData, load_spectrum_from_file
+from ..pipeline_registry import pipeline_stage
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
 from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
 
@@ -273,7 +274,7 @@ class AstrophysicalSources:
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
     
 
-    
+    @pipeline_stage(cluster="astrophysics", cluster_color="#377eb8")
     def calculate_incident_flux(self, source_name: str, plot: bool = False, system_params: dict = None) -> np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
@@ -410,6 +411,11 @@ class AstrophysicalSources:
         return incident_dict
     
 
+    @pipeline_stage(
+        depends_on=("calculate_incident_flux",),
+        cluster="astrophysics",
+        cluster_color="#377eb8",
+    )
     def generate_onsky_scene(self, incident_dict: dict, plot: bool = False):
         '''
         Construct the on-sky scene from the incident flux dictionary and positions of objects as set in the config file.

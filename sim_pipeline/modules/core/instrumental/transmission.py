@@ -5,6 +5,7 @@ import yaml
 import astropy.io.fits as fits
 from scipy import ndimage
 
+from ...pipeline_registry import pipeline_stage
 from ...viz.transmission import (
     plot_flux_through_screens,
     plot_pre_aperture_all_sources,
@@ -12,6 +13,10 @@ from ...viz.transmission import (
 )
 
 class TransmissionMixin:
+    @pipeline_stage(
+        cluster="instrument transmission (per angle)",
+        cluster_color="#e41a1c",
+    )
     def generate_instrument_transmission(self, wavel_m: float = 11e-6, override_stellar_mask = False, normalize: bool = True, plot: bool = False, angle_deg: float = 0):
         # phi_dc_vec_rad, theta_vec_2d_asec, 
         # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12, ignoring polarization for now)
@@ -312,6 +317,9 @@ class TransmissionMixin:
 
 
 
+    @pipeline_stage(
+        depends_on=("generate_onsky_scene", "generate_instrument_transmission"),
+    )
     def pass_through_transmission_screens(self, fyi_angle, source_dict_pre_screen: dict, transmission_screens: np.ndarray, plot: bool = False):
         '''
         Pass each astrophysical source through the transmission screens, and update prop_dict with the propagated terms

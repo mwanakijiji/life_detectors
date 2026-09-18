@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import QTable
 
+from ...pipeline_registry import pipeline_stage
 from .keys import (
     canonical_angle_deg,
     canonical_dc_rate,
@@ -16,6 +17,7 @@ from .keys import (
 
 logger = logging.getLogger(__name__)
 
+@pipeline_stage(depends_on=("chop_signal",))
 def record_info_at_angle_and_qe(
     *,
     angle_deg: float,
