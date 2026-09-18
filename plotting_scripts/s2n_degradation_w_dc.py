@@ -37,7 +37,7 @@ dark_current = cube.dark_current
 qe = cube.qe
 
 # S/N vs wavelength for one QE, varying DC
-qe_choice = 0.8
+qe_choice = 0.4
 qe_idx = int(np.argmin(np.abs(qe - qe_choice)))
 qe_choice = float(qe[qe_idx])
 colors = rcParams["axes.prop_cycle"].by_key()["color"]
@@ -48,7 +48,7 @@ plt.figure(figsize=(10, 5))
 for i_dc, dc_val in enumerate(dark_current):
     
     # advance color only on 0.05 DC steps; reuse for values in between
-    if (np.round(dc_val, 4) % 0.05 == 0) and (dc_val < 0.501):
+    if abs(dc_val / 0.1 - round(dc_val / 0.1)) < 1e-8 and dc_val < 0.501:
         label_this = f"{dc_val:.2f} e/pix/s"
         color_idx += 1
         current_color = colors[color_idx % len(colors)]
