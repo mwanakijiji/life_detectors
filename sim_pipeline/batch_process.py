@@ -56,6 +56,7 @@ from modules.utils.helpers.spectra import (
 from modules.core.planet_spectrum_provider import (
     BlackbodySpectrumProvider,
     PopulationSpectrumProvider,
+    SingleModelFileProvider,
 )
 
 
@@ -191,8 +192,11 @@ def run_single_calculation(
         # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
         # planet spectra, or blackbody?
-        planet_source = config['system_options']
-        if planet_source == "BB":
+        if "exoplanet_model_10pc" in sources_to_include:
+            provider = SingleModelFileProvider(
+                config["astrophysical_sources_library"]["exoplanet_model_10pc"]
+            )
+        elif config.get("target", "planet_source", fallback="") == "BB":
             provider = BlackbodySpectrumProvider()
         else:
             provider = PopulationSpectrumProvider()
@@ -466,7 +470,7 @@ def parameter_sweep(
     systems_2_look_at = config_single_obs["system_options"]["systems_2_look_at"]
     if systems_2_look_at == "planet_population":
         logging.info("Applying parameter sweep to an entire planet population")
-    elif systems_2_look_at == "single_system":
+    elif systems_2_look_at == "read_in_one_planet_spectrum":
         logging.info("Applying parameter sweep to a single system")
     else:
         logging.error(f"Invalid system option: {systems_2_look_at}")
@@ -491,12 +495,12 @@ def parameter_sweep(
             plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
             logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
-    elif systems_2_look_at == "single_system":
-        logging.info("Applying parameter sweep to a single planetary system")
+    elif systems_2_look_at == "read_in_one_planet_spectrum":
+        logging.info("Applying parameter sweep to a single planetary system, with spectrum read in from file")
         df_planet_population = [None]  # wrap in list for length 1
 
     else:
-        logging.error(f"Invalid system option (must be 'planet_population' or 'single_system'): {systems_2_look_at}")
+        logging.error(f"Invalid system option (must be 'planet_population' or 'read_in_one_planet_spectrum'): {systems_2_look_at}")
         return
 
     # parameter sweep

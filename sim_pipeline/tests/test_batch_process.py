@@ -1074,7 +1074,7 @@ def _write_aperture_yaml(path):
 def _write_parameter_sweep_configs(
     tmp_path,
     *,
-    systems_2_look_at: str = "single_system",
+    systems_2_look_at: str = "read_in_one_planet_spectrum",
     population_csv: str | None = None,
 ):
     aperture_yaml = tmp_path / "aperture_array.yaml"
@@ -1131,10 +1131,10 @@ def _write_parameter_sweep_configs(
 
 class TestParameterSweep:
     @patch("batch_process.batch_qe_nint_process", return_value=True)
-    def test_single_system_calls_batch_once(self, mock_batch, tmp_path):
+    def test_read_in_one_planet_spectrum_calls_batch_once(self, mock_batch, tmp_path):
         single_obs_path, sweep_path, population_path = _write_parameter_sweep_configs(
             tmp_path,
-            systems_2_look_at="single_system",
+            systems_2_look_at="read_in_one_planet_spectrum",
         )
 
         parameter_sweep(

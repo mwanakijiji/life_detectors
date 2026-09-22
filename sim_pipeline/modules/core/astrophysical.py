@@ -300,41 +300,14 @@ class AstrophysicalSources:
                                float(self.config['wavelength_range']['max']),
                                int(100)) * u.um
 
-        if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]:
+        if source_name == "exoplanet_model_10pc":
+            # Provider returns intrinsic luminosity; distance scaling happens below.
+            self.spectra[source_name] = self.planet_spectrum_provider.get_spectrum(system_params)
+
+        if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal", "exoplanet_model_10pc"]:
 
             # note distance is being set by the config file; this is just one object
             flux_incident = self._calculate_flux_from_spectrum(source_name, wavelength_incident_cube_points, distance_set=float(self.config["target"]["distance"]), null=null)
-
-        elif source_name == "exoplanet_model_10pc":
-
-            # check that the desired distance is 10 pc; if not, will have to update this
-            if float(self.config["target"]["distance"]) != 10.0:
-                logger.info(f"Distance {float(self.config['target']['distance'])} pc is not 10 pc; rescaling planet spectrum with true distance.")
-
-            # this is a model spectrum from a file with different units, formatting
-            file_name_exoplanet_model_10pc = self.config['astrophysical_sources_library']['exoplanet_model_10pc']
-            df = pd.read_csv(file_name_exoplanet_model_10pc, delim_whitespace=True, names=['wavelength', 'flux', 'err_flux'])
-            logger.info(f"Loaded model exoplanet spectrum for {source_name}: {file_name_exoplanet_model_10pc}")
-
-            wavel = df['wavelength'].values * u.micron
-            flux_nu_10pc = df['flux'].values * u.erg / (u.second * u.Hz * u.m**2)
-            err_flux_nu_10pc = df['err_flux'].values * u.erg / (u.second * u.Hz * u.m**2)
-
-            # convert to F_lambda
-            flux_lambda_10pc = flux_nu_10pc * (const.c / wavel**2)
-            flux_lambda_10pc = flux_lambda_10pc.to(u.W / (u.m**2 * u.micron))
-
-            # convert to photon flux
-            flux_photons_10pc = flux_lambda_10pc * (wavel / (const.h * const.c)) * u.ph
-            flux_photons_10pc = flux_photons_10pc.to(u.ph / (u.micron * u.s * u.m**2))
-
-            # rescale this flux (from a source at 10 pc) to the desired distance
-            flux_photons = flux_photons_10pc * (10.0 / float(self.config["target"]["distance"])) ** 2
-
-            # interpolate
-            flux_incident = np.interp(x = wavelength_incident_cube_points, 
-                                            xp = wavel, 
-                                            fp = flux_photons)
 
         elif source_name in ["star_psg", "exoplanet_bb_psg", "exoplanet_psg","exozodiacal_psg"]:
             
