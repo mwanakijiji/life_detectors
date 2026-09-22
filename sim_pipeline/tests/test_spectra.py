@@ -4,6 +4,7 @@ Unit tests for spectral data handling.
 
 import numpy as np
 import pytest
+from astropy import units as u
 from pathlib import Path
 
 from modules.data.spectra import SpectralData
@@ -156,14 +157,16 @@ class TestCreateBlackbodySpectrum:
         spec = create_blackbody_spectrum(
             temperature=300.0,
             wavelength_range=(1.0, 10.0),
+            radius_r_earth=1.0,
             n_points=50,
         )
 
         assert isinstance(spec, SpectralData)
         assert spec.source_name == "blackbody_300.0K"
         assert spec.wavelength_unit == "um"
-        assert spec.flux_unit == "photon_sec_m2_um"
+        assert u.Unit(spec.flux_unit).is_equivalent(u.ph / u.s / u.um)
         assert spec.metadata["temperature"] == 300.0
+        assert spec.metadata["radius_r_earth"] == 1.0
         assert len(spec.wavelength) == 50
         assert len(spec.flux) == 50
 
@@ -173,6 +176,7 @@ class TestCreateBlackbodySpectrum:
         spec = create_blackbody_spectrum(
             temperature=5778.0,
             wavelength_range=(wl_min, wl_max),
+            radius_r_earth=1.0,
             n_points=n_points,
         )
 

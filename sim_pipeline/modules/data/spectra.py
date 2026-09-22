@@ -7,6 +7,7 @@ spectral data from files and handling different spectral formats.
 
 import numpy as np
 import pandas as pd
+from astropy import units as u
 from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,50 +208,65 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
         logging.error(f"Failed to load spectral data from {filepath}: {e}")
 
 def create_blackbody_spectrum(
-    temperature: float, 
-    wavelength_range: Tuple[float, float], 
+    temperature: float,
+    wavelength_range: Tuple[float, float],
+    radius_r_earth: float,
     n_points: int = 1000
 ) -> SpectralData:
     """
-    Create a blackbody spectrum.
-    
+    Create a blackbody luminosity spectrum for a body of given radius.
+
+    Follows the same convention as generate_planet_bb_spectrum
+    (modules/utils/helpers/spectra.py): Lambertian surface flux
+    F_lambda = pi * B_lambda(T), then luminosity L_lambda = 4 pi R^2 F_lambda.
+    Returned flux is an intrinsic luminosity (ph / s / um, no area term) —
+    distance dilution (1 / 4 pi d^2) is applied later by
+    AstrophysicalSources._calculate_flux_from_spectrum, uniformly for every
+    planet source.
+
     Args:
         temperature: Temperature in Kelvin
         wavelength_range: (min_wavelength, max_wavelength) in microns
+        radius_r_earth: Body radius in Earth radii
         n_points: Number of wavelength points
-        
+
     Returns:
-        SpectralData object with blackbody spectrum
+        SpectralData object with blackbody luminosity spectrum
     """
-    
+
     wavelength_min, wavelength_max = wavelength_range
     wavelength = np.logspace(np.log10(wavelength_min), np.log10(wavelength_max), n_points)
-    
+
     # Convert wavelength from microns to meters
     wavelength_m = wavelength * 1e-6
-    
-    # Planck's law: B_λ(T) = (2hc²/λ⁵) / (exp(hc/λkT) - 1)
+
+    # Planck's law (specific intensity): B_λ(T) = (2hc²/λ⁵) / (exp(hc/λkT) - 1)
     h = constants.h  # Planck's constant
     c = constants.c  # Speed of light
     k = constants.k  # Boltzmann constant
-    
-    # Calculate blackbody flux in W/m²/m
+
     exp_term = np.exp(h * c / (wavelength_m * k * temperature))
-    bb_flux_watt = (2 * h * c**2 / wavelength_m**5) / (exp_term - 1)
-    
-    # Convert to photons/sec/m²/micron
-    # E = hc/λ, so photon flux = energy flux / energy per photon
+    b_lambda_watt = (2 * h * c**2 / wavelength_m**5) / (exp_term - 1)
+
+    # Lambertian surface flux: F_lambda = pi * B_lambda, in W/m²/m
+    surface_flux_watt = np.pi * b_lambda_watt
+
+    # Luminosity: L_lambda = 4 pi R^2 F_lambda, in W/m
+    radius_m = radius_r_earth * u.R_earth.to(u.m)
+    luminosity_watt = 4.0 * np.pi * radius_m**2 * surface_flux_watt
+
+    # Convert to photon luminosity: E = hc/λ, so photon rate = energy rate / energy per photon
     energy_per_photon = h * c / wavelength_m
-    photon_flux = bb_flux_watt / energy_per_photon
-    
-    # Convert from per meter to per micron
-    photon_flux_per_um = photon_flux * 1e-6
-    
+    luminosity_photons = luminosity_watt / energy_per_photon
+
+    # Convert from per meter to per micron (wavelength axis)
+    luminosity_photons_per_um = luminosity_photons * 1e-6
+
     return SpectralData(
         wavelength=wavelength,
-        flux=photon_flux_per_um,
+        flux=luminosity_photons_per_um,
         wavelength_unit="um",
-        flux_unit="photon_sec_m2_um",
+        flux_unit=str(u.ph / (u.s * u.um)),
         source_name=f"blackbody_{temperature}K",
-        metadata={"temperature": temperature}
-    ) 
+        metadata={"temperature": temperature, "radius_r_earth": radius_r_earth}
+    )

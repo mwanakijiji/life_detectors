@@ -23,7 +23,11 @@ class PopulationSpectrumGenerator(Protocol):
 class BlackbodyFromParamsGenerator:
     def __init__(self, wavelength_range): self.wavelength_range = wavelength_range
     def generate(self, system_params):
-        return create_blackbody_spectrum(temperature=system_params["Tp"], wavelength_range=self.wavelength_range)
+        return create_blackbody_spectrum(
+            temperature=system_params["Tp"],
+            wavelength_range=self.wavelength_range,
+            radius_r_earth=system_params["Rp"],
+        )
 
 class PSGSpectrumGenerator:   # later — same interface, drops in without touching PopulationSpectrumProvider
     def generate(self, system_params):
