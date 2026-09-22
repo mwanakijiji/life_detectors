@@ -12,20 +12,30 @@ logger = logging.getLogger(__name__)
 
 
 class PlanetSpectrumProvider(Protocol):
-    def get_spectrum(self, system_params) -> SpectralData: ...
+    """Top-level source of a planet's spectrum: population-derived, or a single read-in file."""
+    def get_spectrum(self, system_params=None) -> SpectralData: ...
 
-class PopulationSpectrumProvider:
-    def get_spectrum(self, system_params) -> SpectralData:
+
+# --- inner: how does a population row become a spectrum (this is what grows later) ---
+class PopulationSpectrumGenerator(Protocol):
+    def generate(self, system_params) -> SpectralData: ...
+
+class BlackbodyFromParamsGenerator:
+    def __init__(self, wavelength_range): self.wavelength_range = wavelength_range
+    def generate(self, system_params):
+        return create_blackbody_spectrum(temperature=system_params["Tp"], wavelength_range=self.wavelength_range)
+
+class PSGSpectrumGenerator:   # later — same interface, drops in without touching PopulationSpectrumProvider
+    def generate(self, system_params):
         return load_spectrum_from_file(system_params["abs_file_name_psg_spectrum"])
 
-class BlackbodySpectrumProvider:
-    def __init__(self, wavelength_range):
-        self.wavelength_range = wavelength_range
+
+class PopulationSpectrumProvider:
+    """Derives a planet's spectrum from its population row, via a swappable generator."""
+    def __init__(self, generator: PopulationSpectrumGenerator):
+        self.generator = generator
     def get_spectrum(self, system_params) -> SpectralData:
-        return create_blackbody_spectrum(
-            temperature=system_params["Tp"],
-            wavelength_range=self.wavelength_range,
-        )
+        return self.generator.generate(system_params)
 
 class SingleModelFileProvider:
     """Load a 10 pc reference model spectrum and return intrinsic luminosity.
@@ -69,16 +79,3 @@ class SingleModelFileProvider:
             source_name="exoplanet_model_10pc",
             metadata={"filepath": str(self.path), "reference_distance_pc": 10.0},
         )
-
-# --- inner: how does a population row become a spectrum (this is what grows later) ---
-class PopulationSpectrumGenerator(Protocol):
-    def generate(self, system_params) -> SpectralData: ...
-
-class BlackbodyFromParamsGenerator:
-    def __init__(self, wavelength_range): self.wavelength_range = wavelength_range
-    def generate(self, system_params):
-        return create_blackbody_spectrum(temperature=system_params["Tp"], wavelength_range=self.wavelength_range)
-
-class PSGSpectrumGenerator:   # later — same interface, drops in without touching PopulationSpectrumProvider
-    def generate(self, system_params):
-        return load_spectrum_from_file(system_params["abs_file_name_psg_spectrum"])

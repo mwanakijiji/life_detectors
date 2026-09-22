@@ -54,7 +54,8 @@ from modules.utils.helpers.spectra import (
 )
 
 from modules.core.planet_spectrum_provider import (
-    BlackbodySpectrumProvider,
+    BlackbodyFromParamsGenerator,
+    PSGSpectrumGenerator,
     PopulationSpectrumProvider,
     SingleModelFileProvider,
 )
@@ -191,15 +192,26 @@ def run_single_calculation(
         
         # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
-        # planet spectra, or blackbody?
-        if "exoplanet_model_10pc" in sources_to_include:
+        # planet spectrum source is driven by systems_2_look_at, not by which
+        # astrophysical sources happen to be enabled (keeps a single switch)
+        systems_2_look_at = config.get("system_options", "systems_2_look_at", fallback="planet_population")
+        if systems_2_look_at == "read_in_one_planet_spectrum":
             provider = SingleModelFileProvider(
                 config["astrophysical_sources_library"]["exoplanet_model_10pc"]
             )
-        elif config.get("target", "planet_source", fallback="") == "BB":
-            provider = BlackbodySpectrumProvider()
         else:
-            provider = PopulationSpectrumProvider()
+            wavelength_range = (
+                float(config["wavelength_range"]["min"]),
+                float(config["wavelength_range"]["max"]),
+            )
+            spectrum_method = config.get("planet_population", "spectrum_method", fallback="blackbody")
+            if spectrum_method == "blackbody":
+                generator = BlackbodyFromParamsGenerator(wavelength_range=wavelength_range)
+            elif spectrum_method == "psg":
+                generator = PSGSpectrumGenerator()
+            else:
+                raise ValueError(f"Unknown [planet_population] spectrum_method: {spectrum_method!r}")
+            provider = PopulationSpectrumProvider(generator)
         astrophysical_sources = astrophysical.AstrophysicalSources(
             config, planet_spectrum_provider=provider
         )

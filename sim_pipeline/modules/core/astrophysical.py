@@ -300,8 +300,11 @@ class AstrophysicalSources:
                                float(self.config['wavelength_range']['max']),
                                int(100)) * u.um
 
-        if source_name == "exoplanet_model_10pc":
+        if source_name == "exoplanet_model_10pc" or (source_name == "exoplanet_bb" and system_params is not None):
             # Provider returns intrinsic luminosity; distance scaling happens below.
+            # exoplanet_bb only routes through the provider for a planet-population run
+            # (system_params set); otherwise it keeps using the static config-specified
+            # spectrum loaded once in _load_spectra().
             self.spectra[source_name] = self.planet_spectrum_provider.get_spectrum(system_params)
 
         if source_name in ["star", "exoplanet_bb", "exozodiacal", "zodiacal", "exoplanet_model_10pc"]:
