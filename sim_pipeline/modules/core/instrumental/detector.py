@@ -30,13 +30,23 @@ class Detector:
             if not config_getboolean(self.config, sys_section, enable_key):
                 return None
             section = self.config[sys_section]
-            file_path = section[file_key] if isinstance(section, dict) else section.get(file_key)
+            file_path = (
+                section[file_key]
+                if isinstance(section, dict)
+                else section.get(file_key)
+            )
             return fits.getdata(file_path)
 
-        read_noise_map = _load_systematic_map("enable_read_noise_2d", "read_noise_2d_file")
+        read_noise_map = _load_systematic_map(
+            "enable_read_noise_2d", "read_noise_2d_file"
+        )
         bias_map = _load_systematic_map("enable_dc_2d", "dc_2d_file")
-        cosmic_rays_map = _load_systematic_map("enable_cosmic_rays_2d", "cosmic_rays_2d_file")
-        hot_pixels_map = _load_systematic_map("enable_hot_pixels_2d", "hot_pixels_2d_file")
+        cosmic_rays_map = _load_systematic_map(
+            "enable_cosmic_rays_2d", "cosmic_rays_2d_file"
+        )
+        hot_pixels_map = _load_systematic_map(
+            "enable_hot_pixels_2d", "hot_pixels_2d_file"
+        )
 
         self.systematics_additive_dict = {
             "read_noise_map": read_noise_map,
@@ -67,7 +77,9 @@ class Detector:
         if len(self.systematics_additive_dict) > 0:
             for key, value in self.systematics_additive_dict.items():
                 if value is not None:
-                    logging.info("Applying %s systematic (additive) to the detector", key)
+                    logging.info(
+                        "Applying %s systematic (additive) to the detector", key
+                    )
                     canvas_systematics = canvas_systematics + value
 
         if len(self.systematics_multiplicative_dict) > 0:

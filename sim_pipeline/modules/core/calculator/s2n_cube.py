@@ -42,7 +42,11 @@ class S2NCube:
 def _config_to_dict(config) -> Dict[str, Dict[str, str]]:
     if isinstance(config, configparser.ConfigParser):
         return {section: dict(config[section]) for section in config.sections()}
-    return {section: dict(values) for section, values in config.items() if isinstance(values, dict)}
+    return {
+        section: dict(values)
+        for section, values in config.items()
+        if isinstance(values, dict)
+    }
 
 
 def save_s2n_cube(
@@ -62,7 +66,11 @@ def save_s2n_cube(
     saved_paths: List[str] = []
 
     if file_format in {"pickle", "both"}:
-        pickle_path = output_path if output_path.suffix == ".pkl" else output_path.with_suffix(".pkl")
+        pickle_path = (
+            output_path
+            if output_path.suffix == ".pkl"
+            else output_path.with_suffix(".pkl")
+        )
         pickle_path.parent.mkdir(parents=True, exist_ok=True)
         with open(pickle_path, "wb") as handle:
             pickle.dump(cube, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -70,7 +78,11 @@ def save_s2n_cube(
         logger.info("Saved S/N cube pickle to %s", pickle_path)
 
     if file_format in {"hdf5", "both"}:
-        hdf5_path = output_path if output_path.suffix in {".h5", ".hdf5"} else output_path.with_suffix(".hdf5")
+        hdf5_path = (
+            output_path
+            if output_path.suffix in {".h5", ".hdf5"}
+            else output_path.with_suffix(".hdf5")
+        )
         hdf5_path.parent.mkdir(parents=True, exist_ok=True)
         with h5py.File(hdf5_path, "w") as handle:
             handle.create_dataset("snr", data=cube.snr, compression="gzip")
@@ -85,7 +97,9 @@ def save_s2n_cube(
                 [str(title) for title in cube.base_titles.ravel()],
                 dtype=h5py.string_dtype(encoding="utf-8"),
             )
-            handle.create_dataset("base_titles", data=base_titles_flat.reshape(cube.base_titles.shape))
+            handle.create_dataset(
+                "base_titles", data=base_titles_flat.reshape(cube.base_titles.shape)
+            )
 
             meta = handle.create_group("meta")
             meta.attrs["title_context"] = cube.title_context
@@ -109,7 +123,10 @@ def save_s2n_cube(
                 [str(title) for title in formatted_titles.ravel()],
                 dtype=h5py.string_dtype(encoding="utf-8"),
             )
-            meta.create_dataset("formatted_plot_titles", data=formatted_flat.reshape(formatted_titles.shape))
+            meta.create_dataset(
+                "formatted_plot_titles",
+                data=formatted_flat.reshape(formatted_titles.shape),
+            )
 
         saved_paths.append(str(hdf5_path))
         logger.info("Saved S/N cube HDF5 to %s", hdf5_path)
@@ -123,7 +140,7 @@ def read_s2n_cube_hdf5(path: Union[str, Path]) -> S2NCube:
 
     The primary data array ``cube.snr`` has shape ``(n_wavelength, n_dc, n_qe)``
     with coordinate vectors ``cube.wavelength``, ``cube.dark_current``, and ``cube.qe``.
-  """
+    """
     path = Path(path)
     if path.suffix not in {".h5", ".hdf5"}:
         raise ValueError(f"Expected an HDF5 path (.h5 / .hdf5), got: {path}")
@@ -213,7 +230,9 @@ def discover_s2n_cube_hdf5_files(directory: Union[str, Path]) -> List[Path]:
     """Return HDF5 cube paths in ``directory`` (prefers ``*s2n_cube.hdf5``)."""
     directory = Path(directory)
     if not directory.is_dir():
-        raise NotADirectoryError(f"Expected a directory of S/N cube HDF5 files: {directory}")
+        raise NotADirectoryError(
+            f"Expected a directory of S/N cube HDF5 files: {directory}"
+        )
     files = sorted(directory.glob("*s2n_cube.hdf5"))
     if not files:
         files = sorted(directory.glob("*.hdf5"))

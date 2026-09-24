@@ -5,7 +5,10 @@ from typing import Optional
 
 from ..loader import config_getboolean
 
-def _config_get(config, section: str, key: str, default: Optional[str] = None) -> Optional[str]:
+
+def _config_get(
+    config, section: str, key: str, default: Optional[str] = None
+) -> Optional[str]:
     try:
         if isinstance(config, configparser.ConfigParser):
             if not config.has_section(section):
@@ -16,6 +19,7 @@ def _config_get(config, section: str, key: str, default: Optional[str] = None) -
     except Exception:
         return default
     return default
+
 
 def _config_set_plot_title_context(config, value: str) -> None:
     if not value:
@@ -60,7 +64,7 @@ def build_system_params_title(config) -> str:
     beta = _config_get(config, "target", "beta_lat_los")
     if lambda_rel is not None and beta is not None:
         lines.append(
-            fr"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = {float(beta):.2f} deg"
+            rf"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = {float(beta):.2f} deg"
         )
 
     z_exozodiacal = _config_get(config, "target", "z_exozodiacal")
@@ -138,7 +142,6 @@ def build_observation_detector_title(config) -> str:
     if spec_res is not None:
         lines.append(f"spec_res R = {float(spec_res)}")
 
-
     return "\n".join(lines)
 
 
@@ -146,7 +149,10 @@ def ensure_plot_title_context(config) -> str:
     existing = _get_plot_title_context(config)
     if existing:
         return existing
-    parts = [build_system_params_title(config), build_observation_detector_title(config)]
+    parts = [
+        build_system_params_title(config),
+        build_observation_detector_title(config),
+    ]
     built = "\n".join(part for part in parts if part)
     _config_set_plot_title_context(config, built)
     return built
@@ -208,6 +214,7 @@ def format_plot_title(base_title: str, config, font_size: int = 12) -> str:
         return f"{base_title}\n{underline}{separator}{body}"
     else:
         return f"{body}"
+
 
 # end bunch of functions to get and set the plot title context
 ########################################################

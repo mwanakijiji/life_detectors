@@ -4,11 +4,14 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+
 def parse_sky_position_arcsec_yx(pos_str: str) -> tuple[float, float]:
     """Parse on-sky position string as y, x offsets in arcsec (y first, x second)."""
     parts = [float(v.strip()) for v in str(pos_str).split(",")]
     if len(parts) != 2:
-        raise ValueError(f"Expected two comma-separated values (y, x arcsec), got {pos_str!r}")
+        raise ValueError(
+            f"Expected two comma-separated values (y, x arcsec), got {pos_str!r}"
+        )
     return parts[0], parts[1]
 
 
@@ -74,16 +77,22 @@ def parse_dc_qe_group(dc_qe_str: str) -> tuple[float, float]:
     match = _DC_QE_GROUP_RE.match(dc_qe_str)
     if match is None:
         raise ValueError(f"Unrecognized HDF5 group name: {dc_qe_str!r}")
-    return canonical_dc_rate(float(match.group("dc"))), canonical_qe(float(match.group("qe")))
+    return canonical_dc_rate(float(match.group("dc"))), canonical_qe(
+        float(match.group("qe"))
+    )
 
 
-def lookup_float_key(mapping: dict, key: float, *, label: str = "key", decimals: int = 6):
+def lookup_float_key(
+    mapping: dict, key: float, *, label: str = "key", decimals: int = 6
+):
     """Dict lookup tolerant of tiny float formatting differences."""
     resolved = resolve_float_key(mapping, key, label=label, decimals=decimals)
     return mapping[resolved]
 
 
-def resolve_float_key(mapping: dict, key: float, *, label: str = "key", decimals: int = 6) -> float:
+def resolve_float_key(
+    mapping: dict, key: float, *, label: str = "key", decimals: int = 6
+) -> float:
     """Return the mapping key that matches ``key`` within formatting tolerance."""
     key = float(key)
     if key in mapping:

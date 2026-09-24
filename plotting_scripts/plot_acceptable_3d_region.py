@@ -77,7 +77,9 @@ def _color_from_name(name):
 
 # Region-of-interest box: (wavelength, QE, dark current) in physical units.
 class DetectorROI:
-    def __init__(self, name, wavelength_0, wavelength_1, qe_0, qe_1, dc_0, dc_1, color=None):
+    def __init__(
+        self, name, wavelength_0, wavelength_1, qe_0, qe_1, dc_0, dc_1, color=None
+    ):
         self.name = name
         self.wavelength_0 = wavelength_0
         self.wavelength_1 = wavelength_1
@@ -123,6 +125,7 @@ class DetectorROI:
                 outline=outline,
             )
 
+
 def _plot_bounding_box(ax, x0, x1, y0, y1, z0, z1, **plot_kwargs):
     """Filled box with plot axes x=wavelength, y=QE, z=dark current."""
     corners = np.array(
@@ -159,7 +162,9 @@ def _plot_bounding_box(ax, x0, x1, y0, y1, z0, z1, **plot_kwargs):
     ax.add_collection3d(box)
 
 
-def _plot_filled_rectangle(ax, x0, x1, y0, y1, color="red", alpha=0.4, label=None, outline=True):
+def _plot_filled_rectangle(
+    ax, x0, x1, y0, y1, color="red", alpha=0.4, label=None, outline=True
+):
     ax.add_patch(
         Rectangle(
             (x0, y0),
@@ -239,7 +244,16 @@ _LABEL_OFFSET_ABOVE = (0.0, 1.5)
 
 
 def _label_display_bbox(
-    x_disp, y_disp, text_w, text_h, dx, dy, px_per_pt, va="bottom", ha="left", rotation=0.0
+    x_disp,
+    y_disp,
+    text_w,
+    text_h,
+    dx,
+    dy,
+    px_per_pt,
+    va="bottom",
+    ha="left",
+    rotation=0.0,
 ):
     """Label bounding box in display pixels for a given offset (AABB if rotated)."""
     from matplotlib.transforms import Bbox
@@ -276,9 +290,7 @@ def _label_display_bbox(
 def _estimate_text_size_px(fig, name, fontsize, px_per_pt, fontweight="bold"):
     """Measure annotation size in display pixels, with a small safety inflate."""
     renderer = fig.canvas.get_renderer()
-    tmp = fig.text(
-        0, 0, name, fontsize=fontsize, fontweight=fontweight, visible=False
-    )
+    tmp = fig.text(0, 0, name, fontsize=fontsize, fontweight=fontweight, visible=False)
     try:
         bbox = tmp.get_window_extent(renderer=renderer)
         # Inflate slightly so bold ink / antialiasing does not slip past overlap checks.
@@ -763,9 +775,7 @@ def _build_acceptable_volume_figure(
                 mesh.name = f"<b>{detector.name}</b>"
             traces.append(mesh)
         if annotate_detectors:
-            anns = _detector_label_annotation3d(
-                detector, z_max=z_max, bold=bold_fonts
-            )
+            anns = _detector_label_annotation3d(detector, z_max=z_max, bold=bold_fonts)
             if anns:
                 annotations.extend(anns)
 
@@ -928,9 +938,7 @@ def _show_interactive_volume_plotly(
     )
     if output_html is None:
         output_html = (
-            Path.home()
-            / "Downloads"
-            / "acceptable_s2n_region_3d_interactive.html"
+            Path.home() / "Downloads" / "acceptable_s2n_region_3d_interactive.html"
         )
     output_html = Path(output_html).expanduser().resolve()
     print(f"Saving interactive 3D Plotly figure to {output_html}...")
@@ -983,9 +991,7 @@ def _save_annotated_volume_png(
     )
     if output_png is None:
         output_png = (
-            Path.home()
-            / "Downloads"
-            / "junk_acceptable_s2n_region_3d_annotated.png"
+            Path.home() / "Downloads" / "junk_acceptable_s2n_region_3d_annotated.png"
         )
     output_png = Path(output_png).expanduser().resolve()
     print(
@@ -1010,29 +1016,30 @@ def _plot_roi_rectangle(ax, x0, x1, y0, y1, **rect_kwargs):
         )
     )
 
+
 def _read_csv(filename):
 
-    df = pd.read_csv(filename, delimiter=',')
+    df = pd.read_csv(filename, delimiter=",")
     detectors_dict = {}
 
     for i, (_index, row) in enumerate(df.iterrows()):
         # define detectors
-        
-        offset = 0.02 # sets line thickness in plot
-        detect_name = row['plot_string_name']
-        detectors_dict[detect_name] = DetectorROI(
-                                                    name=detect_name,
-                                                    wavelength_0=row['cutoff_blue_um'], 
-                                                    wavelength_1=row['cutoff_red_um'], 
-                                                    qe_0=row['qe']-offset, 
-                                                    qe_1=row['qe'], 
-                                                    dc_0=row['dark_current_single_val']-offset, 
-                                                    dc_1=row['dark_current_single_val'],
-                                                    color=_color_for_index(i),
-                                                    )
 
+        offset = 0.02  # sets line thickness in plot
+        detect_name = row["plot_string_name"]
+        detectors_dict[detect_name] = DetectorROI(
+            name=detect_name,
+            wavelength_0=row["cutoff_blue_um"],
+            wavelength_1=row["cutoff_red_um"],
+            qe_0=row["qe"] - offset,
+            qe_1=row["qe"],
+            dc_0=row["dark_current_single_val"] - offset,
+            dc_1=row["dark_current_single_val"],
+            color=_color_for_index(i),
+        )
 
     return detectors_dict
+
 
 def _contour_y_at_x(segs, x_target):
     """Return y on contour segments at ``x_target`` (linear interp), or None."""
@@ -1118,14 +1125,10 @@ def _plot_marginalized_panel(
         cmap="Blues",
         alpha=0.85,
     )
-    cs = ax.contour(
-        x, y, snr_2d.T, levels=s2n_levels, colors="navy", linewidths=0
-    )
+    cs = ax.contour(x, y, snr_2d.T, levels=s2n_levels, colors="navy", linewidths=0)
     # Emphasize the S/N = 3 contour with a visible dark outline.
     if 3 in np.asarray(s2n_levels):
-        ax.contour(
-            x, y, snr_2d.T, levels=[3], colors="black", linewidths=1.5, zorder=4
-        )
+        ax.contour(x, y, snr_2d.T, levels=[3], colors="black", linewidths=1.5, zorder=4)
     # Place level labels in a column near the right edge, on each contour.
     x_min, x_max = float(x.min()), float(x.max())
     x_label = x_max - 0.02 * (x_max - x_min)
@@ -1146,9 +1149,10 @@ def _plot_marginalized_panel(
         )
     ax.set_xlabel(xlabel, fontsize=16)
     ax.set_ylabel(ylabel, fontsize=16)
-    #ax.set_title(title, pad=12, fontsize=14)
+    # ax.set_title(title, pad=12, fontsize=14)
     ax.tick_params(axis="both", which="major", labelsize=14)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
@@ -1181,11 +1185,11 @@ wavelength = cube.wavelength
 dark_current = cube.dark_current
 qe_list = cube.qe
 
-s2n_levels = np.arange(3,15)
+s2n_levels = np.arange(3, 15)
 s2n_min = np.min(s2n_levels)
 
 # Subsample for display only (does not change the saved HDF5 data).
-dc_stride = 50   # 0.001 e/pix/s steps -> 0.05 e/pix/s bins
+dc_stride = 50  # 0.001 e/pix/s steps -> 0.05 e/pix/s bins
 wavel_stride = 5
 snr_vis = snr_cube[::wavel_stride, ::dc_stride, :]
 wavel_vis = wavelength[::wavel_stride]
@@ -1255,12 +1259,18 @@ fig.tight_layout()
 
 # Place labels after layout is fixed so overlap checks use final display coords.
 bold_names = _detectors_visible_on_both_panels(ax_dc, ax_qe, detectors_dict.values())
-_place_detector_labels(ax_dc, detectors_dict.values(), mode="wavel_dc", bold_names=bold_names)
-_place_detector_labels(ax_qe, detectors_dict.values(), mode="wavel_qe", bold_names=bold_names)
+_place_detector_labels(
+    ax_dc, detectors_dict.values(), mode="wavel_dc", bold_names=bold_names
+)
+_place_detector_labels(
+    ax_qe, detectors_dict.values(), mode="wavel_qe", bold_names=bold_names
+)
 _place_case_annotation(ax_dc, case_annotation_dc)
 _place_case_annotation(ax_qe, case_annotation_qe)
 
-out_path = "/Users/eckhartspalding/Downloads/junk_acceptable_s2n_region_3d_isosurface.png"
+out_path = (
+    "/Users/eckhartspalding/Downloads/junk_acceptable_s2n_region_3d_isosurface.png"
+)
 plt.savefig(out_path, bbox_inches="tight", dpi=200)
 print(f"Saved plot to {out_path}")
 
@@ -1278,4 +1288,4 @@ _save_annotated_volume_png(
     case_annotation=CASE_ANNOTATION,
 )
 
-#plt.show()
+# plt.show()

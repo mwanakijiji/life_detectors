@@ -34,7 +34,9 @@ class DispersionLaw:
             dtype=float,
         )
 
-    def make_footprint(self, side_length_pix: int, num_wavel_bins: int, method: str = "dense") -> np.ndarray:
+    def make_footprint(
+        self, side_length_pix: int, num_wavel_bins: int, method: str = "dense"
+    ) -> np.ndarray:
         """Return footprint cube of shape (n_bins, n_pix, n_pix).
 
         Values are 1 for fully covered pixels and fractional coverage on edges.
@@ -47,19 +49,27 @@ class DispersionLaw:
 
             for wavel_bin_num in range(num_wavel_bins):
                 # assumes horizontal spectra
-                footprint_this = np.full((side_length_pix, side_length_pix), 0.0, dtype=float)
+                footprint_this = np.full(
+                    (side_length_pix, side_length_pix), 0.0, dtype=float
+                )
                 starting_pixel_this = self.starting_pixel + np.array(
                     [0.0, wavel_bin_num * self.pix_per_wavel_bin]
                 )
 
                 pixel_ceil_start_x = int(np.ceil(starting_pixel_this[1]))
                 pixel_frac_start_x = pixel_ceil_start_x - starting_pixel_this[1]
-                pixel_floor_end_x = int(np.floor(starting_pixel_this[1] + self.pix_per_wavel_bin))
-                pixel_frac_end_x = (starting_pixel_this[1] + self.pix_per_wavel_bin) - pixel_floor_end_x
+                pixel_floor_end_x = int(
+                    np.floor(starting_pixel_this[1] + self.pix_per_wavel_bin)
+                )
+                pixel_frac_end_x = (
+                    starting_pixel_this[1] + self.pix_per_wavel_bin
+                ) - pixel_floor_end_x
 
                 y0 = int(starting_pixel_this[0])
                 y1 = int(starting_pixel_this[0] + self.pix_spectral_width)
-                footprint_this[y0:y1, int(pixel_ceil_start_x) : int(pixel_floor_end_x)] = 1.0
+                footprint_this[
+                    y0:y1, int(pixel_ceil_start_x) : int(pixel_floor_end_x)
+                ] = 1.0
                 footprint_this[y0:y1, int(pixel_ceil_start_x) - 1] = pixel_frac_start_x
                 footprint_this[y0:y1, int(pixel_floor_end_x)] = pixel_frac_end_x
 
@@ -73,7 +83,6 @@ class DispersionLaw:
             footprint_sum = np.sum(footprint_cube, axis=0)
             logging.info("Total dispersion footprint is %s pixels", footprint_sum.sum())
 
-
         elif method == "sparse":
             # shape (num_wavel_bins, side_length_pix * side_length_pix)
             # vectorized: compute all bin start/end columns at once (they're a linear function of
@@ -83,12 +92,13 @@ class DispersionLaw:
             x_start = self.starting_pixel[1] + bin_idx * self.pix_per_wavel_bin
 
             ## ## CONTINUE HERE
-            
+
         ...
-        return scipy.sparse.coo_matrix((data, (rows, cols)), shape=(num_wavel_bins, side*side)).tocsr()
+        return scipy.sparse.coo_matrix(
+            (data, (rows, cols)), shape=(num_wavel_bins, side * side)
+        ).tocsr()
 
         return footprint_cube
-
 
     @staticmethod
     def n_pix_per_bin(footprint_cube: np.ndarray) -> u.Quantity:

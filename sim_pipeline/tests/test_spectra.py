@@ -16,7 +16,9 @@ class TestSpectralDataInit:
     def test_raises_on_shape_mismatch(self):
         wavelength = np.array([1.0, 2.0, 3.0])
         flux = np.array([10.0, 20.0])
-        with pytest.raises(ValueError, match="Wavelength and flux arrays must have the same shape"):
+        with pytest.raises(
+            ValueError, match="Wavelength and flux arrays must have the same shape"
+        ):
             SpectralData(
                 wavelength=wavelength,
                 flux=flux,
@@ -145,7 +147,9 @@ class TestLoadSpectrumFromFile:
         assert spectrum.source_name == "sample_spectrum"
         assert spectrum.metadata["filepath"] == str(file_path)
 
-    def test_load_spectrum_from_file_missing_file_currently_raises_nameerror(self, tmp_path):
+    def test_load_spectrum_from_file_missing_file_currently_raises_nameerror(
+        self, tmp_path
+    ):
         missing = tmp_path / "does_not_exist.csv"
         # Current implementation logs with undefined variable 'e' in the missing-file branch.
         with pytest.raises(NameError):

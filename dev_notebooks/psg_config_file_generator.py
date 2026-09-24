@@ -1,7 +1,7 @@
-# Reads in 
+# Reads in
 #  1. a set of planet parameters
-#  2. template XML file 
-# and saves a new one with updated parameters 
+#  2. template XML file
+# and saves a new one with updated parameters
 
 # The resultingile gets sent to NASA cloud, and saves the results locally, with command like
 # > curl --data-urlencode file@psg_cfg.txt https://psg.gsfc.nasa.gov/api.php > junk.txt
@@ -11,9 +11,10 @@ import matplotlib.pyplot as plt
 import copy
 import ipdb
 
-file_name_psg_template = "/Users/eckhartspalding/Documents/git.repos/life_detectors/notebooks/psg_cfg_template.txt" # don't modify unless you know what you're doing
-#file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/trunc_20260206_sweep_diam_3_0_catalog.txt"
+file_name_psg_template = "/Users/eckhartspalding/Documents/git.repos/life_detectors/notebooks/psg_cfg_template.txt"  # don't modify unless you know what you're doing
+# file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/trunc_20260206_sweep_diam_3_0_catalog.txt"
 file_name_planet_population = "/Users/eckhartspalding/Documents/git.repos/life_detectors/felix_yields/input/earth_only_catalog.txt"
+
 
 # read in the template file
 # returns a DataFrame with ordered tag/value rows
@@ -29,14 +30,18 @@ def read_psg_template(path):
             rows.append({"tag": tag, "value": value})
     return pd.DataFrame(rows)
 
+
 # write out updated template file
 def write_psg_template(path, df):
     with open(path, "w") as f:
         for _, row in df.iterrows():
             f.write(f"{row['tag']}{row['value']}\n")
 
+
 # read in the planet population file
-df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, delim_whitespace=True)
+df_planet_population = pd.read_csv(
+    file_name_planet_population, skiprows=1, delim_whitespace=True
+)
 
 # read original template file
 data_template = read_psg_template(file_name_psg_template)
@@ -49,21 +54,29 @@ for i in range(len(df_planet_population)):
     ipdb.set_trace()
     updates = {
         "<OBJECT-NAME>": "Exoplanet",
-        "<OBJECT-DIAMETER>": str(int(6371) * 2 * df_planet_population['Rp'].values[i]),  # (km); df_planet_population['Rp'] is (R_Earth = 6371 km)
-        "<OBJECT-GRAVITY>": str(5.972e+24 * df_planet_population['Mp'].values[i]), # mass of planet (if units are set to kg below) (kg); (M_Earth = 5.972e+24 kg)
+        "<OBJECT-DIAMETER>": str(
+            int(6371) * 2 * df_planet_population["Rp"].values[i]
+        ),  # (km); df_planet_population['Rp'] is (R_Earth = 6371 km)
+        "<OBJECT-GRAVITY>": str(
+            5.972e24 * df_planet_population["Mp"].values[i]
+        ),  # mass of planet (if units are set to kg below) (kg); (M_Earth = 5.972e+24 kg)
         "<OBJECT-GRAVITY-UNIT>": "kg",
-        "<OBJECT-STAR-DISTANCE>": str(df_planet_population['ap'].values[i]), # semimajor axis (AU)
-        "<OBJECT-STAR-TYPE>": str(df_planet_population['Stype'].values[i]),
-        "<OBJECT-STAR-TEMPERATURE>": str(df_planet_population['Ts'].values[i]),
-        "<OBJECT-STAR-RADIUS>": str(df_planet_population['Rs'].values[i]),
-        "<OBJECT-INCLINATION>": str(df_planet_population['ip'].values[i]),
-        "<GEOMETRY>": "Observatory", # direct imaging
-        #"<GEOMETRY-STAR-DISTANCE>": 1.0, # 0: the star is within the FOV # str(df_planet_population['Ds'].values[i]), # distance from Earth to system (pc)
+        "<OBJECT-STAR-DISTANCE>": str(
+            df_planet_population["ap"].values[i]
+        ),  # semimajor axis (AU)
+        "<OBJECT-STAR-TYPE>": str(df_planet_population["Stype"].values[i]),
+        "<OBJECT-STAR-TEMPERATURE>": str(df_planet_population["Ts"].values[i]),
+        "<OBJECT-STAR-RADIUS>": str(df_planet_population["Rs"].values[i]),
+        "<OBJECT-INCLINATION>": str(df_planet_population["ip"].values[i]),
+        "<GEOMETRY>": "Observatory",  # direct imaging
+        # "<GEOMETRY-STAR-DISTANCE>": 1.0, # 0: the star is within the FOV # str(df_planet_population['Ds'].values[i]), # distance from Earth to system (pc)
         "<GEOMETRY-OBS-ALTITUDE>": 20.0,
         "<GEOMETRY-ALTITUDE-UNIT>": "parsec",
         "<OBJECT-PHASE>": 90,
-        "<OBJECT-PERIOD>": str(df_planet_population['Porb'].values[i]),  ## ## TODO: JUST ROTATIONAL PERIOD, OR ORBIT?
-        "<GENERATOR-RADUNITS>": "Wm2um", ## ## TODO: CORRECT THIS TO BE EQUIVALENT TO PH/SEC/MICRON/M2;'Wum':  W / μm	F = L ⋅ ATele ⋅ Ω
+        "<OBJECT-PERIOD>": str(
+            df_planet_population["Porb"].values[i]
+        ),  ## ## TODO: JUST ROTATIONAL PERIOD, OR ORBIT?
+        "<GENERATOR-RADUNITS>": "Wm2um",  ## ## TODO: CORRECT THIS TO BE EQUIVALENT TO PH/SEC/MICRON/M2;'Wum':  W / μm	F = L ⋅ ATele ⋅ Ω
         "<OBJECT-SOLAR-LONGITUDE>": "107.1",  ## ## TODO: WHAT IS THIS? MIGHT BE IN REFLECTED REGIME
         "<OBJECT-SOLAR-LATITUDE>": "25.10",  ## ## TODO: WHAT IS THIS?
         "<OBJECT-OBS-LONGITUDE>": "144.93",  ## ## TODO: WHAT IS THIS?
@@ -77,9 +90,9 @@ for i in range(len(df_planet_population)):
         "<GENERATOR-RANGEUNIT>": "um",
         "<GENERATOR-RESOLUTION>": 50,
     }
-    print('!! ----- NOTE FLUX UNITS NEED TO BE MODIFIED ----- !!')
+    print("!! ----- NOTE FLUX UNITS NEED TO BE MODIFIED ----- !!")
 
-    '''
+    """
     How to implement L2? Modify below later on #todo
     <GEOMETRY>Observatory
     <GEOMETRY-OFFSET-NS>0.0
@@ -97,9 +110,9 @@ for i in range(len(df_planet_population)):
     <GEOMETRY-ROTATION>-0.00,0.01
     <GEOMETRY-BRDFSCALER>1.000
     <GEOMETRY-AZIMUTH>0.000
-    '''
+    """
 
-    '''
+    """
     Appropriate atmospheric values?
     <ATMOSPHERE-DESCRIPTION>Mars Climate Database, Millour et al. 2015
     <ATMOSPHERE-STRUCTURE>Equilibrium
@@ -113,7 +126,7 @@ for i in range(len(df_planet_population)):
     <ATMOSPHERE-LAYERS-MOLECULES>Altitude,CO2,N2,O2,CO,H2O,O3,Dust,WaterIce,Dust_size,WaterIce_size
     <ATMOSPHERE-PRESSURE>4.9755
     <ATMOSPHERE-LAYERS>49
-    '''
+    """
 
     for key, value in updates.items():
         mask = data_template_this["tag"] == key
@@ -122,7 +135,9 @@ for i in range(len(df_planet_population)):
         else:
             print(f"Missing key in template: {key}")
 
-    planet_unique_id = df_planet_population['id'].values[i]
-    file_name_output = f"./sample_psg_config_files/output_psg_cfg_{planet_unique_id:08d}.txt"
+    planet_unique_id = df_planet_population["id"].values[i]
+    file_name_output = (
+        f"./sample_psg_config_files/output_psg_cfg_{planet_unique_id:08d}.txt"
+    )
     write_psg_template(file_name_output, data_template_this)
     print(f"Wrote {file_name_output}")

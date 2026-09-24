@@ -61,7 +61,10 @@ def main() -> int:
             check=True,
         )
     except FileNotFoundError:
-        print("graphviz `dot` not found; DOT written but SVG not generated", file=sys.stderr)
+        print(
+            "graphviz `dot` not found; DOT written but SVG not generated",
+            file=sys.stderr,
+        )
         return 1
     except subprocess.CalledProcessError as exc:
         print(f"`dot` failed: {exc}", file=sys.stderr)

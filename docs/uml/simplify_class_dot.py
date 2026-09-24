@@ -35,7 +35,6 @@ def _flatten_record_label(raw: str) -> str:
     return flat
 
 
-
 def simplify(dot_text: str) -> str:
     pattern = re.compile(
         r'^(?P<indent>\s*)"(?P<node>[^"]+)"\s*\[(?P<attrs>.*)\]\s*;\s*$',
@@ -46,7 +45,7 @@ def simplify(dot_text: str) -> str:
         indent = match.group("indent")
         node = match.group("node")
         attrs = match.group("attrs")
-        label_match = re.search(r'label=<(?P<label>\{.*?\})>', attrs)
+        label_match = re.search(r"label=<(?P<label>\{.*?\})>", attrs)
         if not label_match:
             # Already a simple label, or unexpected format — keep as-is
             return match.group(0)
@@ -54,10 +53,7 @@ def simplify(dot_text: str) -> str:
         short_name = node.rsplit(".", 1)[-1]
         flat = _flatten_record_label("<" + label_match.group("label") + ">")
         # Prefer short class name on the first line if the flattened text starts with it
-        return (
-            f'{indent}"{node}" '
-            f'[label="{flat}", shape="box", style="solid"];'
-        )
+        return f'{indent}"{node}" ' f'[label="{flat}", shape="box", style="solid"];'
 
     # Also shorten edge endpoints visually? Keep full IDs for uniqueness.
     out = pattern.sub(repl, dot_text)

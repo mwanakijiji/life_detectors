@@ -82,8 +82,12 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
                 )
                 slot["S_p"][angle] = S_p
                 slot["S_p_3"][angle] = S_p_3
-                slot["chopped_instrum_rn_rms_adu"][angle] = chopped["chopped_instrum_rn_rms_adu"]
-                slot["chopped_instrum_dc_rms_adu"][angle] = chopped["chopped_instrum_dc_rms_adu"]
+                slot["chopped_instrum_rn_rms_adu"][angle] = chopped[
+                    "chopped_instrum_rn_rms_adu"
+                ]
+                slot["chopped_instrum_dc_rms_adu"][angle] = chopped[
+                    "chopped_instrum_dc_rms_adu"
+                ]
                 slot["wavel_bin_width"] = chopped["width"]
 
                 sym_tags = ("star", "exozodiacal", "zodiacal")
@@ -109,7 +113,9 @@ def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]
     cols_S_p_elec = [np.asarray(slot["S_p"][a] * gain) for a in angles] * u.electron
     cols_S_p_3_elec = [np.asarray(slot["S_p_3"][a] * gain) for a in angles] * u.electron
     S_p_sqd_arr_mean_elec = np.mean(np.power(np.column_stack(cols_S_p_elec), 2), axis=1)
-    S_p_3_sqd_arr_mean_elec = np.mean(np.power(np.column_stack(cols_S_p_3_elec), 2), axis=1)
+    S_p_3_sqd_arr_mean_elec = np.mean(
+        np.power(np.column_stack(cols_S_p_3_elec), 2), axis=1
+    )
 
     sources_sym = slot.get("sources_sym", {})
     S_sym_noise_var_3_elec = None
@@ -124,7 +130,8 @@ def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]
                 source_dict["Ssym_dark_3"][a] * gain
             )
             cols_sym_noise_var_3_elec.append(
-                np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value) * u.electron
+                np.sqrt(sym_noise_var_this_source_this_angle_dark_3_elec.value)
+                * u.electron
             )
         sym_noise_var_mean_3_elec = np.mean(
             np.column_stack(cols_sym_noise_var_3_elec).value * u.electron, axis=1
@@ -138,7 +145,9 @@ def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]
         S_sym_noise_var_3_elec = np.zeros(len(slot["wavel_bin_width"])) * u.electron
     elif S_sym_noise_var_3_elec.unit != u.electron:
         logger.error("Unit inconsistency in symmetric astrophysical noise sources!")
-        raise ValueError("Symmetric astrophysical noise sources have inconsistent units")
+        raise ValueError(
+            "Symmetric astrophysical noise sources have inconsistent units"
+        )
 
     snr_lambda_array = []
     for wavel_bin_num in range(len(slot["wavel_bin_width"])):
@@ -233,9 +242,17 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
     qe_index = {val: idx for idx, val in enumerate(qe)}
 
     for dc_qe_str, dc_val, qe_val in parsed:
-        snr_lambda, snr_total = _compute_snr_lambda_for_slot(by_dc_qe[dc_qe_str], config)
-        i_dc = dc_index[resolve_float_key(dc_index, dc_val, label="dark_current", decimals=DC_GROUP_DECIMALS)]
-        i_qe = qe_index[resolve_float_key(qe_index, qe_val, label="qe", decimals=QE_GROUP_DECIMALS)]
+        snr_lambda, snr_total = _compute_snr_lambda_for_slot(
+            by_dc_qe[dc_qe_str], config
+        )
+        i_dc = dc_index[
+            resolve_float_key(
+                dc_index, dc_val, label="dark_current", decimals=DC_GROUP_DECIMALS
+            )
+        ]
+        i_qe = qe_index[
+            resolve_float_key(qe_index, qe_val, label="qe", decimals=QE_GROUP_DECIMALS)
+        ]
         snr_cube[:, i_dc, i_qe] = snr_lambda
         snr_tot[i_dc, i_qe] = snr_total
         base_titles[i_dc, i_qe] = _build_base_title(
@@ -267,7 +284,9 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
     )
 
 
-def calculate_s2n_post_rotation(read_dir, config, *, save_cube_path_stem: Optional[str] = None):
+def calculate_s2n_post_rotation(
+    read_dir, config, *, save_cube_path_stem: Optional[str] = None
+):
     """
     Calculate the S/N of the chopped dark outputs and optionally save an S/N cube.
 

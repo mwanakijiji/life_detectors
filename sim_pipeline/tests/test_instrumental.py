@@ -29,8 +29,6 @@ def _geometric_n_bins(lambda_min: float, lambda_max: float, spec_res: float) -> 
     return int(np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / spec_res)))
 
 
-
-
 @pytest.fixture
 def instrum_base_config():
     """Minimal config required by InstrumentDepTerms.__init__."""
@@ -86,7 +84,9 @@ def _output_flux_dict(cube):
     }
 
 
-def _attach_detector_footprint(channel: OutputChannel, detector_geometry_config, n_bins: int = 3):
+def _attach_detector_footprint(
+    channel: OutputChannel, detector_geometry_config, n_bins: int = 3
+):
     det = Detector(config=detector_geometry_config, num_wavel_bins=n_bins)
     law = DispersionLaw(detector_geometry_config)
     det.set_footprint(law.make_footprint(det.side_length_pix, det.num_wavel_bins))
@@ -94,7 +94,9 @@ def _attach_detector_footprint(channel: OutputChannel, detector_geometry_config,
     return det
 
 
-def _make_astroph_signal(bin_centers, bin_widths, n_pix_per_bin, flux_um: float = 10.0, qe: float = 0.8):
+def _make_astroph_signal(
+    bin_centers, bin_widths, n_pix_per_bin, flux_um: float = 10.0, qe: float = 0.8
+):
     flux_ph_sec_um = np.full(len(bin_centers), flux_um) * u.ph / (u.um * u.s) * qe
     flux_ph_sec_wavel_bin = flux_ph_sec_um * bin_widths
     flux_ph_sec_pixel = flux_ph_sec_wavel_bin / n_pix_per_bin
@@ -214,7 +216,10 @@ class TestInstrumentDepTerms:
         assert np.allclose(dc_rate.value, [0.05])
         assert np.allclose(dc_total.value, [1.0])  # 20 s * 0.05 e-/pix/s
 
-    @patch("modules.core.instrumental.transfer.compute_collecting_area_m2", return_value=25.0)
+    @patch(
+        "modules.core.instrumental.transfer.compute_collecting_area_m2",
+        return_value=25.0,
+    )
     def test_pass_through_aperture_scales_flux_cubes_by_collecting_area_and_throughput(
         self, _mock_area, instrum_base_config
     ):
@@ -243,10 +248,12 @@ class TestInstrumentDepTerms:
 
     def test_generate_instrument_transmission(
         self, instrum_base_config, transmission_config
-        ):
+    ):
         # make sure sum of transmission screens is 1.0 (except for very center where star is)
 
-        Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(parents=True, exist_ok=True)
+        Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(
+            parents=True, exist_ok=True
+        )
         config = {**instrum_base_config, "dirs": {"save_s2n_data_unique_dir": "/tmp/"}}
         wavel = np.array([1.0, 2.0]) * u.um
         scene = np.ones((2, 4, 4)) * u.ph / (u.um * u.m**2 * u.s)
@@ -257,11 +264,13 @@ class TestInstrumentDepTerms:
             sources_to_include=[],
         )
 
-        #ipdb.set_trace()
-        screens = instr.generate_instrument_transmission(wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False)
-        
+        # ipdb.set_trace()
+        screens = instr.generate_instrument_transmission(
+            wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
+        )
+
         # for debugging
-        '''
+        """
         import matplotlib.pyplot as plt
         screens = instr.generate_instrument_transmission(
             wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
@@ -279,36 +288,42 @@ class TestInstrumentDepTerms:
         plt.tight_layout()
         plt.savefig(transmission_config["dirs"]["save_s2n_data_unique_dir"] + "test_transmission_screens.png")
         plt.show()  # only if running interactively, not in headless pytest
-        '''
+        """
 
-        assert np.max(np.any(screens[0:5,:,:], axis=(0))) < 1.0 + 1e-6 # transmission < 1
+        assert (
+            np.max(np.any(screens[0:5, :, :], axis=(0))) < 1.0 + 1e-6
+        )  # transmission < 1
         net = np.sum(screens[0:4], axis=0)
         assert np.allclose(net, 1.0)
-
 
     def test_pass_through_transmission_screens_multiplies_scene_by_each_output(
         self, instrum_base_config, transmission_config
     ):
         wavel = np.array([1.0, 2.0]) * u.um
         scene = np.zeros((2, 1001, 1001)) * u.ph / (u.um * u.m**2 * u.s)
-        scene[:, 500:600, 200:300] = 6.0 * u.ph / (u.um * u.m**2 * u.s) # the 'star'
-        Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(parents=True, exist_ok=True)
-
+        scene[:, 500:600, 200:300] = 6.0 * u.ph / (u.um * u.m**2 * u.s)  # the 'star'
+        Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(
+            parents=True, exist_ok=True
+        )
 
         sources_astroph = {
             "star": {
                 "wavel": wavel,
-                "pre_screen_astro_flux_ph_sec_m2_um": np.ones(2) * u.ph / (u.um * u.m**2 * u.s),
+                "pre_screen_astro_flux_ph_sec_m2_um": np.ones(2)
+                * u.ph
+                / (u.um * u.m**2 * u.s),
             }
         }
 
         instr = InstrumentDepTerms(
-            transmission_config, 
-            sources_astroph=sources_astroph, 
-            sources_to_include=["star"]
+            transmission_config,
+            sources_astroph=sources_astroph,
+            sources_to_include=["star"],
         )
 
-        screens = instr.generate_instrument_transmission(wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False)
+        screens = instr.generate_instrument_transmission(
+            wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
+        )
 
         instr.pass_through_transmission_screens(
             fyi_angle=0.0,
@@ -317,22 +332,30 @@ class TestInstrumentDepTerms:
             plot=False,
         )
 
-        bright_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_1_bright"]
-        bright_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_2_bright"]
-        dark_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_3_dark"]
-        dark_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"]["output_4_dark"]
+        bright_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"][
+            "output_1_bright"
+        ]
+        bright_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"][
+            "output_2_bright"
+        ]
+        dark_1 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"][
+            "output_3_dark"
+        ]
+        dark_2 = instr.sources_astroph["star"]["flux_cube_post_screen_ph_sec_m2_um"][
+            "output_4_dark"
+        ]
 
-        '''
+        """
         if np.logical_or(
             np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
             np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
         ):
-        '''
+        """
 
         net_flux = bright_1 + bright_2 + dark_1 + dark_2
 
         # for debugging
-        '''
+        """
         import matplotlib.pyplot as plt
         wavel_idx = 0
         panels = [
@@ -354,11 +377,10 @@ class TestInstrumentDepTerms:
         plt.show()
         #plt.savefig(out_dir + "test_post_screen_flux_panels.png")
         #plt.close(fig)
-        '''
+        """
 
         # check flux conservation
         np.testing.assert_allclose(net_flux.value, scene.value)
-
 
     def test_chop_signal_builds_post_chop_tables(self, instrum_base_config):
         instr = InstrumentDepTerms(
@@ -371,15 +393,11 @@ class TestInstrumentDepTerms:
             qt["center"] = np.array([5.0, 6.0]) * u.um
             qt["width"] = np.array([0.1, 0.1]) * u.um
             qt["npix"] = np.array([4.0, 4.0]) * u.pix
-            qt["astro_star_adu"] = (
-                np.array([astro_scale, astro_scale + 1.0]) * u.adu
-            )
+            qt["astro_star_adu"] = np.array([astro_scale, astro_scale + 1.0]) * u.adu
             qt["instrum_dc_rms_adu"] = (
                 np.array([instrum_scale, instrum_scale + 2.0]) * u.adu
             )
-            qt["instrum_rn_rms_adu"] = (
-                np.array([1.0, 1.0]) * u.adu
-            )
+            qt["instrum_rn_rms_adu"] = np.array([1.0, 1.0]) * u.adu
             return qt
 
         for name, astro_scale, instrum_scale in [
@@ -417,7 +435,9 @@ class TestBuildBaseAstroTable:
         channel.bin_widths = np.array([0.1, 0.1, 0.1]) * u.um
         channel.bin_edges = np.array([4.95, 5.05, 6.05, 7.05]) * u.um
 
-        det = _attach_detector_footprint(channel, detector_geometry_config, n_bins=n_bins)
+        det = _attach_detector_footprint(
+            channel, detector_geometry_config, n_bins=n_bins
+        )
         n_pix_per_bin = np.sum(det.footprint_cube, axis=(1, 2)) * u.pix
         channel.astroph_signal["star"] = _make_astroph_signal(
             channel.bin_centers, channel.bin_widths, n_pix_per_bin, flux_um=12.0
@@ -451,7 +471,9 @@ class TestCombineAstroAndInstrumSignals:
             channel.bin_centers = channel.bin_centers[:3]
             channel.bin_widths = channel.bin_widths[:3]
             channel.bin_edges = channel.bin_edges[:4]
-            det = _attach_detector_footprint(channel, detector_geometry_config, n_bins=3)
+            det = _attach_detector_footprint(
+                channel, detector_geometry_config, n_bins=3
+            )
             n_pix_per_bin = np.sum(det.footprint_cube, axis=(1, 2)) * u.pix
             channel.astroph_signal["star"] = _make_astroph_signal(
                 channel.bin_centers,
@@ -466,8 +488,13 @@ class TestCombineAstroAndInstrumSignals:
     @patch("modules.viz.tables.plt.subplots")
     @patch("builtins.print")
     def test_combine_builds_per_dc_tables_with_instrumental_and_astro_columns(
-        self, _mock_print, mock_subplots, _mock_savefig, _mock_close,
-        combine_config, detector_geometry_config,
+        self,
+        _mock_print,
+        mock_subplots,
+        _mock_savefig,
+        _mock_close,
+        combine_config,
+        detector_geometry_config,
     ):
         mock_subplots.return_value = (MagicMock(), MagicMock())
 
@@ -516,9 +543,7 @@ class TestGenerateInstrumentTransmission:
         assert mock_writeto.call_count == 0
 
     @patch("modules.core.instrumental.transmission.fits.writeto")
-    def test_writes_fits_when_plot_true(
-        self, mock_writeto, transmission_config
-    ):
+    def test_writes_fits_when_plot_true(self, mock_writeto, transmission_config):
         instr = InstrumentDepTerms(
             transmission_config,
             sources_astroph={},
@@ -545,7 +570,7 @@ class TestGenerateInstrumentTransmission:
         center = cube.shape[-1] // 2
         # Cube order: 0/1 bright, 2/3 dark — stellar mask applies to darks only.
         assert cube[0, center, center] == pytest.approx(1.0, rel=1e-3)
-        #assert cube[1, center, center] == pytest.approx(1.0, rel=1e-3)
+        # assert cube[1, center, center] == pytest.approx(1.0, rel=1e-3)
         assert cube[2, center, center] == pytest.approx(0.001, abs=1e-3)
         assert cube[3, center, center] == pytest.approx(0.001, abs=1e-3)
 
@@ -583,7 +608,9 @@ class TestDisperseAstroSignalsOnDetector:
         )
         instr.prop_dict["star"] = {
             "wavel": wavel,
-            "flux_cube_post_screen_post_aperture_ph_sec_um": _output_flux_dict(post_cube),
+            "flux_cube_post_screen_post_aperture_ph_sec_um": _output_flux_dict(
+                post_cube
+            ),
         }
         for channel in instr.output_channels.values():
             channel.bin_centers = channel.bin_centers[:n_bins]

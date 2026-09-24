@@ -17,6 +17,7 @@ from .keys import (
 
 logger = logging.getLogger(__name__)
 
+
 @pipeline_stage(depends_on=("chop_signal",))
 def record_info_at_angle_and_qe(
     *,
@@ -60,9 +61,9 @@ def record_info_at_angle_and_qe(
         # write out the tables for each output channel
         for ch_name, ch in output_channels.items():
             out_tbl = ch.tables_by_dark_current[dc_rate_key].copy()
-            out_tbl.meta['angle_deg'] = float(angle_deg)
-            out_tbl.meta['dark_current_e_pix_s'] = float(dc_rate_key)
-            out_tbl.meta['qe'] = float(qe)
+            out_tbl.meta["angle_deg"] = float(angle_deg)
+            out_tbl.meta["dark_current_e_pix_s"] = float(dc_rate_key)
+            out_tbl.meta["qe"] = float(qe)
             hdf5_path = dc_qe_str + f"/{ch_name}"
             if first_dataset:
                 out_tbl.write(
@@ -84,8 +85,8 @@ def record_info_at_angle_and_qe(
 
         # now include the chopped signal
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate_key].copy()
-        chopped_tbl.meta['angle_deg'] = float(angle_deg)
-        chopped_tbl.meta['dark_current_e_pix_s'] = float(dc_rate_key)
+        chopped_tbl.meta["angle_deg"] = float(angle_deg)
+        chopped_tbl.meta["dark_current_e_pix_s"] = float(dc_rate_key)
         hdf5_path = dc_qe_str + "/chopped"
         chopped_tbl.write(
             file_name_hdf5,
@@ -97,19 +98,19 @@ def record_info_at_angle_and_qe(
         logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
 
     snapshot = {
-        'angle_deg': angle_deg,
-        'hdf5_file': file_name_hdf5,
-        'hdf5_paths': hdf5_paths,
-        'dark_currents': list(post_chop_tables_by_dark_current.keys()),
+        "angle_deg": angle_deg,
+        "hdf5_file": file_name_hdf5,
+        "hdf5_paths": hdf5_paths,
+        "dark_currents": list(post_chop_tables_by_dark_current.keys()),
     }
 
     logger.info(f"Recorded angle {angle_deg} to {file_name_hdf5}")
 
-    if plot and post_chop_tables_by_dark_current: # pragma: no cover
+    if plot and post_chop_tables_by_dark_current:  # pragma: no cover
         dc_rate = next(iter(post_chop_tables_by_dark_current))
         chopped_tbl = post_chop_tables_by_dark_current[dc_rate]
-        wavel_center = chopped_tbl['center'].value
-        wavel_width = chopped_tbl['width'].value
+        wavel_center = chopped_tbl["center"].value
+        wavel_width = chopped_tbl["width"].value
         wavel_edges = np.empty(len(wavel_center) + 1)
         wavel_edges[1:-1] = 0.5 * (wavel_center[:-1] + wavel_center[1:])
         wavel_edges[0] = wavel_center[0] - 0.5 * wavel_width[0]
@@ -117,20 +118,24 @@ def record_info_at_angle_and_qe(
 
         fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
         for col_name in chopped_tbl.colnames:
-            if not col_name.startswith('chopped_'):
+            if not col_name.startswith("chopped_"):
                 continue
             y_vals = chopped_tbl[col_name].value
             ax.stairs(y_vals, edges=wavel_edges, label=col_name)
 
-        ax.set_yscale('log')
+        ax.set_yscale("log")
         ax.set_xlim(4.0, 18.0)
-        ax.set_xlabel('Wavelength (um)')
-        ax.set_ylabel('Signal (ADU)')
-        ax.set_title(f'Chopped signals at angle {angle_deg:06.2f}, dc={dc_rate:06.3f} e/pix/s, QE {qe:04.2f}')
-        ax.legend(fontsize=8, loc='best')
+        ax.set_xlabel("Wavelength (um)")
+        ax.set_ylabel("Signal (ADU)")
+        ax.set_title(
+            f"Chopped signals at angle {angle_deg:06.2f}, dc={dc_rate:06.3f} e/pix/s, QE {qe:04.2f}"
+        )
+        ax.legend(fontsize=8, loc="best")
         file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:06.2f}_qe_{qe:04.2f}.png"
         fig.savefig(file_name_plot)
         plt.close(fig)
-        logger.info(f"Saved plot of chopped signals at angle {angle_deg:06.2f}, QE {qe:04.2f}: {file_name_plot}")
+        logger.info(
+            f"Saved plot of chopped signals at angle {angle_deg:06.2f}, QE {qe:04.2f}: {file_name_plot}"
+        )
 
     return

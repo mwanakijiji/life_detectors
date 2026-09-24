@@ -19,7 +19,9 @@ def ensure_sim_pipeline_on_path(repo_root: Path | None = None) -> Path:
     return sim_pipeline
 
 
-def get_read_s2n_cube_fn(*, reload_calculator: bool = True) -> Callable[[str | Path], Any]:
+def get_read_s2n_cube_fn(
+    *, reload_calculator: bool = True
+) -> Callable[[str | Path], Any]:
     """Return read_s2n_cube_hdf5, optionally reloading s2n_cube for dev sessions."""
     ensure_sim_pipeline_on_path()
     from modules.core.calculator import s2n_cube

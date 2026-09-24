@@ -5,7 +5,6 @@ from modules.pipeline_registry import (
     graph_from_registry,
 )
 
-
 EXPECTED_NODES = {
     "calculate_received_astro_fluxes",
     "arrange_onsky_scene",

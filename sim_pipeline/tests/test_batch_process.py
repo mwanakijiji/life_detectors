@@ -25,7 +25,6 @@ from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
 from modules.utils.helpers.spectra import compute_collecting_area_m2
 
-
 # Mock ipdb before importing batch_process (optional dev dependency)
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
@@ -40,9 +39,9 @@ from batch_process import (
 
 
 class TestModifyConfigFileSweep:
-    '''
+    """
     Test cases for modify_config_file_sweep.
-    '''
+    """
 
     @pytest.fixture
     def minimal_config_path(self, tmp_path):
@@ -110,7 +109,9 @@ class TestModifyConfigFilePlSystemParams:
         config = configparser.ConfigParser()
         config.add_section("dirs")
         config.set("dirs", "data_dir", str(tmp_path / "data") + "/")
-        config.set("dirs", "save_s2n_data_unique_dir", str(tmp_path / "param_sweeps") + "/")
+        config.set(
+            "dirs", "save_s2n_data_unique_dir", str(tmp_path / "param_sweeps") + "/"
+        )
         config.add_section("target")
         config.set("target", "distance", "10.0")
         config.set("target", "pl_temp", "200.0")
@@ -195,7 +196,10 @@ class TestModifyConfigFilePlSystemParams:
         assert config.get("target", "rad_star") == "1.0"
         assert config.get("target", "t_star") == "5778.0"
         assert config.get("target", "z_exozodiacal") == "2.0"
-        assert config.get("target", "psg_spectrum_file_name") == "/data/psg_cfg_00000015.response"
+        assert (
+            config.get("target", "psg_spectrum_file_name")
+            == "/data/psg_cfg_00000015.response"
+        )
         assert config.get("target", "Stype") == "G"
         assert config.get("target", "Nuniverse") == "1"
         assert config.get("target", "Nstar") == "42"
@@ -415,14 +419,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
 
 
-
-
 @pytest.fixture
 def flux_conservation_config(tmp_path):
     """Minimal config for transmission-screen flux conservation checks."""
     return {
         "detector": {
-            "spec_res": "20", 
+            "spec_res": "20",
             "read_noise": "6",
             "dark_current": "0.0001",
             "gain": "2.0",
@@ -436,9 +438,10 @@ def flux_conservation_config(tmp_path):
         },
         "wavelength_range": {"min": "4.0", "max": "18.0"},
         "telescope": {
-            "single_mirror_diameter": "3.5", 
+            "single_mirror_diameter": "3.5",
             "eta_t": "0.8",
-            "aperture_array_config_file_name": str(APERTURE_YAML)},
+            "aperture_array_config_file_name": str(APERTURE_YAML),
+        },
         "onsky_scene": {
             "n_pix": "1001",
             "pix_size_mas": "10.7",
@@ -473,8 +476,12 @@ def _build_four_source_scenes(config, wavel):
         idx_x = int(np.abs(axis_arcsec - x_arcsec).argmin())
         return idx_y, idx_x
 
-    y_star, x_star = parse_sky_position_arcsec_yx(config["onsky_scene"]["pos_star_arcsec"])
-    y_planet, x_planet = parse_sky_position_arcsec_yx(config["onsky_scene"]["pos_planet_arcsec"])
+    y_star, x_star = parse_sky_position_arcsec_yx(
+        config["onsky_scene"]["pos_star_arcsec"]
+    )
+    y_planet, x_planet = parse_sky_position_arcsec_yx(
+        config["onsky_scene"]["pos_planet_arcsec"]
+    )
     idx_y_star, idx_x_star = _idx_from_arcsec(y_star, x_star)
     idx_y_planet, idx_x_planet = _idx_from_arcsec(y_planet, x_planet)
 
@@ -490,7 +497,11 @@ def _build_four_source_scenes(config, wavel):
             flux_specs["star"], n_pix, idx_y_star, idx_x_star, half_pix
         ),
         "exoplanet_model_10pc": generate_exoplanet_scene(
-            flux_specs["exoplanet_model_10pc"], n_pix, idx_y_planet, idx_x_planet, half_pix
+            flux_specs["exoplanet_model_10pc"],
+            n_pix,
+            idx_y_planet,
+            idx_x_planet,
+            half_pix,
         ),
         "exozodiacal": generate_exozodi_scene(
             flux_specs["exozodiacal"],
@@ -551,11 +562,15 @@ def _independent_detector_flux_from_prop_dict(instr, source_name, qe, flux_rate_
     for ch_name in post_aperture_cubes:
         flux_1d = np.sum(post_aperture_cubes[ch_name], axis=(1, 2))
         flux_values = flux_1d.to(flux_rate_unit).value
-        total += (np.interp(wavel_bin_values, wavel_pt_values, flux_values) * qe) * flux_rate_unit
+        total += (
+            np.interp(wavel_bin_values, wavel_pt_values, flux_values) * qe
+        ) * flux_rate_unit
     return total
 
 
-def _photons_and_adu_from_detector_footprint(instr, sources_to_include, t_frame, gain, e_per_ph):
+def _photons_and_adu_from_detector_footprint(
+    instr, sources_to_include, t_frame, gain, e_per_ph
+):
     """
     Sum QE-inclusive photon rates over each channel's spectral footprint, then
     convert integrated photons to ADU (ph -> e- via e_per_ph, e- -> ADU via gain).
@@ -604,9 +619,7 @@ def _independent_adu_from_combine_tables(instr, sources_to_include):
 
 class TestRunSingleCalculation:
 
-    def test_flux_conserved_when_no_manual_masking(
-        self, flux_conservation_config
-    ):
+    def test_flux_conserved_when_no_manual_masking(self, flux_conservation_config):
         wavel = np.array([1.0, 2.0]) * u.um
         sources_to_include = [
             "star",
@@ -614,7 +627,9 @@ class TestRunSingleCalculation:
             "exozodiacal",
             "zodiacal",
         ]
-        sources_astroph, scenes = _build_four_source_scenes(flux_conservation_config, wavel)
+        sources_astroph, scenes = _build_four_source_scenes(
+            flux_conservation_config, wavel
+        )
 
         Path(flux_conservation_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(
             parents=True, exist_ok=True
@@ -652,7 +667,9 @@ class TestRunSingleCalculation:
         # is flux conserved before and after transmissions screens? (per source and total)
         for source_name in sources_to_include:
             scene = scenes[source_name]
-            post_cubes = instr.sources_astroph[source_name]["flux_cube_post_screen_ph_sec_m2_um"]
+            post_cubes = instr.sources_astroph[source_name][
+                "flux_cube_post_screen_ph_sec_m2_um"
+            ]
             net_post = sum(post_cubes[ch] for ch in post_cubes)
             np.testing.assert_allclose(
                 net_post.value,
@@ -660,22 +677,32 @@ class TestRunSingleCalculation:
                 err_msg=f"flux not conserved for {source_name} (cube level)",
             )
             post_integrated = sum(
-                instr.sources_astroph[source_name]["flux_integrated_post_screen_ph_sec_m2_um"][ch]
+                instr.sources_astroph[source_name][
+                    "flux_integrated_post_screen_ph_sec_m2_um"
+                ][ch]
                 for ch in post_cubes
             )
             np.testing.assert_allclose(
                 post_integrated.value,
-                sources_astroph[source_name]["pre_screen_astro_flux_ph_sec_m2_um"].value,
+                sources_astroph[source_name][
+                    "pre_screen_astro_flux_ph_sec_m2_um"
+                ].value,
                 err_msg=f"flux not conserved for {source_name} (integrated level)",
             )
 
         # is flux conserved before and after the aperture, modulo throughput and the finite collecting area?
         eta_t = float(flux_conservation_config["telescope"]["eta_t"])
         collecting_area = compute_collecting_area_m2(flux_conservation_config) * u.m**2
-        post_transmission_cubes_all_sources_all_channels = np.zeros(len(wavel)) * u.ph / (u.s * u.um)
-        post_aperture_per_wavel_source_all_sources_all_channels = np.zeros(len(wavel)) * u.ph / (u.s * u.um)
+        post_transmission_cubes_all_sources_all_channels = (
+            np.zeros(len(wavel)) * u.ph / (u.s * u.um)
+        )
+        post_aperture_per_wavel_source_all_sources_all_channels = (
+            np.zeros(len(wavel)) * u.ph / (u.s * u.um)
+        )
         for source_name in sources_to_include:
-            post_transmission_cubes = instr.sources_astroph[source_name]["flux_cube_post_screen_ph_sec_m2_um"]
+            post_transmission_cubes = instr.sources_astroph[source_name][
+                "flux_cube_post_screen_ph_sec_m2_um"
+            ]
             scaled_post_transmission_per_wavel = sum(
                 np.sum(
                     post_transmission_cubes[ch] * eta_t * collecting_area,
@@ -685,14 +712,23 @@ class TestRunSingleCalculation:
             )
             post_aperture_per_wavel_source_in_all_channels = sum(
                 np.sum(
-                    instr.prop_dict[source_name]["flux_cube_post_screen_post_aperture_ph_sec_um"][ch],
+                    instr.prop_dict[source_name][
+                        "flux_cube_post_screen_post_aperture_ph_sec_um"
+                    ][ch],
                     axis=(1, 2),
                 )
                 for ch in post_transmission_cubes
             )
-            post_transmission_cubes_all_sources_all_channels += scaled_post_transmission_per_wavel
-            post_aperture_per_wavel_source_all_sources_all_channels += post_aperture_per_wavel_source_in_all_channels
-            assert scaled_post_transmission_per_wavel.unit == post_aperture_per_wavel_source_in_all_channels.unit
+            post_transmission_cubes_all_sources_all_channels += (
+                scaled_post_transmission_per_wavel
+            )
+            post_aperture_per_wavel_source_all_sources_all_channels += (
+                post_aperture_per_wavel_source_in_all_channels
+            )
+            assert (
+                scaled_post_transmission_per_wavel.unit
+                == post_aperture_per_wavel_source_in_all_channels.unit
+            )
         np.testing.assert_allclose(
             post_aperture_per_wavel_source_all_sources_all_channels.value,
             post_transmission_cubes_all_sources_all_channels.value,
@@ -707,7 +743,9 @@ class TestRunSingleCalculation:
         independent_all_sources_ph_sec_um = np.zeros(n_detector_bins) * flux_rate_unit
         for source_name in sources_to_include:
             # QE already included in dispersed flux
-            dispersed_flux_ph_sec_um = _dispersed_flux_from_channels(instr, source_name, flux_rate_unit)
+            dispersed_flux_ph_sec_um = _dispersed_flux_from_channels(
+                instr, source_name, flux_rate_unit
+            )
             # explicitly includes QE
             independent_flux_ph_sec_um = _independent_detector_flux_from_prop_dict(
                 instr, source_name, qe, flux_rate_unit
@@ -734,7 +772,9 @@ class TestRunSingleCalculation:
                 instr, sources_to_include, t_frame, gain, e_per_ph
             )
         )
-        independent_adu = _independent_adu_from_combine_tables(instr, sources_to_include)
+        independent_adu = _independent_adu_from_combine_tables(
+            instr, sources_to_include
+        )
         np.testing.assert_allclose(
             total_adu_on_footprint.value,
             independent_adu.value,
@@ -750,7 +790,6 @@ class TestRunSingleCalculation:
             prop_dict_adu.value,
             err_msg="footprint ADU should match prop_dict photon oracle scaled by gain",
         )
-
 
     @patch("batch_process.calculate_s2n_post_rotation")
     def test_returns_true_and_calls_s2n_when_enabled(
@@ -844,7 +883,9 @@ class TestRunSingleCalculation:
         mock_instrument = MagicMock()
         mock_instrument.output_channels = {}
         mock_instrument.post_chop_tables_by_dark_current = {}
-        mock_instrument.generate_instrument_transmission.return_value = np.ones((6, 3, 3))
+        mock_instrument.generate_instrument_transmission.return_value = np.ones(
+            (6, 3, 3)
+        )
         mock_instrument_cls.return_value = mock_instrument
 
         with caplog.at_level(logging.INFO):
@@ -903,7 +944,9 @@ class TestRunSingleCalculation:
         mock_instrument.post_chop_tables_by_dark_current = {"stale": True}
         angles_seen = []
 
-        def _capture_reset_state(*, override_stellar_mask=False, angle_deg=None, plot=False):
+        def _capture_reset_state(
+            *, override_stellar_mask=False, angle_deg=None, plot=False
+        ):
             assert mock_instrument.post_chop_tables_by_dark_current == {}
             for channel in mock_instrument.output_channels.values():
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
@@ -918,7 +961,9 @@ class TestRunSingleCalculation:
             mock_instrument.post_chop_tables_by_dark_current["filled"] = angle_deg
             return np.ones((6, 3, 3))
 
-        mock_instrument.generate_instrument_transmission.side_effect = _capture_reset_state
+        mock_instrument.generate_instrument_transmission.side_effect = (
+            _capture_reset_state
+        )
         mock_instrument_cls.return_value = mock_instrument
 
         result = run_single_calculation(
@@ -1155,7 +1200,10 @@ class TestParameterSweep:
         assert kwargs["plot"] is True
 
     @patch("batch_process.plot_planet_population_sample")
-    @patch("batch_process.merge_psg_spectra_to_planet_population", side_effect=lambda df, _: df)
+    @patch(
+        "batch_process.merge_psg_spectra_to_planet_population",
+        side_effect=lambda df, _: df,
+    )
     @patch("batch_process.pd.read_csv")
     @patch("batch_process.batch_qe_nint_process", return_value=True)
     def test_planet_population_calls_batch_per_planet(
@@ -1175,8 +1223,24 @@ class TestParameterSweep:
         )
         mock_read_csv.return_value = pd.DataFrame(
             [
-                {"id": 1, "Rp": 1.0, "Porb": 365.0, "Mp": 1.0, "z": 1.0, "Tp": 288.0, "ap": 1.0},
-                {"id": 2, "Rp": 1.1, "Porb": 400.0, "Mp": 1.1, "z": 2.0, "Tp": 290.0, "ap": 1.1},
+                {
+                    "id": 1,
+                    "Rp": 1.0,
+                    "Porb": 365.0,
+                    "Mp": 1.0,
+                    "z": 1.0,
+                    "Tp": 288.0,
+                    "ap": 1.0,
+                },
+                {
+                    "id": 2,
+                    "Rp": 1.1,
+                    "Porb": 400.0,
+                    "Mp": 1.1,
+                    "z": 2.0,
+                    "Tp": 290.0,
+                    "ap": 1.1,
+                },
             ]
         )
 
@@ -1184,7 +1248,7 @@ class TestParameterSweep:
             config_single_obs_path=single_obs_path,
             config_sweep_path=sweep_path,
             config_planet_population_path=population_path,
-            output_root=str(tmp_path / "batch_root") + "/"
+            output_root=str(tmp_path / "batch_root") + "/",
         )
 
         assert mock_batch.call_count == 2
@@ -1194,9 +1258,9 @@ class TestParameterSweep:
         assert second_kwargs["base_filename"] == "s2n_sweep_planet_index_0000001"
         assert first_kwargs["system_params"]["id"] == 1
         assert second_kwargs["system_params"]["id"] == 2
-        #assert first_kwargs["lum_types"]["G"] == 1.0 ## ## TODO: fix this
+        # assert first_kwargs["lum_types"]["G"] == 1.0 ## ## TODO: fix this
         assert first_kwargs["output_root"] == str(tmp_path / "batch_root") + "/"
-        #mock_plot_population.assert_called_once()
+        # mock_plot_population.assert_called_once()
 
     @patch("batch_process.batch_qe_nint_process", return_value=True)
     def test_invalid_system_option_skips_batch(self, mock_batch, tmp_path):

@@ -29,7 +29,9 @@ class TestLoadConfig:
         config = configparser.ConfigParser()
         config.add_section("dirs")
         config.set("dirs", "data_dir", str(tmp_path / "data") + "/")
-        config.set("dirs", "save_s2n_data_unique_dir", str(tmp_path / "param_sweeps") + "/")
+        config.set(
+            "dirs", "save_s2n_data_unique_dir", str(tmp_path / "param_sweeps") + "/"
+        )
         config.add_section("telescope")
         config.set("telescope", "collecting_area", "25.0")
         config.set("telescope", "plate_scale", "0.1")
@@ -238,7 +240,9 @@ class TestConfigValidator:
         assert "Missing required section" in caplog.text
         assert "telescope" in caplog.text
 
-    def test_validate_config_invalid_telescope_value_logs_error(self, valid_config, caplog):
+    def test_validate_config_invalid_telescope_value_logs_error(
+        self, valid_config, caplog
+    ):
         """Invalid telescope value (<=0) logs error."""
         valid_config["telescope"]["collecting_area"] = -1.0
         validator = ConfigValidator()
@@ -246,7 +250,9 @@ class TestConfigValidator:
             validator.validate_config(valid_config)
         assert "Invalid telescope" in caplog.text or "must be positive" in caplog.text
 
-    def test_validate_config_missing_telescope_field_logs_error(self, valid_config, caplog):
+    def test_validate_config_missing_telescope_field_logs_error(
+        self, valid_config, caplog
+    ):
         """Missing telescope field logs error."""
         del valid_config["telescope"]["collecting_area"]
         validator = ConfigValidator()
@@ -254,7 +260,9 @@ class TestConfigValidator:
             validator.validate_config(valid_config)
         assert "Missing telescope field" in caplog.text
 
-    def test_validate_config_missing_target_field_logs_error(self, valid_config, caplog):
+    def test_validate_config_missing_target_field_logs_error(
+        self, valid_config, caplog
+    ):
         """Missing target field logs error."""
         del valid_config["target"]["distance"]
         validator = ConfigValidator()
@@ -263,7 +271,9 @@ class TestConfigValidator:
         assert "Missing target field" in caplog.text
         assert "distance" in caplog.text
 
-    def test_validate_config_invalid_target_value_logs_error(self, valid_config, caplog):
+    def test_validate_config_invalid_target_value_logs_error(
+        self, valid_config, caplog
+    ):
         """Invalid target value (<=0) logs error."""
         valid_config["target"]["pl_temp"] = 0.0
         validator = ConfigValidator()
@@ -271,7 +281,9 @@ class TestConfigValidator:
             validator.validate_config(valid_config)
         assert "Invalid target" in caplog.text or "must be positive" in caplog.text
 
-    def test_validate_config_target_negative_value_logs_error(self, valid_config, caplog):
+    def test_validate_config_target_negative_value_logs_error(
+        self, valid_config, caplog
+    ):
         """Target value < 0 logs error."""
         valid_config["target"]["distance"] = -5.0
         validator = ConfigValidator()
@@ -286,7 +298,9 @@ class TestConfigValidator:
         with pytest.raises(ValueError):
             validator.validate_config(valid_config)
 
-    def test_validate_config_missing_wavelength_field_logs_error(self, valid_config, caplog):
+    def test_validate_config_missing_wavelength_field_logs_error(
+        self, valid_config, caplog
+    ):
         """Missing wavelength_range field logs error."""
         del valid_config["wavelength_range"]["min"]
         validator = ConfigValidator()
@@ -295,23 +309,35 @@ class TestConfigValidator:
         assert "Missing wavelength_range field" in caplog.text
         assert "min" in caplog.text
 
-    def test_validate_config_invalid_wavelength_value_logs_error(self, valid_config, caplog):
+    def test_validate_config_invalid_wavelength_value_logs_error(
+        self, valid_config, caplog
+    ):
         """Invalid wavelength_range value (<=0) logs error."""
         valid_config["wavelength_range"]["min"] = 0.0
         validator = ConfigValidator()
         with caplog.at_level("ERROR"):
             validator.validate_config(valid_config)
-        assert "Invalid wavelength_range" in caplog.text or "must be positive" in caplog.text
+        assert (
+            "Invalid wavelength_range" in caplog.text
+            or "must be positive" in caplog.text
+        )
 
-    def test_validate_config_wavelength_n_points_zero_logs_error(self, valid_config, caplog):
+    def test_validate_config_wavelength_n_points_zero_logs_error(
+        self, valid_config, caplog
+    ):
         """wavelength_range n_points <= 0 logs error."""
         valid_config["wavelength_range"]["n_points"] = 0
         validator = ConfigValidator()
         with caplog.at_level("ERROR"):
             validator.validate_config(valid_config)
-        assert "Invalid wavelength_range" in caplog.text or "must be positive" in caplog.text
+        assert (
+            "Invalid wavelength_range" in caplog.text
+            or "must be positive" in caplog.text
+        )
 
-    def test_validate_config_wavelength_min_ge_max_logs_error(self, valid_config, caplog):
+    def test_validate_config_wavelength_min_ge_max_logs_error(
+        self, valid_config, caplog
+    ):
         """wavelength_range min >= max logs error."""
         valid_config["wavelength_range"]["min"] = 20.0
         valid_config["wavelength_range"]["max"] = 1.0
@@ -320,7 +346,9 @@ class TestConfigValidator:
             validator.validate_config(valid_config)
         assert "min must be less than max" in caplog.text
 
-    def test_validate_config_wavelength_min_equals_max_logs_error(self, valid_config, caplog):
+    def test_validate_config_wavelength_min_equals_max_logs_error(
+        self, valid_config, caplog
+    ):
         """wavelength_range min == max logs error."""
         valid_config["wavelength_range"]["min"] = 10.0
         valid_config["wavelength_range"]["max"] = 10.0
@@ -329,7 +357,9 @@ class TestConfigValidator:
             validator.validate_config(valid_config)
         assert "min must be less than max" in caplog.text
 
-    def test_validate_config_missing_detector_field_logs_error(self, valid_config, caplog):
+    def test_validate_config_missing_detector_field_logs_error(
+        self, valid_config, caplog
+    ):
         """Missing detector field logs error."""
         del valid_config["detector"]["quantum_efficiency"]
         validator = ConfigValidator()
@@ -366,7 +396,9 @@ class TestConfigValidator:
         del valid_config["target"]["distance"]
         assert validate_config(valid_config) is False
 
-    def test_validate_config_returns_false_for_wavelength_min_ge_max(self, valid_config):
+    def test_validate_config_returns_false_for_wavelength_min_ge_max(
+        self, valid_config
+    ):
         """validate_config returns False when wavelength min >= max."""
         valid_config["wavelength_range"]["min"] = 20.0
         valid_config["wavelength_range"]["max"] = 1.0

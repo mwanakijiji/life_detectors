@@ -67,7 +67,10 @@ class TestCanonicalHdf5Keys:
         angle = float(np.linspace(0, 360, num=7, endpoint=False)[1])
         canonical = canonical_angle_deg(angle)
         assert canonical == round(angle, 2)
-        assert parse_angle_from_hdf5_path(format_angle_qe_hdf5_name(angle, 0.7)) == canonical
+        assert (
+            parse_angle_from_hdf5_path(format_angle_qe_hdf5_name(angle, 0.7))
+            == canonical
+        )
 
     def test_parse_angle_accepts_legacy_and_formatted_names(self):
         assert parse_angle_from_hdf5_path("angle_0.hdf5") == 0.0
@@ -89,8 +92,14 @@ class TestCanonicalHdf5Keys:
 
     def test_resolve_float_key_tolerates_formatting_drift(self):
         mapping = {canonical_angle_deg(51.43): "ok"}
-        assert resolve_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2) == 51.43
-        assert lookup_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2) == "ok"
+        assert (
+            resolve_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2)
+            == 51.43
+        )
+        assert (
+            lookup_float_key(mapping, 51.4300000001, label="angle_deg", decimals=2)
+            == "ok"
+        )
 
 
 class TestConfigHelpers:
@@ -148,7 +157,7 @@ class TestTitleBuilders:
                 "rad_planet": "1",
                 "pl_temp": "288",
                 "distance": "10",
-                "lambda_rel_lon_los": "135", 
+                "lambda_rel_lon_los": "135",
                 "beta_lat_los": "45",
             },
         }
@@ -222,7 +231,9 @@ class TestTitleBuilders:
 
     def test_format_plot_title_two_column_astrophysical_sources(self):
         cfg = {
-            "plotting": {"title_context": "collecting area = 25.00 m^2\ntelescope throughput = 0.05"},
+            "plotting": {
+                "title_context": "collecting area = 25.00 m^2\ntelescope throughput = 0.05"
+            },
             "astrophysical_sources_to_use": {
                 "star": True,
                 "exoplanet_bb": False,
@@ -323,8 +334,12 @@ class TestMergePsgSpectra:
         merged = merge_psg_spectra_to_planet_population(df, params)
 
         assert len(merged) == 3
-        assert merged.loc[merged["id"] == 15, "abs_file_name_psg_spectrum"].notna().all()
-        assert merged.loc[merged["id"] == 42, "abs_file_name_psg_spectrum"].notna().all()
+        assert (
+            merged.loc[merged["id"] == 15, "abs_file_name_psg_spectrum"].notna().all()
+        )
+        assert (
+            merged.loc[merged["id"] == 42, "abs_file_name_psg_spectrum"].notna().all()
+        )
         assert merged.loc[merged["id"] == 99, "abs_file_name_psg_spectrum"].isna().all()
 
 
@@ -399,9 +414,7 @@ class TestModifyConfigFileSweep:
         assert updated.get("detector", "read_noise") == "6"
 
     def test_appends_run_id_to_filename_when_provided(self, minimal_config_path):
-        result = modify_config_file_sweep(
-            minimal_config_path, qe=0.7, run_id="run42"
-        )
+        result = modify_config_file_sweep(minimal_config_path, qe=0.7, run_id="run42")
 
         assert result.endswith("main_config_temp_qe0p70_run42.ini")
 
@@ -569,8 +582,10 @@ class TestGeneratePlanetBBSpectrum:
         cfg = self._make_config(rad_planet=1.0, pl_temp=288.0)
         wavelength_um = np.array([4.0, 8.0, 12.0, 16.0]) * u.um
 
-        luminosity_photons_planet, luminosity_energy_planet = generate_planet_bb_spectrum(
-            config=cfg, wavelength_um=wavelength_um, plot=False
+        luminosity_photons_planet, luminosity_energy_planet = (
+            generate_planet_bb_spectrum(
+                config=cfg, wavelength_um=wavelength_um, plot=False
+            )
         )
 
         assert luminosity_photons_planet.shape == wavelength_um.shape
@@ -598,9 +613,15 @@ class TestGeneratePlanetBBSpectrum:
         cfg = self._make_config(rad_planet=1.0, pl_temp=300.0)
         wavelength_um = np.array([5.0, 10.0, 15.0]) * u.um
         # photons/s/um; W/um
-        lph_5_um, len_5_um = generate_planet_bb_spectrum(cfg, wavelength_um=5.0 * u.um, plot=False)
-        lph_10_um, len_10_um = generate_planet_bb_spectrum(cfg, wavelength_um=10.0 * u.um, plot=False)
-        lph_15_um, len_15_um = generate_planet_bb_spectrum(cfg, wavelength_um=15.0 * u.um, plot=False)
+        lph_5_um, len_5_um = generate_planet_bb_spectrum(
+            cfg, wavelength_um=5.0 * u.um, plot=False
+        )
+        lph_10_um, len_10_um = generate_planet_bb_spectrum(
+            cfg, wavelength_um=10.0 * u.um, plot=False
+        )
+        lph_15_um, len_15_um = generate_planet_bb_spectrum(
+            cfg, wavelength_um=15.0 * u.um, plot=False
+        )
         assert np.allclose(float(f"{lph_5_um.value:.2e}"), float(1.05e35), rtol=1e-2)
         assert np.allclose(float(f"{len_5_um.value:.2e}"), float(4.17e15), rtol=1e-2)
         assert np.allclose(float(f"{lph_10_um.value:.2e}"), float(8.01e35), rtol=1e-2)
@@ -660,18 +681,25 @@ class TestGenerateZodiacalSpectrum:
         threshold_ampl = 1e-2
         radius_fov_effective = (4.0 / np.pi) * hfov * np.sqrt(-np.log(threshold_ampl))
         fov_effective = (np.pi * radius_fov_effective**2).to(u.sr)
-        energy_surface = (energy_W_um_m2 / fov_effective).to(u.W / (u.um * u.m**2 * u.sr))
-        energy_mjy_from_energy = ((energy_surface * wavelength_um**2) / const.c).to(u.MJy / u.sr)
+        energy_surface = (energy_W_um_m2 / fov_effective).to(
+            u.W / (u.um * u.m**2 * u.sr)
+        )
+        energy_mjy_from_energy = ((energy_surface * wavelength_um**2) / const.c).to(
+            u.MJy / u.sr
+        )
         assert np.allclose(energy_MJy_sr.value, energy_mjy_from_energy.value, rtol=1e-3)
-
 
     def test_generate_zodiacal_spectrum_scales_linearly_with_tau_opt(self):
         wavelength_um = np.array([6.0, 12.0, 18.0]) * u.um
         cfg_lo = self._make_config(tau_opt=4e-8)
         cfg_hi = self._make_config(tau_opt=8e-8)
 
-        ph_lo, en_lo, en_MJy_sr_lo = generate_zodiacal_spectrum(cfg_lo, wavelength_um, plot=False)
-        ph_hi, en_hi, en_MJy_sr_hi = generate_zodiacal_spectrum(cfg_hi, wavelength_um, plot=False)
+        ph_lo, en_lo, en_MJy_sr_lo = generate_zodiacal_spectrum(
+            cfg_lo, wavelength_um, plot=False
+        )
+        ph_hi, en_hi, en_MJy_sr_hi = generate_zodiacal_spectrum(
+            cfg_hi, wavelength_um, plot=False
+        )
 
         # Model is linear in tau_opt, so doubling tau_opt doubles outputs.
         assert np.allclose((ph_hi / ph_lo).value, 2.0)
@@ -738,11 +766,17 @@ class TestCreateSampleData:
         )
         monkeypatch.setattr(
             "modules.utils.helpers.spectra.generate_planet_bb_spectrum",
-            lambda config, wavelength_um, plot=False: (2 * photons_um_s, 2 * energy_w_um),
+            lambda config, wavelength_um, plot=False: (
+                2 * photons_um_s,
+                2 * energy_w_um,
+            ),
         )
         monkeypatch.setattr(
             "modules.utils.helpers.spectra.generate_exozodiacal_spectrum",
-            lambda config, wavelength_um, plot=False: (3 * photons_um_s, 3 * energy_w_um),
+            lambda config, wavelength_um, plot=False: (
+                3 * photons_um_s,
+                3 * energy_w_um,
+            ),
         )
         monkeypatch.setattr(
             "modules.utils.helpers.spectra.generate_zodiacal_spectrum",
@@ -766,7 +800,9 @@ class TestCreateSampleData:
             path = out_dir / name
             assert path.exists()
             content = path.read_text()
-            assert content.startswith("# wavelength_unit=um\n# luminosity_photons_unit=")
+            assert content.startswith(
+                "# wavelength_unit=um\n# luminosity_photons_unit="
+            )
             # Read data rows (header starts at line 3 because first two are comments)
             df = pd.read_csv(path, sep=",", header=2)
             assert "wavel" in df.columns
@@ -774,5 +810,6 @@ class TestCreateSampleData:
             assert len(df) == n
 
         for source, filename in GENERATED_SPECTRA_FILENAMES.items():
-            assert cfg.get("astrophysical_sources_library", source) == str(out_dir / filename)
-
+            assert cfg.get("astrophysical_sources_library", source) == str(
+                out_dir / filename
+            )

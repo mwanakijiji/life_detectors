@@ -60,8 +60,6 @@ from modules.core.planet_spectrum_provider import (
     SingleModelFileProvider,
 )
 
-
-
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
 
@@ -80,7 +78,7 @@ def run_single_calculation(
 ) -> bool:
     """
     Run a single calculation with specified parameters.
-    
+
     Args:
         config_path: Path to the configuration file
         base_filename: string to distinguish individual planets (index number from df of planet population data)
@@ -91,7 +89,7 @@ def run_single_calculation(
         plot: Whether to generate plots
         system_params: Optional[dict] = None: the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
-        
+
     Returns:
         output_path: Path of the output FITS file
     """
@@ -100,9 +98,13 @@ def run_single_calculation(
     base_config = configparser.ConfigParser()
     base_config.read(config_path)
     generate_sims = loader.config_getboolean(base_config, "tasks", "generate_sims")
-    calculate_s2n = loader.config_getboolean(base_config, "tasks", "calculate_s2n_post_rotation")
+    calculate_s2n = loader.config_getboolean(
+        base_config, "tasks", "calculate_s2n_post_rotation"
+    )
     # config-driven FYI plotting: overrides the passed-in plot flag when the key is present
-    plot = loader.config_getboolean(base_config, "tasks", "print_fyi_plots", default=plot)
+    plot = loader.config_getboolean(
+        base_config, "tasks", "print_fyi_plots", default=plot
+    )
 
     # Build a per-run token so parallel jobs do not clobber temp files.
     run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
@@ -110,8 +112,10 @@ def run_single_calculation(
     # Create temporary config file with modified values: use new n_int, QE values
     ## TO DO: CHECK THIS FOR CASE WHEN PLANET POPULATION IS NOT BEING DONE; DOES THE ABSENCE OF A BASE_FILENAME CAUSE PROBLEMS?
     temp_config_path_nint_qe = modify_config_file_sweep(config_path, qe, run_id=run_id)
-    temp_config_path_nint_qe = apply_output_root_override(temp_config_path_nint_qe, output_root)
-    # modify again, for a given planetary system 
+    temp_config_path_nint_qe = apply_output_root_override(
+        temp_config_path_nint_qe, output_root
+    )
+    # modify again, for a given planetary system
     if system_params is not None:
         temp_config_path = modify_config_file_pl_system_params(
             config_path=temp_config_path_nint_qe,
@@ -126,7 +130,9 @@ def run_single_calculation(
     # First log entry: which config file we're using (original and temp)
     logger.info(f"--------------------------------")
     logger.info(f"Config path (base): {config_path}")
-    logger.info(f"Config path (temporary one for this case, for batch processing): {temp_config_path}")
+    logger.info(
+        f"Config path (temporary one for this case, for batch processing): {temp_config_path}"
+    )
 
     # Load config in two forms:
     # - dict (for validation + directory creation)
@@ -139,7 +145,9 @@ def run_single_calculation(
     ensure_plot_title_context(config)
 
     # Make the overwriteable scratch FITS file unique per run.
-    if config.has_section("saving") and config.has_option("saving", "save_s2n_data_temp"):
+    if config.has_section("saving") and config.has_option(
+        "saving", "save_s2n_data_temp"
+    ):
         temp_fits_path = config.get("saving", "save_s2n_data_temp")
         temp_root, temp_ext = os.path.splitext(temp_fits_path)
         config.set("saving", "save_s2n_data_temp", f"{temp_root}_{run_id}{temp_ext}")
@@ -151,7 +159,7 @@ def run_single_calculation(
 
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits
-        fname_base = temp_config_path.replace('.ini', '')
+        fname_base = temp_config_path.replace(".ini", "")
         output_fits_file_abs_path = f"{fname_base}_qe_{qe:.4f}_{run_id}.fits"
 
         # Useful debug info about the loaded config: list actual INI-style sections and key-value pairs
@@ -159,7 +167,6 @@ def run_single_calculation(
             import configparser as _cp  # local import to avoid circulars
         except ImportError:
             _cp = None
-
 
         logger.info("------- Temp config contents -------")
 
@@ -184,17 +191,23 @@ def run_single_calculation(
             # Fallback: just log the raw object
             logger.info(f"(Unrecognized config type {type(config)}; raw repr follows)")
             logger.info(repr(config))
-        logger.info(f"Running calculation with output file name = {output_fits_file_abs_path}")
-        
+        logger.info(
+            f"Running calculation with output file name = {output_fits_file_abs_path}"
+        )
+
         # Generate sample spectral data
         logger.info("Creating sample spectral data...")
-        create_sample_data(config, overwrite=overwrite, plot=plot, read_sample_file=False)
-        
+        create_sample_data(
+            config, overwrite=overwrite, plot=plot, read_sample_file=False
+        )
+
         # instantiate astrophysical flux calculator
         logger.info("Calculating astrophysical flux...")
         # planet spectrum source is driven by systems_2_look_at, not by which
         # astrophysical sources happen to be enabled (keeps a single switch)
-        systems_2_look_at = config.get("system_options", "systems_2_look_at", fallback="planet_population")
+        systems_2_look_at = config.get(
+            "system_options", "systems_2_look_at", fallback="planet_population"
+        )
         if systems_2_look_at == "read_in_one_planet_spectrum":
             provider = SingleModelFileProvider(
                 config["astrophysical_sources_library"]["exoplanet_model_10pc"]
@@ -204,51 +217,75 @@ def run_single_calculation(
                 float(config["wavelength_range"]["min"]),
                 float(config["wavelength_range"]["max"]),
             )
-            spectrum_method = config.get("planet_population", "spectrum_method", fallback="blackbody")
+            spectrum_method = config.get(
+                "planet_population", "spectrum_method", fallback="blackbody"
+            )
             if spectrum_method == "blackbody":
-                generator = BlackbodyFromParamsGenerator(wavelength_range=wavelength_range)
+                generator = BlackbodyFromParamsGenerator(
+                    wavelength_range=wavelength_range
+                )
             elif spectrum_method == "psg":
                 generator = PSGSpectrumGenerator()
             else:
-                raise ValueError(f"Unknown [planet_population] spectrum_method: {spectrum_method!r}")
+                raise ValueError(
+                    f"Unknown [planet_population] spectrum_method: {spectrum_method!r}"
+                )
             provider = PopulationSpectrumProvider(generator)
         astrophysical_sources = astrophysical.AstrophysicalSources(
             config, planet_spectrum_provider=provider
         )
-        
+
         # Calculate incident flux for each source, and add on 2D positions as projected on sky
         sources_astroph = {}
         for source_name in sources_to_include:
-            if source_name in ["star", "star_psg", "exoplanet_bb", "exoplanet_bb_psg", "exoplanet_model_10pc", "exoplanet_psg", "exozodiacal", "exozodiacal_psg", "zodiacal"]:
-                sources_astroph[source_name] = astrophysical_sources.calculate_received_astro_fluxes(
-                    source_name=source_name, plot=plot, system_params=system_params
+            if source_name in [
+                "star",
+                "star_psg",
+                "exoplanet_bb",
+                "exoplanet_bb_psg",
+                "exoplanet_model_10pc",
+                "exoplanet_psg",
+                "exozodiacal",
+                "exozodiacal_psg",
+                "zodiacal",
+            ]:
+                sources_astroph[source_name] = (
+                    astrophysical_sources.calculate_received_astro_fluxes(
+                        source_name=source_name, plot=plot, system_params=system_params
+                    )
                 )
-        
+
         # put all the objects into the scene
         logger.info("Generating on-sky scene...")
         astro_scene_perfect_no_screen = astrophysical_sources.arrange_onsky_scene(
-                                                                    incident_dict=sources_astroph, 
-                                                                    plot=plot)
+            incident_dict=sources_astroph, plot=plot
+        )
 
         # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")
         instrument_dep_terms = InstrumentDepTerms(
             config,
             sources_astroph=sources_astroph,
-            sources_to_include=sources_to_include
+            sources_to_include=sources_to_include,
         )
 
         # Pristine copy after incident flux, before any screen/aperture steps
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
         # make 1 full rotation
-        angles_deg = np.linspace(0, 360, num=int(config['observation']['N_angles']), endpoint=False)
+        angles_deg = np.linspace(
+            0, 360, num=int(config["observation"]["N_angles"]), endpoint=False
+        )
         results = {}  # dict to hold results for each angle
 
         for angle_deg in angles_deg:
             # Reset mutable pipeline state
-            instrument_dep_terms.sources_astroph = copy.deepcopy(sources_astroph_pristine)
-            instrument_dep_terms.prop_dict = {} # dict to hold astrophysical terms as propagated through the instrument
+            instrument_dep_terms.sources_astroph = copy.deepcopy(
+                sources_astroph_pristine
+            )
+            instrument_dep_terms.prop_dict = (
+                {}
+            )  # dict to hold astrophysical terms as propagated through the instrument
 
             # reset the OutputChannel objects for this new angle
             for ch in instrument_dep_terms.output_channels.values():
@@ -256,31 +293,35 @@ def run_single_calculation(
                 ch.instrum_noise.clear()
                 ch.astroph_signal.clear()
                 ch.tables_by_dark_current.clear()
-                if hasattr(ch, 'tables_by_dark_current_orig'):
+                if hasattr(ch, "tables_by_dark_current_orig"):
                     ch.tables_by_dark_current_orig.clear()
             instrument_dep_terms.post_chop_tables_by_dark_current = {}
 
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
             # no rotation yet
-            transmission_screens = instrument_dep_terms.generate_instrument_transmission(
-                override_stellar_mask = override_stellar_mask, 
-                angle_deg = angle_deg,
-                plot = plot
+            transmission_screens = (
+                instrument_dep_terms.generate_instrument_transmission(
+                    override_stellar_mask=override_stellar_mask,
+                    angle_deg=angle_deg,
+                    plot=plot,
                 )
+            )
 
             # pass astrophysical scene through transmission screens
             logger.info("Passing astrophysical flux through transmission screens ...")
             instrument_dep_terms.pass_through_transmission_screens(
-                fyi_angle = angle_deg,
-                source_dict_pre_screen = astro_scene_perfect_no_screen, 
-                transmission_screens = transmission_screens, 
-                plot=plot
-                )
+                fyi_angle=angle_deg,
+                source_dict_pre_screen=astro_scene_perfect_no_screen,
+                transmission_screens=transmission_screens,
+                plot=plot,
+            )
 
             # Pass through telescope aperture
             # output units: photons/sec/etc.
-            logger.info("Passing through telescope aperture (incl. telescope throughput)...")
+            logger.info(
+                "Passing through telescope aperture (incl. telescope throughput)..."
+            )
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
             # Pass from aperture to detector
@@ -294,11 +335,11 @@ def run_single_calculation(
 
             for ch in instrument_dep_terms.output_channels.values():
                 for effect in instrument_dep_terms.detector_effects:
-                    i=0 # for now, only one readout index
+                    i = 0  # for now, only one readout index
                     effect.apply(ch, readout_index=i)
 
             # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
-            # output units: 
+            # output units:
             #   ph/sec/um
             #   ph/sec/wavel_bin
             #   ph/sec/pix
@@ -319,7 +360,7 @@ def run_single_calculation(
                 qe=qe,
                 output_channels=instrument_dep_terms.output_channels,
                 post_chop_tables_by_dark_current=instrument_dep_terms.post_chop_tables_by_dark_current,
-                save_dir=str(config['dirs']['save_s2n_data_unique_dir']),
+                save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
                 plot=plot,
             )
 
@@ -328,26 +369,32 @@ def run_single_calculation(
 
     if calculate_s2n:
         logger.info("Calculating S/N from HDF5 files.")
-        calculate_s2n_post_rotation(config['dirs']['save_s2n_data_unique_dir'], save_cube_path_stem=config['dirs']['save_s2n_data_unique_dir'], config=config)
+        calculate_s2n_post_rotation(
+            config["dirs"]["save_s2n_data_unique_dir"],
+            save_cube_path_stem=config["dirs"]["save_s2n_data_unique_dir"],
+            config=config,
+        )
 
     else:
         logger.info("Not calculating S/N from HDF5 files.")
-        
+
     return True
 
 
-def batch_qe_nint_process(base_config_path: str, 
-                qe_values: List[float],
-                  sources_to_include: List[str],
-                  base_filename: str = "s2n", 
-                  overwrite: bool = True, 
-                  plot: bool = False, 
-                system_params: Optional[dict] = None, 
-                lum_types: Optional[dict] = None,
-                output_root: Optional[str] = None) -> List[Tuple[int, str, bool]]:
+def batch_qe_nint_process(
+    base_config_path: str,
+    qe_values: List[float],
+    sources_to_include: List[str],
+    base_filename: str = "s2n",
+    overwrite: bool = True,
+    plot: bool = False,
+    system_params: Optional[dict] = None,
+    lum_types: Optional[dict] = None,
+    output_root: Optional[str] = None,
+) -> List[Tuple[int, str, bool]]:
     """
     Run batch processing with multiple QE and n_int values.
-    
+
     Args:
         base_config_path: Path to the base configuration file
         n_int_values: List of n_int values to process
@@ -358,13 +405,13 @@ def batch_qe_nint_process(base_config_path: str,
         plot: Whether to generate plots
         system_params: Optional dictionary of the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
-        
+
     Returns:
         List of tuples (n_int, output_path, success)
     """
     # Create output directory if it doesn't exist
-    #Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
+    # Path(output_dir).mkdir(parents=True, exist_ok=True)
+
     results = []
 
     # initialize for checking if all calculations for the QE, n_int run were successful
@@ -372,7 +419,7 @@ def batch_qe_nint_process(base_config_path: str,
 
     # make a manual mask over the star?
     override_stellar_mask = bool(True)
-    '''
+    """
     if override_stellar_mask:
         try:
             raw_response = input(
@@ -382,15 +429,14 @@ def batch_qe_nint_process(base_config_path: str,
             raw_response = "y"
         response = str(raw_response).strip().lower()
         override_stellar_mask = response in {"y", "yes", ""}
-    '''
-    
+    """
+
     for qe in qe_values:
         # Create output filename
         logging.info(f"--------------------------------")
         logging.info(f"--------------------------------")
         logging.info(f"Processing single calculation:")
         logging.info(f"Parameter qe = {qe}")
-
 
         # run single calculation, for range of rotation angles
         # this could involve either or both of:
@@ -399,26 +445,30 @@ def batch_qe_nint_process(base_config_path: str,
         time_0 = time.time()
         success = run_single_calculation(
             config_path=base_config_path,
-            base_filename = base_filename,
+            base_filename=base_filename,
             sources_to_include=sources_to_include,
             qe=qe,
             override_stellar_mask=override_stellar_mask,
             overwrite=overwrite,
             plot=plot,
-            system_params=system_params, 
+            system_params=system_params,
             lum_types=lum_types,
             output_root=output_root,
         )
         time_1 = time.time()
-        logging.info(f"Time taken for run_single_calculation(): {time_1 - time_0:.2f} seconds")
-                    
+        logging.info(
+            f"Time taken for run_single_calculation(): {time_1 - time_0:.2f} seconds"
+        )
+
         if success:
             logging.info(f"  ✓ Success for the following planetary system parameters:")
             logging.info(system_params)
         else:
             logging.info(f"  ✗ Failed for qe={qe}")
-        success_all = success_all and bool(success) # was this calculation successful too?
-    
+        success_all = success_all and bool(
+            success
+        )  # was this calculation successful too?
+
     return success_all
 
 
@@ -437,12 +487,14 @@ def parameter_sweep(
     # load in all config files once, and don't load them again
     config_single_obs = loader.load_config(config_file=config_single_obs_path)
     config_sweep = loader.load_config(config_file=config_sweep_path)
-    config_planet_population = loader.load_config(config_file=config_planet_population_path)
+    config_planet_population = loader.load_config(
+        config_file=config_planet_population_path
+    )
     lum_types = None
 
     # delete preexisting HDF5 output files?
     ## ## TODO: make this work; will need to enable deletion of HdF5 files in each output dir determined by the temp config file
-    '''
+    """
     generate_sims = loader.config_getboolean(config_single_obs, "tasks", "generate_sims")
     if generate_sims:
         save_dir = Path(config['dirs']['save_s2n_data_unique_dir'])
@@ -463,15 +515,19 @@ def parameter_sweep(
                 logger.info(f"Deleted {len(existing_hdf5)} HDF5 file(s) from {save_dir}")
             else:
                 logger.info("Keeping existing HDF5 files")
-    '''
+    """
 
     if output_root:
-        logging.info(f"Top-level batch output root override: {_normalize_output_root(output_root)}")
+        logging.info(
+            f"Top-level batch output root override: {_normalize_output_root(output_root)}"
+        )
 
-    aperture_array_config_path = config_single_obs["telescope"]["aperture_array_config_file_name"]
-    with open(aperture_array_config_path, 'r') as file:
+    aperture_array_config_path = config_single_obs["telescope"][
+        "aperture_array_config_file_name"
+    ]
+    with open(aperture_array_config_path, "r") as file:
         aperture_array_definition = yaml.safe_load(file)
-    n_apertures = len(aperture_array_definition['apertures'])
+    n_apertures = len(aperture_array_definition["apertures"])
     logging.info(f"Number of apertures: {n_apertures}")
 
     # calculate the total collecting area of the telescope
@@ -492,27 +548,43 @@ def parameter_sweep(
     if systems_2_look_at == "planet_population":
         logging.info("Applying parameter sweep to an entire planet population")
 
-        file_name_planet_population = config_planet_population["file_name_planet_population"]["file_name"]
+        file_name_planet_population = config_planet_population[
+            "file_name_planet_population"
+        ]["file_name"]
         logging.info(f"Reading planet population from {file_name_planet_population}")
-        lum_types = config_planet_population["lum_type"]  # map luminosities with stellar types
-        df_planet_population = pd.read_csv(file_name_planet_population, skiprows=1, sep=r"\s+")
+        lum_types = config_planet_population[
+            "lum_type"
+        ]  # map luminosities with stellar types
+        df_planet_population = pd.read_csv(
+            file_name_planet_population, skiprows=1, sep=r"\s+"
+        )
         df_planet_population = merge_psg_spectra_to_planet_population(
             df_planet_population, config_planet_population
         )
 
-        plot = loader.config_getboolean(config_single_obs, "tasks", "print_fyi_plots", default=False)
+        plot = loader.config_getboolean(
+            config_single_obs, "tasks", "print_fyi_plots", default=False
+        )
         if plot:
             cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
-            fyi_plot_path = config_planet_population["file_name_planet_population"]["fyi_plot_name"]
-            plot_planet_population_sample(df_planet_population, cols_to_plot, fyi_plot_path)
+            fyi_plot_path = config_planet_population["file_name_planet_population"][
+                "fyi_plot_name"
+            ]
+            plot_planet_population_sample(
+                df_planet_population, cols_to_plot, fyi_plot_path
+            )
             logging.info(f"FYI plot of planet population saved to {fyi_plot_path}")
 
     elif systems_2_look_at == "read_in_one_planet_spectrum":
-        logging.info("Applying parameter sweep to a single planetary system, with spectrum read in from file")
+        logging.info(
+            "Applying parameter sweep to a single planetary system, with spectrum read in from file"
+        )
         df_planet_population = [None]  # wrap in list for length 1
 
     else:
-        logging.error(f"Invalid system option (must be 'planet_population' or 'read_in_one_planet_spectrum'): {systems_2_look_at}")
+        logging.error(
+            f"Invalid system option (must be 'planet_population' or 'read_in_one_planet_spectrum'): {systems_2_look_at}"
+        )
         return
 
     # parameter sweep
@@ -535,7 +607,9 @@ def parameter_sweep(
             base_filename = f"s2n_sweep_planet_index_{pl_num:07d}"
         else:
             system_params = None
-            logging.info("No planet population; doing parameter sweep for a single system")
+            logging.info(
+                "No planet population; doing parameter sweep for a single system"
+            )
             base_filename = "s2n_sweep"
 
         # wraps around calculations for a single set of detector parameters
@@ -550,4 +624,6 @@ def parameter_sweep(
             lum_types=lum_types,
             output_root=output_root,
         )
-        logging.info(f"Parameter sweep completed: all calculations successful = {success_all}")
+        logging.info(
+            f"Parameter sweep completed: all calculations successful = {success_all}"
+        )

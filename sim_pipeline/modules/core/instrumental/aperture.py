@@ -14,16 +14,17 @@ from ...viz.detector import plot_detector_footprint
 from .detector import Detector
 from .dispersion import DispersionLaw
 
+
 class TransferMixin:
-    '''
+    """
     For transferring photons through something-- like the aperture or onto the detector
-    '''
+    """
 
     def disperse_astro_signals_on_detector(self, plot: bool = False):
-        '''
+        """
         Disperse post-aperture flux onto each channel detector via DispersionLaw,
         then apply detector QE.
-        '''
+        """
         ## ## TODO: allow different dispersion laws for each output channel
         dispersion_law = DispersionLaw(self.config)
 
@@ -49,7 +50,9 @@ class TransferMixin:
                 )
 
             n_int_this_angle = int(self.config["observation"]["N_int_per_angle"])
-            logging.info(f"Number of frames at this angle position: {n_int_this_angle:d}")
+            logging.info(
+                f"Number of frames at this angle position: {n_int_this_angle:d}"
+            )
 
             n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint_cube)
 
@@ -69,8 +72,16 @@ class TransferMixin:
                 wavel_pts = self.prop_dict[source_name]["wavel"]
                 flux_astro_1d_interpolated_ph_sec_um = (
                     np.interp(
-                        x=wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins,
-                        xp=wavel_pts.value if hasattr(wavel_pts, "value") else wavel_pts,
+                        x=(
+                            wavel_bins.value
+                            if hasattr(wavel_bins, "value")
+                            else wavel_bins
+                        ),
+                        xp=(
+                            wavel_pts.value
+                            if hasattr(wavel_pts, "value")
+                            else wavel_pts
+                        ),
                         fp=(
                             flux_astro_1d_ph_sec_um.value
                             if hasattr(flux_astro_1d_ph_sec_um, "value")
@@ -114,9 +125,11 @@ class TransferMixin:
                     continue
 
                 wavel_um = np.asarray(
-                    output_channel.bin_centers.value
-                    if hasattr(output_channel.bin_centers, "value")
-                    else output_channel.bin_centers,
+                    (
+                        output_channel.bin_centers.value
+                        if hasattr(output_channel.bin_centers, "value")
+                        else output_channel.bin_centers
+                    ),
                     dtype=float,
                 )
                 ref_source = next(
@@ -194,38 +207,46 @@ class TransferMixin:
 
         return
 
-
-
     def pass_through_aperture(self, plot: bool = False):
         # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
         # photons/sec/m^2 -> photons/sec
 
-        transmission_screen_order = ['output_1_bright', 'output_2_bright', 'output_3_dark', 'output_4_dark']
+        transmission_screen_order = [
+            "output_1_bright",
+            "output_2_bright",
+            "output_3_dark",
+            "output_4_dark",
+        ]
         collecting_area = compute_collecting_area_m2(self.config) * u.m**2
 
         # telescope throughput
-        eta_t = float(self.config['telescope']['eta_t'])
+        eta_t = float(self.config["telescope"]["eta_t"])
 
         # apply throughput and collecting area to the flux
         for source_name, source_val in self.sources_astroph.items():
 
             post_aperture_flux_by_output = {
-                output_name: eta_t * np.multiply(collecting_area, source_val['flux_cube_post_screen_ph_sec_m2_um'][output_name])
+                output_name: eta_t
+                * np.multiply(
+                    collecting_area,
+                    source_val["flux_cube_post_screen_ph_sec_m2_um"][output_name],
+                )
                 for output_name in transmission_screen_order
             }
 
             # note telescope throughput is incorporated at the stage of passing through the aperture
             ## ## TODO; make a separate module for throughput, and add other terms (telescope background, etc.)
             self.prop_dict[source_name] = {
-                'wavel': source_val['wavel'],
-                'flux_cube_post_screen_pre_aperture_ph_sec_m2_um': source_val['flux_cube_post_screen_ph_sec_m2_um'],
-                'flux_cube_post_screen_post_aperture_ph_sec_um': post_aperture_flux_by_output, # includes chop signal if enabled
+                "wavel": source_val["wavel"],
+                "flux_cube_post_screen_pre_aperture_ph_sec_m2_um": source_val[
+                    "flux_cube_post_screen_ph_sec_m2_um"
+                ],
+                "flux_cube_post_screen_post_aperture_ph_sec_um": post_aperture_flux_by_output,  # includes chop signal if enabled
             }
 
-
         # overplot all the sources
-        if plot: # pragma: no cover
-            save_dir = str(self.config['dirs']['save_s2n_data_unique_dir'])
+        if plot:  # pragma: no cover
+            save_dir = str(self.config["dirs"]["save_s2n_data_unique_dir"])
 
             def _flux_by_source_for_cube(cube_key):
                 flux_by_source = {}
@@ -235,31 +256,39 @@ class TransferMixin:
                     flux_integrated = np.sum(
                         source_val[cube_key][output_name], axis=(1, 2)
                     )
-                    flux_by_source[source_name] = (source_val['wavel'], flux_integrated)
+                    flux_by_source[source_name] = (source_val["wavel"], flux_integrated)
                 return flux_by_source
 
             for output_name in transmission_screen_order:
                 plot_integrated_flux_by_output(
-                    _flux_by_source_for_cube('flux_cube_post_screen_pre_aperture_ph_sec_m2_um'),
+                    _flux_by_source_for_cube(
+                        "flux_cube_post_screen_pre_aperture_ph_sec_m2_um"
+                    ),
                     output_name,
-                    'Post-screen, pre-aperture flux (all sources)',
+                    "Post-screen, pre-aperture flux (all sources)",
                     self.config,
-                    save_dir + f'flux_all_sources_post_screen_pre_aperture_{output_name}.png',
+                    save_dir
+                    + f"flux_all_sources_post_screen_pre_aperture_{output_name}.png",
                 )
                 plot_integrated_flux_by_output(
-                    _flux_by_source_for_cube('flux_cube_post_screen_post_aperture_ph_sec_um'),
+                    _flux_by_source_for_cube(
+                        "flux_cube_post_screen_post_aperture_ph_sec_um"
+                    ),
                     output_name,
-                    'Post-screen, post-aperture flux (all sources)',
+                    "Post-screen, post-aperture flux (all sources)",
                     self.config,
-                    save_dir + f'flux_all_sources_post_screen_post_aperture_{output_name}.png',
+                    save_dir
+                    + f"flux_all_sources_post_screen_post_aperture_{output_name}.png",
                 )
                 plot_poster_post_aperture_flux(
-                    _flux_by_source_for_cube('flux_cube_post_screen_post_aperture_ph_sec_um'),
+                    _flux_by_source_for_cube(
+                        "flux_cube_post_screen_post_aperture_ph_sec_um"
+                    ),
                     output_name,
                     self.config,
                     save_dir + f"poster_post_aperture_flux_{output_name}.pdf",
                 )
 
-        logging.info(f'Passed astrophysical flux through telescope aperture...')
+        logging.info(f"Passed astrophysical flux through telescope aperture...")
 
         return

@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
+
 @dataclass(frozen=True)
 class StageSpec:
     """Metadata for one generate-sims pipeline stage."""
@@ -106,7 +107,9 @@ def ensure_stages_registered() -> Dict[str, StageSpec]:
         from modules.core import astrophysical as _astro  # noqa: F401
         from modules.core.instrumental import tables as _tables  # noqa: F401
         from modules.core.instrumental import transfer as _transfer  # noqa: F401
-        from modules.core.instrumental import transmission as _transmission  # noqa: F401
+        from modules.core.instrumental import (
+            transmission as _transmission,
+        )  # noqa: F401
         from modules.utils.helpers import hdf5_io as _hdf5_io  # noqa: F401
 
         _register_planned_defaults()

@@ -15,7 +15,9 @@ from ..utils.helpers.formatting import format_plot_title
 logger = logging.getLogger(__name__)
 
 
-def plot_incident_flux(wavel, flux, source_name, config, out_path: str, distance_pc: float) -> None:
+def plot_incident_flux(
+    wavel, flux, source_name, config, out_path: str, distance_pc: float
+) -> None:
     """Plot incident flux vs wavelength for one astrophysical source."""
     plt.clf()
     plt.figure(figsize=(8, 8))

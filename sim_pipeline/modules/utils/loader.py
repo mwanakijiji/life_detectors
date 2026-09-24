@@ -68,13 +68,14 @@ def save_config(config: Dict[str, Any], filepath: str) -> None:
         raise IOError(f"Error saving configuration to {filepath}: {e}")
 '''
 
+
 def load_config(config_file: str, makedirs: bool = True) -> dict:
     """Load configuration from a file.
-    
+
     Args:
         config_file (str): Path to the configuration file
         makedirs (bool, optional): Create directories if they don't exist.
-        
+
     Returns:
         dict: Dictionary containing configuration parameters
     """
@@ -83,10 +84,10 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
     config.read(config_file)
 
     logger = logging.getLogger(__name__)
-    
+
     # Convert ConfigParser to regular dictionary
     config_dict = {}
-    
+
     for section in config.sections():
         config_dict[section] = {}
         for key, value in config[section].items():
@@ -108,27 +109,24 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
         for key, value in config_dict[section].items():
             logger.info(f"  {key} = {value}")
 
-    if makedirs and 'dirs' in config_dict:
-        for key, value in config_dict['dirs'].items():
+    if makedirs and "dirs" in config_dict:
+        for key, value in config_dict["dirs"].items():
             os.makedirs(value, exist_ok=True)
             logger.info(f"Created directory: {value}")
 
     return config_dict
 
 
-def setup_logging(log_dir='logs', tag: Optional[str] = None):
+def setup_logging(log_dir="logs", tag: Optional[str] = None):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_tag = tag or f"pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
-    log_file = os.path.join(log_dir, f'detectorsim_{timestamp}_{log_tag}.log')
+    log_file = os.path.join(log_dir, f"detectorsim_{timestamp}_{log_tag}.log")
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ],
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
         force=True,
     )
     return log_file

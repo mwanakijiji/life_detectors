@@ -42,4 +42,4 @@ setup(
             "sphinx-rtd-theme>=1.0",
         ],
     },
-) 
+)

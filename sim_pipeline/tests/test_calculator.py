@@ -27,7 +27,6 @@ from modules.core.calculator.s2n_cube import (
 )
 from modules.core.calculator.snr_from_hdf5 import calculate_s2n_post_rotation
 
-
 PLANET_COL = "astro_exoplanet_model_10pc_adu"
 CHOPPED_PLANET_COL = f"chopped_{PLANET_COL}"
 STAR_COL_OUT3 = "astro_star_adu"
@@ -107,12 +106,8 @@ def _write_angle_hdf5(
     chopped[CHOPPED_PLANET_COL] = np.asarray(planet_chopped) * u.adu
     chopped[STAR_COL_3] = np.asarray(star_out3) * u.adu
     chopped[STAR_COL_4] = np.asarray(star_out4) * u.adu
-    chopped["chopped_instrum_dc_rms_adu"] = (
-        np.full(n_bins, instrum_dark) * u.adu
-    )
-    chopped["chopped_instrum_rn_rms_adu"] = (
-        np.full(n_bins, instrum_read) * u.adu
-    )
+    chopped["chopped_instrum_dc_rms_adu"] = np.full(n_bins, instrum_dark) * u.adu
+    chopped["chopped_instrum_rn_rms_adu"] = np.full(n_bins, instrum_read) * u.adu
     _write_table(chopped, "chopped", overwrite=False)
 
 
@@ -136,7 +131,9 @@ def _expected_snr_lambda(
     cols_S_p_elec = [np.asarray(planet_chopped_by_angle[a]) * gain_val for a in angles]
     cols_S_p_3_elec = [np.asarray(planet_out3_by_angle[a]) * gain_val for a in angles]
     S_p_sqd_arr_mean_elec = np.mean(np.power(np.column_stack(cols_S_p_elec), 2), axis=1)
-    S_p_3_sqd_arr_mean_elec = np.mean(np.power(np.column_stack(cols_S_p_3_elec), 2), axis=1)
+    S_p_3_sqd_arr_mean_elec = np.mean(
+        np.power(np.column_stack(cols_S_p_3_elec), 2), axis=1
+    )
 
     S_sym_noise_var_3_elec = np.zeros(n_bins, dtype=float)
     if star_out3_by_angle is not None:
@@ -144,7 +141,9 @@ def _expected_snr_lambda(
         for a in angles:
             sym_flux_elec = np.asarray(star_out3_by_angle[a]) * gain_val
             cols_sym_noise_var_3_elec.append(np.sqrt(sym_flux_elec))
-        S_sym_noise_var_3_elec = np.mean(np.column_stack(cols_sym_noise_var_3_elec), axis=1)
+        S_sym_noise_var_3_elec = np.mean(
+            np.column_stack(cols_sym_noise_var_3_elec), axis=1
+        )
 
     instrum_dark = np.asarray(instrum_dark, dtype=float)
     instrum_read = np.asarray(instrum_read, dtype=float)
@@ -185,9 +184,7 @@ def s2n_config(tmp_path):
 def patch_plotting():
     with patch("modules.viz.snr.plt.savefig"), patch(
         "modules.viz.snr.plt.figure"
-    ), patch("modules.viz.snr.plt.clf"), patch(
-        "modules.viz.snr.plt.stairs"
-    ), patch(
+    ), patch("modules.viz.snr.plt.clf"), patch("modules.viz.snr.plt.stairs"), patch(
         "modules.viz.snr.plt.tight_layout"
     ), patch(
         "modules.viz.snr.plt.close"
@@ -255,7 +252,9 @@ class TestCalculateS2nPostRotation:
         S_read_noise_var = np.power(read_rms_adu * g, 2).value * u.electron
         instrum_noise_term = 2 * (S_dark_noise_var + S_read_noise_var)
 
-        denominator = np.sqrt((astro_noise_term + instrum_noise_term).value) * u.electron
+        denominator = (
+            np.sqrt((astro_noise_term + instrum_noise_term).value) * u.electron
+        )
         manual_s2n_tot = (S_p_rms / denominator).decompose().value
 
         assert pipeline_s2n_tot == pytest.approx(manual_s2n_tot)
@@ -317,7 +316,10 @@ class TestCalculateS2nPostRotation:
 class TestReadHdf5Slots:
     def test_angle_keys_use_meta_canonical_value(self, tmp_path):
         from modules.core.calculator.snr_from_hdf5 import read_hdf5_slots
-        from modules.utils.helpers.keys import canonical_angle_deg, format_angle_qe_hdf5_name
+        from modules.utils.helpers.keys import (
+            canonical_angle_deg,
+            format_angle_qe_hdf5_name,
+        )
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
@@ -337,7 +339,10 @@ class TestReadHdf5Slots:
         assert canonical != angle_linspace or angle_linspace == round(angle_linspace, 2)
 
     def test_read_hdf5_slots_filters_by_qe(self, tmp_path):
-        from modules.core.calculator.snr_from_hdf5 import build_s2n_cube_from_hdf5, read_hdf5_slots
+        from modules.core.calculator.snr_from_hdf5 import (
+            build_s2n_cube_from_hdf5,
+            read_hdf5_slots,
+        )
         from modules.utils.helpers.keys import format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
@@ -389,7 +394,9 @@ def _make_sample_s2n_cube(read_dir: str = "/tmp/hdf5_in") -> S2NCube:
     qe = np.array([0.6, 0.7])
     snr = np.arange(8, dtype=float).reshape(2, 2, 2)
     snr_tot = np.array([[1.0, 2.0], [3.0, 4.0]])
-    base_titles = np.array([["title_a", "title_b"], ["title_c", "title_d"]], dtype=object)
+    base_titles = np.array(
+        [["title_a", "title_b"], ["title_c", "title_d"]], dtype=object
+    )
     return S2NCube(
         snr=snr,
         wavelength=wavelength,
@@ -447,7 +454,10 @@ class TestSaveS2nCube:
 
         saved = save_s2n_cube(cube, out_path, file_format="both")
 
-        assert saved == [str(out_path.with_suffix(".pkl")), str(out_path.with_suffix(".hdf5"))]
+        assert saved == [
+            str(out_path.with_suffix(".pkl")),
+            str(out_path.with_suffix(".hdf5")),
+        ]
         assert load_s2n_cube(saved[0]).snr.shape == cube.snr.shape
         assert load_s2n_cube(saved[1]).snr_tot.shape == cube.snr_tot.shape
 
@@ -502,8 +512,12 @@ class TestMergeS2nCubes:
         merged = load_s2n_cube(tmp_path)
         assert merged.snr.shape == (2, 2, 2)
         assert np.allclose(merged.qe, [0.3, 0.8])
-        assert np.allclose(merged.snr[:, :, 0], _make_sample_s2n_cube().snr[:, :, 0] + 3.0)
-        assert np.allclose(merged.snr[:, :, 1], _make_sample_s2n_cube().snr[:, :, 0] + 8.0)
+        assert np.allclose(
+            merged.snr[:, :, 0], _make_sample_s2n_cube().snr[:, :, 0] + 3.0
+        )
+        assert np.allclose(
+            merged.snr[:, :, 1], _make_sample_s2n_cube().snr[:, :, 0] + 8.0
+        )
 
     def test_merge_rejects_duplicate_qe(self):
         a = _make_sample_s2n_cube()
