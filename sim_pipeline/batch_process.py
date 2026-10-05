@@ -38,6 +38,7 @@ from modules.core.calculator.extracted_cube import assemble_extracted_spectra_cu
 from modules.core.calculator.snr_from_hdf5 import (
     calculate_s2n_post_rotation,
 )  # noqa: F401 (disabled for now)
+from modules.core.instrumental.channels import FITS_CHANNEL_NAMES
 from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.utils import loader, validator
 from modules.utils.helpers.config_ops import (
@@ -365,6 +366,19 @@ def run_single_calculation(
                 instrument_dep_terms.write_detector_readouts(
                     full_example_file_name, header_cards=header_cards, cutout=False
                 )
+                size_str = (
+                    f"{os.path.getsize(full_example_file_name) / 1e6:.1f} MB"
+                    if os.path.exists(full_example_file_name)
+                    else "size unknown"
+                )
+                logger.info(
+                    "Full-frame example readouts (angle %.2f deg; one HDU per channel: %s) "
+                    "written to %s (%s)",
+                    angle_deg,
+                    ", ".join(FITS_CHANNEL_NAMES.values()),
+                    os.path.abspath(full_example_file_name),
+                    size_str,
+                )
             readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
                 angle_deg, qe
             )
@@ -391,11 +405,24 @@ def run_single_calculation(
 
         # cubes of extracted spectra (wavelength, readout, channel), one file per (QE, DC)
         logger.info("Assembling extracted-spectra cubes ...")
-        assemble_extracted_spectra_cubes(
+        cube_file_names = assemble_extracted_spectra_cubes(
             read_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
             qe=qe,
             config=config,
             save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
+        )
+
+        save_dir_abs = os.path.abspath(str(config["dirs"]["save_s2n_data_unique_dir"]))
+        logger.info(
+            "Detector outputs for QE %.2f in %s:\n"
+            "  full-frame example readouts: %s\n"
+            "  readout cutouts (one per angle): %s\n"
+            "  extracted-spectra cubes: %s",
+            qe,
+            save_dir_abs,
+            format_qe_fits_full_example_name(qe),
+            "readouts_angle_*_qe_" + f"{qe:04.2f}.fits",
+            ", ".join(os.path.basename(f) for f in cube_file_names) or "none",
         )
 
     else:

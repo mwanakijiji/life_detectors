@@ -7,6 +7,15 @@ from astropy.table import QTable
 from .detector import Detector
 
 
+# short channel names used in FITS files (EXTNAMEs and CHANi header values)
+FITS_CHANNEL_NAMES = {
+    "output_1_bright": "CH1BR",
+    "output_2_bright": "CH2BR",
+    "output_3_dark": "CH3DK",
+    "output_4_dark": "CH4DK",
+}
+
+
 @dataclass
 class OutputChannel:
     """

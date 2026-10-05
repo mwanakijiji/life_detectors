@@ -888,9 +888,7 @@ class TestDetectorEffects:
 class TestDetectorReadouts:
     @pytest.fixture
     def channels_with_frames(self, detector_geometry_config):
-        config = {
-            "detector": {**detector_geometry_config["detector"], "gain": "2.0"}
-        }
+        config = {"detector": {**detector_geometry_config["detector"], "gain": "2.0"}}
         channels = {}
         for i, name in enumerate(
             ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
@@ -932,14 +930,14 @@ class TestDetectorReadouts:
         )
         with fits.open(file_name) as hdul:
             assert [h.name for h in hdul[1:]] == [
-                "OUTPUT_1_BRIGHT",
-                "OUTPUT_2_BRIGHT",
-                "OUTPUT_3_DARK",
-                "OUTPUT_4_DARK",
+                "CH1BR",
+                "CH2BR",
+                "CH3DK",
+                "CH4DK",
             ]
             assert hdul[0].header["TFRAME"] == 10.0
             assert hdul[0].header["QE"] == 0.8
-            hdu = hdul["OUTPUT_3_DARK"]
+            hdu = hdul["CH3DK"]
             assert hdu.data.shape == (2, 2, 400, 400)  # (components, readouts, y, x)
             assert (hdu.header["Y0"], hdu.header["X0"]) == (0, 0)
             assert hdu.header["BUNIT"] == "adu"
@@ -958,7 +956,7 @@ class TestDetectorReadouts:
         # 3 rows from y=100; bins span x = 300 .. 306.6
         assert (y0, y1, x0, x1) == (100, 103, 300, 307)
         with fits.open(file_name) as hdul:
-            hdu = hdul["OUTPUT_3_DARK"]
+            hdu = hdul["CH3DK"]
             assert hdu.data.shape == (2, 2, 3, 7)
             assert (hdu.header["Y0"], hdu.header["X0"]) == (100, 300)
             assert (hdu.header["FULLNY"], hdu.header["FULLNX"]) == (400, 400)
@@ -967,7 +965,9 @@ class TestDetectorReadouts:
             # nothing illuminated outside the cutout
             assert np.isclose(hdu.data[0, 0].sum(), full.sum())
 
-    def test_extract_from_cutout_matches_full_frame(self, channels_with_frames, tmp_path):
+    def test_extract_from_cutout_matches_full_frame(
+        self, channels_with_frames, tmp_path
+    ):
         cutout_file = str(tmp_path / "cutout.fits")
         full_file = str(tmp_path / "full.fits")
         write_detector_readouts(channels_with_frames, cutout_file, t_frame=10.0 * u.s)
@@ -983,11 +983,14 @@ class TestDetectorReadouts:
     def test_extract_keeps_readout_axis_and_conserves_total(
         self, detector_geometry_config, tmp_path
     ):
-        config = {
-            "detector": {**detector_geometry_config["detector"], "gain": "2.0"}
-        }
+        config = {"detector": {**detector_geometry_config["detector"], "gain": "2.0"}}
         channels = {}
-        for name in ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]:
+        for name in [
+            "output_1_bright",
+            "output_2_bright",
+            "output_3_dark",
+            "output_4_dark",
+        ]:
             channel = OutputChannel(name=name)
             _attach_detector_footprint(channel, config, n_bins=3)
             channel.astroph_signal["star"] = {
