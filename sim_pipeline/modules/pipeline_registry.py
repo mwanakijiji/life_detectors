@@ -96,9 +96,11 @@ def ensure_stages_registered() -> Dict[str, StageSpec]:
     if not _IMPORTS_DONE:
         # Import order is unimportant; each module self-registers via decorators.
         from modules.core import astrophysical as _astro  # noqa: F401
+        from modules.core.calculator import extracted_cube as _extracted_cube  # noqa: F401
         from modules.core.instrumental import aperture as _aperture  # noqa: F401
         from modules.core.instrumental import dispersion as _dispersion  # noqa: F401
         from modules.core.instrumental import effects as _effects  # noqa: F401
+        from modules.core.instrumental import readouts as _readouts  # noqa: F401
         from modules.core.instrumental import tables as _tables  # noqa: F401
         from modules.core.instrumental import (
             transmission as _transmission,

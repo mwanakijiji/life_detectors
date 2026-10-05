@@ -34,7 +34,10 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from modules.core import astrophysical
-from modules.core.calculator.snr_from_hdf5 import calculate_s2n_post_rotation
+from modules.core.calculator.extracted_cube import assemble_extracted_spectra_cubes
+from modules.core.calculator.snr_from_hdf5 import (
+    calculate_s2n_post_rotation,
+)  # noqa: F401 (disabled for now)
 from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.utils import loader, validator
 from modules.utils.helpers.config_ops import (
@@ -46,6 +49,10 @@ from modules.utils.helpers.config_ops import (
 )
 from modules.utils.helpers.formatting import ensure_plot_title_context
 from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
+from modules.utils.helpers.keys import (
+    format_angle_qe_fits_readouts_name,
+    format_qe_fits_full_example_name,
+)
 from modules.utils.helpers.spectra import (
     compute_collecting_area_m2,
     create_sample_data,
@@ -77,7 +84,7 @@ def run_single_calculation(
     output_root: Optional[str] = None,
 ) -> bool:
     """
-    Run a single calculation with specified parameters.
+    Run a single calculation with specified parameters. (Single here means single QE value.)
 
     Args:
         config_path: Path to the configuration file
@@ -278,7 +285,7 @@ def run_single_calculation(
         )
         results = {}  # dict to hold results for each angle
 
-        for angle_deg in angles_deg:
+        for i_angle, angle_deg in enumerate(angles_deg):
             # Reset mutable pipeline state
             instrument_dep_terms.sources_astroph = copy.deepcopy(
                 sources_astroph_pristine
@@ -292,10 +299,11 @@ def run_single_calculation(
                 ch.angle_deg = angle_deg
                 ch.astroph_signal.clear()
                 ch.detector_signal_e_bin.clear()
+                ch.readout_frames.clear()
+                ch.extracted_spectra_adu.clear()
                 ch.tables_by_dark_current.clear()
             for effect in instrument_dep_terms.detector_effects:
                 effect.reset()
-            instrument_dep_terms.post_chop_tables_by_dark_current = {}
 
             # generate the transmission screens (one per output)
             logger.info("Generating transmission screens...")
@@ -344,31 +352,61 @@ def run_single_calculation(
             # output units: ADU total in each wavel bin
             instrument_dep_terms.combine_astro_and_instrum_signals(plot=plot)
 
-            # chop the signal between dark outputs
-            instrument_dep_terms.chop_signal(plot=plot)
+            # write the detector readouts to FITS (one HDU per output channel):
+            # a cutout around the spectral trace at every angle, plus one full-frame example
+            save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
+            header_cards = {"ANGLE": float(angle_deg), "QE": float(qe)}
+            if i_angle == 0:
+                full_example_file_name = save_dir + format_qe_fits_full_example_name(qe)
+                logger.info(
+                    "Writing full-frame example readouts to %s ...",
+                    full_example_file_name,
+                )
+                instrument_dep_terms.write_detector_readouts(
+                    full_example_file_name, header_cards=header_cards, cutout=False
+                )
+            readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
+                angle_deg, qe
+            )
+            logger.info(
+                "Writing detector readout cutouts to %s ...", readouts_file_name
+            )
+            instrument_dep_terms.write_detector_readouts(
+                readouts_file_name, header_cards=header_cards, cutout=True
+            )
+
+            # extract counts vs. wavelength from the readouts (simple box summation)
+            logger.info("Extracting spectra from detector readouts ...")
+            instrument_dep_terms.extract_spectra_from_readouts()
 
             # write condensed information at this transmission screen angle (to avoid mem leak)
-            # see plot of chopped planet flux: instrument_dep_terms.prop_dict['exoplanet_model_10pc']['flux_cube_post_screen_post_aperture_ph_sec_um']['chopped_dark_outputs'][15,:,:].value
             record_info_at_angle_and_qe(
                 angle_deg=angle_deg,
                 qe=qe,
                 output_channels=instrument_dep_terms.output_channels,
-                post_chop_tables_by_dark_current=instrument_dep_terms.post_chop_tables_by_dark_current,
-                save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
+                save_dir=save_dir,
+                extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
                 plot=plot,
             )
 
-    else:
-        logger.info("Skipping simulation and calculating S/N from HDF5 files...")
-
-    if calculate_s2n:
-        logger.info("Calculating S/N from HDF5 files.")
-        calculate_s2n_post_rotation(
-            config["dirs"]["save_s2n_data_unique_dir"],
-            save_cube_path_stem=config["dirs"]["save_s2n_data_unique_dir"],
+        # cubes of extracted spectra (wavelength, readout, channel), one file per (QE, DC)
+        logger.info("Assembling extracted-spectra cubes ...")
+        assemble_extracted_spectra_cubes(
+            read_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
+            qe=qe,
             config=config,
+            save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
         )
 
+    else:
+        logger.info("Skipping simulation ...")
+
+    if calculate_s2n:
+        # S/N reads the chopped (output 3 - output 4) tables, which are removed for now
+        logger.warning(
+            "[tasks] calculate_s2n_post_rotation is enabled, but S/N is disabled while "
+            "chopping is removed; skipping calculate_s2n_post_rotation"
+        )
     else:
         logger.info("Not calculating S/N from HDF5 files.")
 

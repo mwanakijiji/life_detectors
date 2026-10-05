@@ -5,8 +5,12 @@ import logging
 import numpy as np
 import astropy.units as u
 
-from . import aperture, dispersion, effects, tables, transmission
-from .aperture import BACKGROUND_REGISTRY, InstrumentBackground, _enabled_background_names
+from . import aperture, dispersion, effects, readouts, tables, transmission
+from .aperture import (
+    BACKGROUND_REGISTRY,
+    InstrumentBackground,
+    _enabled_background_names,
+)
 from .channels import OutputChannel
 from .effects import DetectorEffect, build_detector_effects
 
@@ -93,12 +97,20 @@ class InstrumentDepTerms:
 
     def pass_through_aperture(self, plot: bool = False):
         aperture.pass_through_aperture(
-            self.config, self.sources_astroph, self.sources_to_include, self.prop_dict, plot=plot
+            self.config,
+            self.sources_astroph,
+            self.sources_to_include,
+            self.prop_dict,
+            plot=plot,
         )
 
     def pass_from_aperture_to_detector(self, plot: bool = False):
         aperture.pass_from_aperture_to_detector(
-            self.config, self.prop_dict, self.output_channels, self.instrument_backgrounds, plot=plot
+            self.config,
+            self.prop_dict,
+            self.output_channels,
+            self.instrument_backgrounds,
+            plot=plot,
         )
 
     def disperse_astro_signals_on_detector(self, plot: bool = False):
@@ -125,7 +137,22 @@ class InstrumentDepTerms:
             self.config, self.output_channels, self.sources_to_include, plot=plot
         )
 
-    def chop_signal(self, plot: bool = False):
-        self.post_chop_tables_by_dark_current = tables.chop_signal(
-            self.output_channels, plot=plot
+    def write_detector_readouts(
+        self, file_name: str, header_cards: dict | None = None, cutout: bool = True
+    ):
+        written = readouts.write_detector_readouts(
+            self.output_channels,
+            file_name,
+            t_frame=float(self.config["observation"]["t_int_frame"]) * u.second,
+            header_cards=header_cards,
+            cutout=cutout,
+        )
+        # extraction reads the cutout file; a full-frame write is only an example
+        if cutout:
+            self.readouts_file_name = written
+        return written
+
+    def extract_spectra_from_readouts(self):
+        self.extracted_spectra_adu = readouts.extract_spectra_from_readouts(
+            self.output_channels, self.readouts_file_name
         )

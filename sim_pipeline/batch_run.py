@@ -97,6 +97,34 @@ def main():
         output_root=output_root,
     )
 
+    # this writes out HDF5 files with
+
+    # One file per angle and QE: angle_{angle:06.2f}_qe_{qe:04.2f}.hdf5
+    # Example hierarchical structure of output HDF5 files:
+    #   angle_000.00_qe_0.80.hdf5
+    #       └── dc_00.200_qe_0.80/          # one group per dark-current rate (e-/pix/s)
+    #           ├── output_1_bright         # per-output table
+    #           ├── output_2_bright
+    #           ├── output_3_dark
+    #           └── output_4_dark
+    #       └── __extracted_qe_0.80/        # per-readout spectra box-summed from the readout FITS
+    #
+    # plus, per QE: extracted_cube_qe_{qe}_dc_{dc}.fits with (wavelength, readout, channel) cubes
+
+    # One S/N cube per QE (not written for now: S/N is disabled while chopping is removed)
+    # qe_{qe:04.2f}_s2n_cube.hdf5
+    # holds plain h5py datasets, not QTables, and a .pkl copy is saved alongside it:
+    # Example contents of the S/N cube HDF5 files (qe_{qe:04.2f}_s2n_cube.hdf5):
+    #   - snr:               shape (n_bins, n_dc, n_qe)      -- S/N for each wavelength bin
+    #   - snr_tot:           shape (n_dc, n_qe)              -- Total S/N
+    #   - wavelength:        shape (n_bins,)                  -- Wavelength bin centres
+    #   - wavel_bin_width:   shape (n_bins,)                  -- Wavelength bin widths
+    #   - wavel_bin_edges:   shape (n_bins+1,)                -- Wavelength bin edges
+    #   - dark_current:      shape (n_dc,)                    -- Dark current values
+    #   - qe:                shape (n_qe,)                    -- Quantum efficiency values
+    #   - base_titles:       shape (n_dc, n_qe)               -- Base plot titles
+    #   - meta/formatted_plot_titles: shape (n_dc, n_qe)      -- Formatted plot titles
+
     logger.info("Complete.")
 
 

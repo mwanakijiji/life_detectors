@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import h5py
 import numpy as np
 from astropy.table import QTable
 
@@ -18,14 +18,61 @@ from .keys import (
 logger = logging.getLogger(__name__)
 
 
-@pipeline_stage(depends_on=("chop_signal",))
+def _extracted_group_name(qe: float) -> str:
+    # leading "__" so readers that walk the dc_*_qe_* groups skip it
+    return f"__extracted_qe_{canonical_qe(qe):04.2f}"
+
+
+def _write_extracted_spectra(
+    file_name_hdf5: str,
+    *,
+    angle_deg: float,
+    qe: float,
+    output_channels: dict,
+    extracted_spectra_adu: dict,
+) -> None:
+    """Append per-readout extracted spectra and bin geometry to an angle HDF5 file."""
+    ref_channel = output_channels["output_3_dark"]
+    ref_table = next(iter(ref_channel.tables_by_dark_current.values()))
+    with h5py.File(file_name_hdf5, "a") as handle:
+        group = handle.create_group(_extracted_group_name(qe))
+        group.attrs["angle_deg"] = float(angle_deg)
+        group.attrs["qe"] = float(qe)
+        group.attrs["t_frame_s"] = float(ref_table["t_int_frame"][0].to_value("s"))
+        group.attrs["gain_e_per_adu"] = float(
+            ref_channel.detector.gain.to_value("electron / adu")
+        )
+        group.create_dataset("npix", data=np.asarray(ref_table["npix"].value))
+        group.create_dataset(
+            "center", data=np.asarray(ref_table["center"].to_value("um"))
+        )
+        group.create_dataset(
+            "width", data=np.asarray(ref_table["width"].to_value("um"))
+        )
+        group.create_dataset(
+            "edges", data=np.asarray(ref_table.meta["wavel_bin_edges"].to_value("um"))
+        )
+        n_readouts = None
+        for ch_name, spectra in extracted_spectra_adu.items():
+            ch_group = group.create_group(ch_name)
+            for component, spectrum in spectra.items():
+                values = np.asarray(spectrum.to_value("adu"))  # (n_readouts, n_bins)
+                n_readouts = values.shape[0]
+                dset = ch_group.create_dataset(component, data=values)
+                dset.attrs["unit"] = "adu"
+        group.attrs["n_readouts"] = int(n_readouts or 0)
+
+
+@pipeline_stage(
+    depends_on=("combine_astro_and_instrum_signals", "extract_spectra_from_readouts")
+)
 def record_info_at_angle_and_qe(
     *,
     angle_deg: float,
     qe: float,
     output_channels: dict,
-    post_chop_tables_by_dark_current: dict,
     save_dir: str,
+    extracted_spectra_adu: dict | None = None,
     plot: bool = True,
 ) -> dict:
     """
@@ -33,13 +80,16 @@ def record_info_at_angle_and_qe(
 
     File structure::
 
-        angle_{angle}.hdf5
-          dc_{dc}/
+        angle_{angle}_qe_{qe}.hdf5
+          dc_{dc}_qe_{qe}/
             output_1_bright   QTable, all columns from tables_by_dark_current
             output_2_bright
             output_3_dark
             output_4_dark
-            chopped           QTable, all columns from post_chop_tables_by_dark_current
+          __extracted_qe_{qe}/          (only if extracted_spectra_adu is given)
+            npix, center, width, edges  bin geometry (pix, um)
+            {channel}/{component}       (n_readouts, n_bins) ADU per frame, box-summed from readouts
+            attrs: angle_deg, qe, t_frame_s, gain_e_per_adu, n_readouts
     """
 
     file_name_hdf5 = f"{save_dir}{format_angle_qe_hdf5_name(angle_deg, qe)}"
@@ -51,8 +101,9 @@ def record_info_at_angle_and_qe(
         hdf5_path.unlink()
     hdf5_paths = []
     first_dataset = True
+    dc_rates = list(output_channels["output_3_dark"].tables_by_dark_current)
 
-    for dc_rate in post_chop_tables_by_dark_current:
+    for dc_rate in dc_rates:
         dc_rate_key = canonical_dc_rate(dc_rate)
         dc_group = f"dc_{dc_rate_key:06.3f}"
         qe_group = f"qe_{qe:04.2f}"
@@ -83,59 +134,26 @@ def record_info_at_angle_and_qe(
             hdf5_paths.append(hdf5_path)
             logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
 
-        # now include the chopped signal
-        chopped_tbl = post_chop_tables_by_dark_current[dc_rate_key].copy()
-        chopped_tbl.meta["angle_deg"] = float(angle_deg)
-        chopped_tbl.meta["dark_current_e_pix_s"] = float(dc_rate_key)
-        hdf5_path = dc_qe_str + "/chopped"
-        chopped_tbl.write(
+    if extracted_spectra_adu:
+        _write_extracted_spectra(
             file_name_hdf5,
-            path=hdf5_path,
-            serialize_meta=True,
-            append=True,
+            angle_deg=angle_deg,
+            qe=qe,
+            output_channels=output_channels,
+            extracted_spectra_adu=extracted_spectra_adu,
         )
-        hdf5_paths.append(hdf5_path)
-        logger.info(f"Wrote {file_name_hdf5}:{hdf5_path}")
+        hdf5_paths.append(_extracted_group_name(qe))
+        logger.info(
+            f"Wrote extracted spectra to {file_name_hdf5}:{_extracted_group_name(qe)}"
+        )
 
     snapshot = {
         "angle_deg": angle_deg,
         "hdf5_file": file_name_hdf5,
         "hdf5_paths": hdf5_paths,
-        "dark_currents": list(post_chop_tables_by_dark_current.keys()),
+        "dark_currents": dc_rates,
     }
 
     logger.info(f"Recorded angle {angle_deg} to {file_name_hdf5}")
-
-    if plot and post_chop_tables_by_dark_current:  # pragma: no cover
-        dc_rate = next(iter(post_chop_tables_by_dark_current))
-        chopped_tbl = post_chop_tables_by_dark_current[dc_rate]
-        wavel_center = chopped_tbl["center"].value
-        wavel_width = chopped_tbl["width"].value
-        wavel_edges = np.empty(len(wavel_center) + 1)
-        wavel_edges[1:-1] = 0.5 * (wavel_center[:-1] + wavel_center[1:])
-        wavel_edges[0] = wavel_center[0] - 0.5 * wavel_width[0]
-        wavel_edges[-1] = wavel_center[-1] + 0.5 * wavel_width[-1]
-
-        fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
-        for col_name in chopped_tbl.colnames:
-            if not col_name.startswith("chopped_"):
-                continue
-            y_vals = chopped_tbl[col_name].value
-            ax.stairs(y_vals, edges=wavel_edges, label=col_name)
-
-        ax.set_yscale("log")
-        ax.set_xlim(4.0, 18.0)
-        ax.set_xlabel("Wavelength (um)")
-        ax.set_ylabel("Signal (ADU)")
-        ax.set_title(
-            f"Chopped signals at angle {angle_deg:06.2f}, dc={dc_rate:06.3f} e/pix/s, QE {qe:04.2f}"
-        )
-        ax.legend(fontsize=8, loc="best")
-        file_name_plot = f"{save_dir}chopped_dark_output_signals_at_angle_{angle_deg:06.2f}_qe_{qe:04.2f}.png"
-        fig.savefig(file_name_plot)
-        plt.close(fig)
-        logger.info(
-            f"Saved plot of chopped signals at angle {angle_deg:06.2f}, QE {qe:04.2f}: {file_name_plot}"
-        )
 
     return

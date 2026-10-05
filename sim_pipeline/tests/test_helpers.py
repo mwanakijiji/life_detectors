@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import astropy.constants as const
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
@@ -443,18 +444,11 @@ class TestRecordInfoAtAngleAndQe:
             "output_3_dark": channel,
             "output_4_dark": channel,
         }
-        post_chop = {
-            0.0: _table(3.0),
-            0.1: _table(4.0),
-        }
-        post_chop[0.0]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
-        post_chop[0.1]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
 
         record_info_at_angle_and_qe(
             angle_deg=45.0,
             qe=0.7,
             output_channels=output_channels,
-            post_chop_tables_by_dark_current=post_chop,
             save_dir=save_dir,
             plot=False,
         )
@@ -465,6 +459,59 @@ class TestRecordInfoAtAngleAndQe:
         assert len(restored) == n_bins
         assert restored.meta["angle_deg"] == 45.0
         assert restored.meta["qe"] == 0.7
+        with h5py.File(hdf5_path, "r") as handle:
+            assert set(handle.keys()) == {"dc_00.000_qe_0.70", "dc_00.100_qe_0.70"}
+            assert "chopped" not in handle["dc_00.000_qe_0.70"]
+
+    def test_writes_extracted_spectra_group(self, tmp_path):
+        save_dir = str(tmp_path) + "/"
+        n_bins, n_readouts = 2, 3
+        table = QTable(
+            {
+                "center": np.array([5.0, 10.0]) * u.um,
+                "width": np.array([0.5, 0.5]) * u.um,
+                "npix": np.array([4.0, 5.0]) * u.pix,
+                "t_int_frame": np.full(n_bins, 10.0) * u.s,
+            }
+        )
+        table.meta["wavel_bin_edges"] = np.array([4.75, 7.5, 10.25]) * u.um
+        channel = MagicMock()
+        channel.tables_by_dark_current = {0.0: table}
+        channel.detector.gain = 2.0 * u.electron / u.adu
+        names = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
+        output_channels = {name: channel for name in names}
+        extracted = {
+            name: {
+                "star": np.arange(n_readouts * n_bins).reshape(n_readouts, n_bins)
+                * (i + 1.0)
+                * u.adu,
+                "instrum_systematics": np.zeros((n_readouts, n_bins)) * u.adu,
+            }
+            for i, name in enumerate(names)
+        }
+
+        record_info_at_angle_and_qe(
+            angle_deg=45.0,
+            qe=0.7,
+            output_channels=output_channels,
+            save_dir=save_dir,
+            extracted_spectra_adu=extracted,
+            plot=False,
+        )
+
+        with h5py.File(tmp_path / "angle_045.00_qe_0.70.hdf5", "r") as handle:
+            group = handle["__extracted_qe_0.70"]
+            assert group.attrs["angle_deg"] == 45.0
+            assert group.attrs["n_readouts"] == n_readouts
+            assert group.attrs["t_frame_s"] == 10.0
+            assert group.attrs["gain_e_per_adu"] == 2.0
+            assert np.allclose(group["npix"][()], [4.0, 5.0])
+            assert np.allclose(group["edges"][()], [4.75, 7.5, 10.25])
+            assert set(group["output_3_dark"].keys()) == {"star", "instrum_systematics"}
+            assert np.allclose(
+                group["output_3_dark"]["star"][()],
+                extracted["output_3_dark"]["star"].value,
+            )
 
     def test_clears_stale_groups_before_rewrite(self, tmp_path):
         import h5py
@@ -485,7 +532,7 @@ class TestRecordInfoAtAngleAndQe:
             )
 
         stale = _table(99.0)
-        stale.write(hdf5_path, path="dc_00.000_qe_0.50/chopped", overwrite=True)
+        stale.write(hdf5_path, path="dc_00.000_qe_0.50/output_3_dark", overwrite=True)
 
         channel = MagicMock()
         channel.tables_by_dark_current = {0.0: _table(1.0)}
@@ -495,14 +542,11 @@ class TestRecordInfoAtAngleAndQe:
             "output_3_dark": channel,
             "output_4_dark": channel,
         }
-        post_chop = {0.0: _table(3.0)}
-        post_chop[0.0]["chopped_planet_adu"] = np.ones(n_bins) * u.adu
 
         record_info_at_angle_and_qe(
             angle_deg=45.0,
             qe=0.7,
             output_channels=output_channels,
-            post_chop_tables_by_dark_current=post_chop,
             save_dir=save_dir,
             plot=False,
         )

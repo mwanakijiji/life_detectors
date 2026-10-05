@@ -77,6 +77,26 @@ class Detector:
             where=footprint_image > 0,
         )
 
+    def bin_index_map(self) -> np.ndarray:
+        """
+        (n_pix, n_pix) map of the wavelength bin each pixel belongs to, for box extraction.
+
+        A pixel shared by two bins goes entirely to the bin covering most of it
+        (the lower bin on a tie); pixels off the footprint are -1.
+        """
+        self._require_footprint()
+        bin_map = np.argmax(self.footprint_cube, axis=0)
+        bin_map[DispersionLaw.footprint_image(self.footprint_cube) <= 0] = -1
+        return bin_map
+
+    def footprint_bbox(self) -> tuple[int, int, int, int]:
+        """(y0, y1, x0, x1) bounding box of the illuminated footprint (end-exclusive)."""
+        self._require_footprint()
+        on_footprint = DispersionLaw.footprint_image(self.footprint_cube) > 0
+        rows = np.flatnonzero(on_footprint.any(axis=1))
+        cols = np.flatnonzero(on_footprint.any(axis=0))
+        return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
+
     def apply_qe(self, flux):
         """Apply detector quantum efficiency to a photon-rate quantity or array."""
         return flux * self.quantum_efficiency

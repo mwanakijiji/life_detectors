@@ -80,8 +80,9 @@ def combine_astro_and_instrum_signals(
         # build table that includes astrophysical signals
         base = build_base_astro_table(output_channel, sources_to_include)
         ## ## TODO: enable multiple reads
+        # one value per bin: a scalar Quantity Column loses its name when assigned
         base["t_int_frame"] = Column(
-            data=t_frame,
+            data=np.full(len(base), t_frame.value) * t_frame.unit,
             description="Integration time of one frame",
         )
         base["qe"] = Column(
@@ -116,7 +117,9 @@ def combine_astro_and_instrum_signals(
             # 'dark current' pedestal vs RMS: here we store Poisson RMS so dark-subtraction
             # noise can be propagated as if subtraction were already performed
             qt["instrum_dc_rms_adu"] = Column(
-                data=np.sqrt((dc_rate * u.electron / u.pix) * qt["npix"] * t_frame).value
+                data=np.sqrt(
+                    (dc_rate * u.electron / u.pix) * qt["npix"] * t_frame
+                ).value
                 * u.electron
                 / gain,
                 description="Dark-current Poisson RMS over wavel bin and detector footprint, for one integration (ADU)",
@@ -154,57 +157,3 @@ def combine_astro_and_instrum_signals(
         pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
     ipdb.set_trace()
     """
-
-
-@pipeline_stage(depends_on=("combine_astro_and_instrum_signals",))
-def chop_signal(output_channels: dict, plot: bool = False) -> dict:
-    """
-    Subtracts the dark 3 and 4 outputs
-
-    OUTPUTS:
-    - dict of chopped tables, keyed by dc_rate
-    """
-
-    post_chop_tables_by_dark_current = {}
-    for dc_rate, t3 in output_channels["output_3_dark"].tables_by_dark_current.items():
-        t1 = output_channels["output_1_bright"].tables_by_dark_current[dc_rate]
-        t2 = output_channels["output_2_bright"].tables_by_dark_current[dc_rate]
-        t4 = output_channels["output_4_dark"].tables_by_dark_current[dc_rate]
-        chopped = QTable()
-
-        # copy wavelength metadata once
-        for col in ("bin", "center", "width", "npix"):
-            chopped[col] = Column(
-                data=t3[col],
-                description=t3[col].info.description,
-            )
-
-        # keep outputs, but add the chopped signal
-        # consolidate signals from dark outputs, and the chopped signal
-        for col in t3.colnames:
-            if (
-                col.startswith("astro_") and col.endswith("_adu")
-            ) or col == "instrum_systematics_adu":
-                chopped[f"output_1_bright_{col}"] = t1[col]
-                chopped[f"output_2_bright_{col}"] = t2[col]
-                chopped[f"output_3_dark_{col}"] = t3[col]
-                chopped[f"output_4_dark_{col}"] = t4[col]
-                chopped[f"chopped_{col}"] = Column(
-                    data=t3[col] - t4[col],
-                    description=f"Chopped (output_3 − output_4) for {col}",
-                )
-            if col in ("instrum_dc_rms_adu", "instrum_rn_rms_adu"):
-                chopped[f"output_3_dark_{col}"] = t3[col]
-                chopped[f"output_4_dark_{col}"] = t4[col]
-
-                ## ## TODO: MAKE SURE THIS IS CORRECT
-                chopped[f"chopped_{col}"] = Column(
-                    data=np.sqrt(t3[col] ** 2 + t4[col] ** 2),
-                    description=f"Combined dark-pair RMS for {col}: sqrt(out3^2 + out4^2)",
-                )
-
-        chopped.meta.update(t3.meta)
-
-        post_chop_tables_by_dark_current[dc_rate] = chopped
-
-    return post_chop_tables_by_dark_current

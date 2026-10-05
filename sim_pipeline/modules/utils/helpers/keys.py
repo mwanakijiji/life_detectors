@@ -46,6 +46,27 @@ def format_angle_qe_hdf5_name(angle_deg: float, qe: float) -> str:
     )
 
 
+def format_angle_qe_fits_readouts_name(angle_deg: float, qe: float) -> str:
+    """Return ``readouts_angle_{angle}_qe_{qe}.fits`` (same formatting as the HDF5 names)."""
+    return (
+        f"readouts_angle_{canonical_angle_deg(angle_deg):06.2f}"
+        f"_qe_{canonical_qe(qe):04.2f}.fits"
+    )
+
+
+def format_qe_fits_full_example_name(qe: float) -> str:
+    """Return ``readouts_full_example_qe_{qe}.fits`` (one full-frame example per QE run)."""
+    return f"readouts_full_example_qe_{canonical_qe(qe):04.2f}.fits"
+
+
+def format_extracted_cube_name(qe: float, dc_rate: float) -> str:
+    """Return ``extracted_cube_qe_{qe}_dc_{dc}.fits`` for one (QE, DC) permutation."""
+    return (
+        f"extracted_cube_qe_{canonical_qe(qe):04.2f}"
+        f"_dc_{canonical_dc_rate(dc_rate):06.3f}.fits"
+    )
+
+
 def parse_angle_from_hdf5_path(path: Union[str, Path]) -> float:
     """Parse the angle embedded in an ``angle_*.hdf5`` filename."""
     stem = Path(path).stem

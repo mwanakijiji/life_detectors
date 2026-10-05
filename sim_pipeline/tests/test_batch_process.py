@@ -387,7 +387,6 @@ def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data)
     mock_astro_instance.arrange_onsky_scene.return_value = {"star": MagicMock()}
     mock_instrument = MagicMock()
     mock_instrument.output_channels = {}
-    mock_instrument.post_chop_tables_by_dark_current = {}
     mock_instrument.generate_instrument_transmission.return_value = np.ones((6, 3, 3))
     return mock_astro_instance, mock_instrument
 
@@ -790,24 +789,23 @@ class TestRunSingleCalculation:
         )
 
     @patch("batch_process.calculate_s2n_post_rotation")
-    def test_returns_true_and_calls_s2n_when_enabled(
-        self, mock_s2n, run_calc_config_path
+    def test_s2n_disabled_even_when_enabled_in_config(
+        self, mock_s2n, run_calc_config_path, caplog
     ):
-        config_path, save_dir = run_calc_config_path
+        config_path, _ = run_calc_config_path
 
-        result = run_single_calculation(
-            config_path=config_path,
-            base_filename="planet_00001",
-            sources_to_include=["star", "exoplanet_model_10pc"],
-            qe=0.7,
-            plot=False,
-        )
+        with caplog.at_level("WARNING"):
+            result = run_single_calculation(
+                config_path=config_path,
+                base_filename="planet_00001",
+                sources_to_include=["star", "exoplanet_model_10pc"],
+                qe=0.7,
+                plot=False,
+            )
 
         assert result is True
-        mock_s2n.assert_called_once()
-        args, kwargs = mock_s2n.call_args
-        assert args[0] == save_dir
-        assert kwargs["config"]["dirs"]["save_s2n_data_unique_dir"] == save_dir
+        mock_s2n.assert_not_called()
+        assert "S/N is disabled while chopping is removed" in caplog.text
 
     @patch("batch_process.calculate_s2n_post_rotation")
     def test_skips_s2n_when_disabled(self, mock_s2n, tmp_path):
@@ -847,7 +845,7 @@ class TestRunSingleCalculation:
         )
 
         mock_create_sample_data.assert_not_called()
-        mock_s2n.assert_called_once()
+        mock_s2n.assert_not_called()
 
     @patch("batch_process.record_info_at_angle_and_qe")
     @patch("batch_process.InstrumentDepTerms")
@@ -880,7 +878,6 @@ class TestRunSingleCalculation:
 
         mock_instrument = MagicMock()
         mock_instrument.output_channels = {}
-        mock_instrument.post_chop_tables_by_dark_current = {}
         mock_instrument.generate_instrument_transmission.return_value = np.ones(
             (6, 3, 3)
         )
@@ -905,6 +902,7 @@ class TestRunSingleCalculation:
         assert "[tasks]" in caplog.text
         assert "generate_sims = True" in caplog.text
 
+    @patch("batch_process.assemble_extracted_spectra_cubes")
     @patch("batch_process.record_info_at_angle_and_qe")
     @patch("batch_process.InstrumentDepTerms")
     @patch("batch_process.astrophysical.AstrophysicalSources")
@@ -917,6 +915,7 @@ class TestRunSingleCalculation:
         mock_astro_sources_cls,
         mock_instrument_cls,
         mock_record_info,
+        mock_assemble,
         tmp_path,
     ):
         save_dir = str(tmp_path / "hdf5_out") + "/"
@@ -939,7 +938,6 @@ class TestRunSingleCalculation:
             "output_1_bright": _make_dirty_output_channel("output_1_bright"),
             "output_3_dark": _make_dirty_output_channel("output_3_dark"),
         }
-        mock_instrument.post_chop_tables_by_dark_current = {"stale": True}
         mock_effect = MagicMock()
         mock_instrument.detector_effects = [mock_effect]
         angles_seen = []
@@ -947,16 +945,18 @@ class TestRunSingleCalculation:
         def _capture_reset_state(
             *, override_stellar_mask=False, angle_deg=None, plot=False
         ):
-            assert mock_instrument.post_chop_tables_by_dark_current == {}
             for channel in mock_instrument.output_channels.values():
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
                 assert channel.astroph_signal == {}
                 assert channel.detector_signal_e_bin == {}
+                assert channel.readout_frames == []
+                assert channel.extracted_spectra_adu == {}
                 assert channel.tables_by_dark_current == {}
                 channel.astroph_signal["filled"] = angle_deg
                 channel.detector_signal_e_bin["filled"] = angle_deg
+                channel.readout_frames.append(angle_deg)
+                channel.extracted_spectra_adu["filled"] = angle_deg
                 channel.tables_by_dark_current[0.0] = angle_deg
-            mock_instrument.post_chop_tables_by_dark_current["filled"] = angle_deg
             return np.ones((6, 3, 3))
 
         mock_instrument.generate_instrument_transmission.side_effect = (
@@ -977,6 +977,27 @@ class TestRunSingleCalculation:
         assert mock_instrument.generate_instrument_transmission.call_count == 2
         assert mock_effect.reset.call_count == 2
         assert mock_instrument.apply_detector_effects.call_count == 2
+        assert mock_instrument.write_detector_readouts.call_count == 3
+        assert mock_instrument.extract_spectra_from_readouts.call_count == 2
+        written = [
+            (c.args[0], c.kwargs["cutout"])
+            for c in mock_instrument.write_detector_readouts.call_args_list
+        ]
+        # one full-frame example (first angle only), plus a cutout at every angle
+        assert written == [
+            (save_dir + "readouts_full_example_qe_0.70.fits", False),
+            (save_dir + "readouts_angle_000.00_qe_0.70.fits", True),
+            (save_dir + "readouts_angle_180.00_qe_0.70.fits", True),
+        ]
+        mock_assemble.assert_called_once()
+        assert mock_assemble.call_args.kwargs["qe"] == 0.7
+        assert mock_assemble.call_args.kwargs["read_dir"] == save_dir
+        record_kwargs = mock_record_info.call_args.kwargs
+        assert "post_chop_tables_by_dark_current" not in record_kwargs
+        assert (
+            record_kwargs["extracted_spectra_adu"]
+            is mock_instrument.extracted_spectra_adu
+        )
         assert angles_seen == [
             (expected_angles[0], "output_1_bright", expected_angles[0]),
             (expected_angles[0], "output_3_dark", expected_angles[0]),

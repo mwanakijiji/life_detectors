@@ -14,8 +14,10 @@ EXPECTED_NODES = {
     "pass_from_aperture_to_detector",
     "disperse_astro_signals_on_detector",
     "apply_detector_effects",
+    "write_detector_readouts",
+    "extract_spectra_from_readouts",
     "combine_astro_and_instrum_signals",
-    "chop_signal",
+    "assemble_extracted_spectra_cubes",
     "record_info_at_angle_and_qe",
 }
 
@@ -28,8 +30,11 @@ EXPECTED_EDGES = {
     ("pass_from_aperture_to_detector", "disperse_astro_signals_on_detector"),
     ("disperse_astro_signals_on_detector", "apply_detector_effects"),
     ("apply_detector_effects", "combine_astro_and_instrum_signals"),
-    ("combine_astro_and_instrum_signals", "chop_signal"),
-    ("chop_signal", "record_info_at_angle_and_qe"),
+    ("combine_astro_and_instrum_signals", "record_info_at_angle_and_qe"),
+    ("apply_detector_effects", "write_detector_readouts"),
+    ("write_detector_readouts", "extract_spectra_from_readouts"),
+    ("extract_spectra_from_readouts", "record_info_at_angle_and_qe"),
+    ("record_info_at_angle_and_qe", "assemble_extracted_spectra_cubes"),
 }
 
 

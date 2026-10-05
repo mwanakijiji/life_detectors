@@ -104,6 +104,7 @@ def _write_angle_hdf5(
 
     chopped = _base_table(n_bins)
     chopped[CHOPPED_PLANET_COL] = np.asarray(planet_chopped) * u.adu
+    chopped[f"output_3_dark_{PLANET_COL}"] = np.asarray(planet_out3) * u.adu
     chopped[STAR_COL_3] = np.asarray(star_out3) * u.adu
     chopped[STAR_COL_4] = np.asarray(star_out4) * u.adu
     chopped["chopped_instrum_dc_rms_adu"] = np.full(n_bins, instrum_dark) * u.adu

@@ -67,7 +67,8 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
                 else:
                     angle = parse_angle_from_hdf5_path(hdf5_file)
                 S_p = chopped["chopped_astro_exoplanet_model_10pc_adu"]
-                S_p_3 = out3["astro_exoplanet_model_10pc_adu"]
+                # extracted from the detector readouts, consistent with S_p
+                S_p_3 = chopped["output_3_dark_astro_exoplanet_model_10pc_adu"]
 
                 slot = by_dc_qe.setdefault(
                     dc_qe_str,

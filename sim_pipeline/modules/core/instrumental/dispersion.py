@@ -153,9 +153,7 @@ def disperse_astro_signals_on_detector(
             )
 
         n_int_this_angle = int(config["observation"]["N_int_per_angle"])
-        logging.info(
-            f"Number of frames at this angle position: {n_int_this_angle:d}"
-        )
+        logging.info(f"Number of frames at this angle position: {n_int_this_angle:d}")
 
         n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint_cube)
 
@@ -163,9 +161,9 @@ def disperse_astro_signals_on_detector(
             if source_name not in prop_dict:
                 continue
             source_prop = prop_dict[source_name]
-            flux_cube = source_prop[
-                "flux_cube_post_screen_post_aperture_ph_sec_um"
-            ][output_channel.name]
+            flux_cube = source_prop["flux_cube_post_screen_post_aperture_ph_sec_um"][
+                output_channel.name
+            ]
 
             flux_astro_1d_ph_sec_um = np.sum(flux_cube, axis=(1, 2))
             flux_unit = (
@@ -178,15 +176,9 @@ def disperse_astro_signals_on_detector(
             flux_astro_1d_interpolated_ph_sec_um = (
                 np.interp(
                     x=(
-                        wavel_bins.value
-                        if hasattr(wavel_bins, "value")
-                        else wavel_bins
+                        wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins
                     ),
-                    xp=(
-                        wavel_pts.value
-                        if hasattr(wavel_pts, "value")
-                        else wavel_pts
-                    ),
+                    xp=(wavel_pts.value if hasattr(wavel_pts, "value") else wavel_pts),
                     fp=(
                         flux_astro_1d_ph_sec_um.value
                         if hasattr(flux_astro_1d_ph_sec_um, "value")
@@ -270,9 +262,7 @@ def disperse_astro_signals_on_detector(
                     y_col.value if hasattr(y_col, "value") else y_col,
                     dtype=float,
                 )
-                y_unit = (
-                    y_col.unit if hasattr(y_col, "unit") else u.ph / (u.s * u.pix)
-                )
+                y_unit = y_col.unit if hasattr(y_col, "unit") else u.ph / (u.s * u.pix)
                 if cumulative_signal is None:
                     cumulative_signal = np.zeros_like(y_vals, dtype=float)
                 signals_by_source[source_name] = y_vals

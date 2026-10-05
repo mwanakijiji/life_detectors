@@ -56,9 +56,7 @@ def generate_instrument_transmission(
 
     # construct vectors
     A_vec = []  # amplitudes
-    phi_dc_vec_rad = (
-        []
-    )  # relative phase offests of each arm (one vector per aperture)
+    phi_dc_vec_rad = []  # relative phase offests of each arm (one vector per aperture)
     pos_vec_m = []  # [y_m, x_m] per aperture
     phase_vector_rad_array = []  # phase vector for each output
     for aperture in aperture_array_definition["apertures"]:
@@ -73,9 +71,7 @@ def generate_instrument_transmission(
     pos_vec_m = np.array(pos_vec_m)
 
     n_pix = int(config["onsky_scene"]["n_pix"])
-    pix_size_mas = float(
-        config["onsky_scene"]["pix_size_mas"]
-    )  # milliarcseconds
+    pix_size_mas = float(config["onsky_scene"]["pix_size_mas"])  # milliarcseconds
     pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
     axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
     xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing="xy")
@@ -170,9 +166,7 @@ def generate_instrument_transmission(
         # now for the actual transmission
         transmission_instrument_response = np.zeros(np.shape(cube_canvas))
         # transmission_instrument_response[0,:,:] = np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
-        transmission_instrument_response[0, :, :] = (
-            R_theta_vec  # on-sky transmission
-        )
+        transmission_instrument_response[0, :, :] = R_theta_vec  # on-sky transmission
 
         # transmission_instrument_response[0,:,:] /= np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this right?)
         transmission_instrument_response[1:3, :, :] = cube_canvas[
@@ -225,9 +219,7 @@ def generate_instrument_transmission(
                 : transmission_instrument_response.shape[1],
                 : transmission_instrument_response.shape[2],
             ]
-            circular_mask = (y_idx - cy) ** 2 + (
-                x_idx - cx
-            ) ** 2 <= mask_radius_pix**2
+            circular_mask = (y_idx - cy) ** 2 + (x_idx - cx) ** 2 <= mask_radius_pix**2
             transmission_instrument_response[0, circular_mask] = nulling_factor
 
         return transmission_instrument_response
@@ -455,9 +447,9 @@ def pass_through_transmission_screens(
             source_val_integrated = np.sum(
                 source_val[transmission_screen_name], axis=(1, 2)
             )
-            sources_astroph[source_name][
-                "flux_integrated_post_screen_ph_sec_m2_um"
-            ][transmission_screen_name] = source_val_integrated
+            sources_astroph[source_name]["flux_integrated_post_screen_ph_sec_m2_um"][
+                transmission_screen_name
+            ] = source_val_integrated
             sources_astroph[source_name]["flux_cube_post_screen_ph_sec_m2_um"][
                 transmission_screen_name
             ] = source_val[transmission_screen_name]
@@ -487,9 +479,7 @@ def pass_through_transmission_screens(
                 sources_astroph[source_name][
                     "flux_integrated_post_screen_ph_sec_m2_um"
                 ],
-                sources_astroph[source_name][
-                    "pre_screen_astro_flux_ph_sec_m2_um"
-                ],
+                sources_astroph[source_name]["pre_screen_astro_flux_ph_sec_m2_um"],
                 source_name,
                 file_name_plot,
             )
@@ -522,9 +512,7 @@ def pass_through_transmission_screens(
         flux_by_source = {
             source_name: (
                 sources_astroph[source_name]["wavel"],
-                sources_astroph[source_name][
-                    "pre_screen_astro_flux_ph_sec_m2_um"
-                ],
+                sources_astroph[source_name]["pre_screen_astro_flux_ph_sec_m2_um"],
             )
             for source_name in sources_to_include
         }

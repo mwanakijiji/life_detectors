@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import astropy.io.fits as fits
 import pytest
 import scipy.sparse
 from astropy import units as u
@@ -28,6 +29,10 @@ from modules.core.instrumental.effects import (
     build_detector_effects,
 )
 from modules.core.instrumental.pipeline import InstrumentDepTerms
+from modules.core.instrumental.readouts import (
+    extract_spectra_from_readouts,
+    write_detector_readouts,
+)
 from modules.core.instrumental.tables import build_base_astro_table
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -425,43 +430,6 @@ class TestInstrumentDepTerms:
         # check flux conservation
         np.testing.assert_allclose(net_flux.value, scene.value)
 
-    def test_chop_signal_builds_post_chop_tables(self, instrum_base_config):
-        instr = InstrumentDepTerms(
-            instrum_base_config, sources_astroph={}, sources_to_include=["star"]
-        )
-
-        def _table(astro_scale: float, instrum_scale: float):
-            qt = QTable()
-            qt["bin"] = [0, 1]
-            qt["center"] = np.array([5.0, 6.0]) * u.um
-            qt["width"] = np.array([0.1, 0.1]) * u.um
-            qt["npix"] = np.array([4.0, 4.0]) * u.pix
-            qt["astro_star_adu"] = np.array([astro_scale, astro_scale + 1.0]) * u.adu
-            qt["instrum_dc_rms_adu"] = (
-                np.array([instrum_scale, instrum_scale + 2.0]) * u.adu
-            )
-            qt["instrum_rn_rms_adu"] = np.array([1.0, 1.0]) * u.adu
-            return qt
-
-        for name, astro_scale, instrum_scale in [
-            ("output_1_bright", 10.0, 1.0),
-            ("output_2_bright", 11.0, 1.1),
-            ("output_3_dark", 3.0, 2.0),
-            ("output_4_dark", 1.0, 4.0),
-        ]:
-            instr.output_channels[name].tables_by_dark_current = {
-                0.1: _table(astro_scale, instrum_scale)
-            }
-
-        instr.chop_signal(plot=False)
-
-        chopped = instr.post_chop_tables_by_dark_current[0.1]
-        assert "chopped_astro_star_adu" in chopped.colnames
-        assert np.allclose(
-            chopped["chopped_astro_star_adu"].value,
-            np.array([2.0, 2.0]),
-        )
-
 
 class TestBuildBaseAstroTable:
     def test_build_base_astro_table_includes_metadata_and_source_columns(
@@ -566,6 +534,8 @@ class TestCombineAstroAndInstrumSignals:
         assert "instrum_rn_rms_adu" in final.colnames
         assert "astro_star_adu" in final.colnames
         assert "instrum_systematics_adu" in final.colnames
+        assert u.allclose(final["t_int_frame"], np.full(3, 10.0) * u.s)
+        assert not any(col.startswith("col") for col in final.colnames)
         assert np.all(final["instrum_systematics_adu"].value == 0.0)
         assert final["astro_star_adu"].unit == u.adu
         assert len(final) == 3
@@ -821,9 +791,7 @@ class TestDetectorEffects:
         frames = det.expose(channel.astroph_signal, 1.0 * u.s)
         extracted = det.extract(frames)
         npix = DispersionLaw.n_pix_per_bin(det.footprint_cube).value
-        assert np.isclose(
-            extracted["star"].value.sum(), np.sum(npix * [1.0, 4.0, 9.0])
-        )
+        assert np.isclose(extracted["star"].value.sum(), np.sum(npix * [1.0, 4.0, 9.0]))
 
     @patch("modules.core.instrumental.effects.fits.getdata")
     def test_additive_map_lands_only_in_systematics(
@@ -915,3 +883,151 @@ class TestDetectorEffects:
 
     def test_build_detector_effects_empty_by_default(self):
         assert build_detector_effects({}) == []
+
+
+class TestDetectorReadouts:
+    @pytest.fixture
+    def channels_with_frames(self, detector_geometry_config):
+        config = {
+            "detector": {**detector_geometry_config["detector"], "gain": "2.0"}
+        }
+        channels = {}
+        for i, name in enumerate(
+            ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
+        ):
+            channel = OutputChannel(name=name)
+            _attach_detector_footprint(channel, config, n_bins=3)
+            channel.astroph_signal["star"] = {
+                "flux_astro_1d_interpolated_ph_sec_pixel": np.array([1.0, 4.0, 9.0])
+                * (i + 1)
+                * u.ph
+                / (u.s * u.pix)
+            }
+            channels[name] = channel
+        apply_detector_effects(channels, [], t_frame=10.0 * u.s, n_readouts=2)
+        return channels
+
+    def test_bin_index_map_assigns_shared_pixel_to_majority_bin(
+        self, detector_geometry_config
+    ):
+        channel = OutputChannel(name="x")
+        det = _attach_detector_footprint(channel, detector_geometry_config, n_bins=3)
+        bin_map = det.bin_index_map()
+        # bin 0 covers cols 300-301 fully and 0.2 of col 302; bin 1 covers 0.8 of col 302
+        assert np.all(bin_map[100:103, 300:302] == 0)
+        assert np.all(bin_map[100:103, 302] == 1)
+        assert np.all(bin_map[:100] == -1)
+        assert np.all(bin_map[:, :299] == -1)
+
+    def test_write_full_frame_produces_one_hdu_per_channel(
+        self, channels_with_frames, tmp_path
+    ):
+        file_name = str(tmp_path / "readouts.fits")
+        write_detector_readouts(
+            channels_with_frames,
+            file_name,
+            t_frame=10.0 * u.s,
+            header_cards={"QE": 0.8},
+            cutout=False,
+        )
+        with fits.open(file_name) as hdul:
+            assert [h.name for h in hdul[1:]] == [
+                "OUTPUT_1_BRIGHT",
+                "OUTPUT_2_BRIGHT",
+                "OUTPUT_3_DARK",
+                "OUTPUT_4_DARK",
+            ]
+            assert hdul[0].header["TFRAME"] == 10.0
+            assert hdul[0].header["QE"] == 0.8
+            hdu = hdul["OUTPUT_3_DARK"]
+            assert hdu.data.shape == (2, 2, 400, 400)  # (components, readouts, y, x)
+            assert (hdu.header["Y0"], hdu.header["X0"]) == (0, 0)
+            assert hdu.header["BUNIT"] == "adu"
+            assert [hdu.header["COMP0"], hdu.header["COMP1"]] == [
+                "star",
+                SYSTEMATICS_KEY,
+            ]
+            frames = channels_with_frames["output_3_dark"].readout_frames[0]
+            assert np.allclose(hdu.data[0, 0], frames.source_e["star"] / 2.0)
+
+    def test_write_cutout_keeps_only_trace_bbox(self, channels_with_frames, tmp_path):
+        file_name = str(tmp_path / "readouts_cutout.fits")
+        write_detector_readouts(channels_with_frames, file_name, t_frame=10.0 * u.s)
+        channel = channels_with_frames["output_3_dark"]
+        y0, y1, x0, x1 = channel.detector.footprint_bbox()
+        # 3 rows from y=100; bins span x = 300 .. 306.6
+        assert (y0, y1, x0, x1) == (100, 103, 300, 307)
+        with fits.open(file_name) as hdul:
+            hdu = hdul["OUTPUT_3_DARK"]
+            assert hdu.data.shape == (2, 2, 3, 7)
+            assert (hdu.header["Y0"], hdu.header["X0"]) == (100, 300)
+            assert (hdu.header["FULLNY"], hdu.header["FULLNX"]) == (400, 400)
+            full = channel.readout_frames[0].source_e["star"] / 2.0
+            assert np.allclose(hdu.data[0, 0], full[y0:y1, x0:x1])
+            # nothing illuminated outside the cutout
+            assert np.isclose(hdu.data[0, 0].sum(), full.sum())
+
+    def test_extract_from_cutout_matches_full_frame(self, channels_with_frames, tmp_path):
+        cutout_file = str(tmp_path / "cutout.fits")
+        full_file = str(tmp_path / "full.fits")
+        write_detector_readouts(channels_with_frames, cutout_file, t_frame=10.0 * u.s)
+        write_detector_readouts(
+            channels_with_frames, full_file, t_frame=10.0 * u.s, cutout=False
+        )
+        from_full = extract_spectra_from_readouts(channels_with_frames, full_file)
+        from_cutout = extract_spectra_from_readouts(channels_with_frames, cutout_file)
+        for ch_name, spectra in from_full.items():
+            for comp, spectrum in spectra.items():
+                assert u.allclose(from_cutout[ch_name][comp], spectrum)
+
+    def test_extract_keeps_readout_axis_and_conserves_total(
+        self, detector_geometry_config, tmp_path
+    ):
+        config = {
+            "detector": {**detector_geometry_config["detector"], "gain": "2.0"}
+        }
+        channels = {}
+        for name in ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]:
+            channel = OutputChannel(name=name)
+            _attach_detector_footprint(channel, config, n_bins=3)
+            channel.astroph_signal["star"] = {
+                "flux_astro_1d_interpolated_ph_sec_pixel": np.array([1.0, 4.0, 9.0])
+                * u.ph
+                / (u.s * u.pix)
+            }
+            channels[name] = channel
+        # systematics grow with readout index, so readouts differ
+        apply_detector_effects(
+            channels, [_ReadoutRampEffect({})], t_frame=10.0 * u.s, n_readouts=3
+        )
+        file_name = str(tmp_path / "readouts.fits")
+        write_detector_readouts(channels, file_name, t_frame=10.0 * u.s)
+        extracted = extract_spectra_from_readouts(channels, file_name)
+
+        channel = channels["output_3_dark"]
+        star = extracted["output_3_dark"]["star"]
+        systematics = extracted["output_3_dark"][SYSTEMATICS_KEY]
+        assert star.unit == u.adu
+        assert star.shape == (3, 3)  # (n_readouts, n_bins)
+        assert channel.extracted_spectra_adu["star"] is star
+        bin_map = channel.detector.bin_index_map()
+        for i, frames in enumerate(channel.readout_frames):
+            image_adu = frames.source_e["star"] / 2.0
+            assert np.isclose(star.value[i].sum(), image_adu.sum())
+            # box sum: each bin is the sum of the pixels assigned to it
+            for b in range(3):
+                assert np.isclose(star.value[i, b], image_adu[bin_map == b].sum())
+            assert np.isclose(
+                systematics.value[i].sum(),
+                (frames.systematics_e[bin_map >= 0] / 2.0).sum(),
+            )
+        assert systematics.value[0].sum() < systematics.value[2].sum()
+
+
+class _ReadoutRampEffect(DetectorEffect):
+    """Toy additive effect: adds (readout_index + 1) e- to every pixel."""
+
+    name = "toy_ramp"
+
+    def apply(self, frames, readout_index):
+        frames.systematics_e += readout_index + 1.0

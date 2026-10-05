@@ -96,9 +96,7 @@ def pass_through_aperture(
             for source_name, source_val in prop_dict.items():
                 if source_name not in sources_to_include:
                     continue
-                flux_integrated = np.sum(
-                    source_val[cube_key][output_name], axis=(1, 2)
-                )
+                flux_integrated = np.sum(source_val[cube_key][output_name], axis=(1, 2))
                 flux_by_source[source_name] = (source_val["wavel"], flux_integrated)
             return flux_by_source
 
@@ -166,9 +164,7 @@ def pass_from_aperture_to_detector(
         spectrum = bg.flux_ph_sec_um(wavel, config)
         post_aperture_by_output = {}
         for output_name in output_names:
-            ref_cube = ref["flux_cube_post_screen_post_aperture_ph_sec_um"][
-                output_name
-            ]
+            ref_cube = ref["flux_cube_post_screen_post_aperture_ph_sec_um"][output_name]
             n_y, n_x = ref_cube.shape[1], ref_cube.shape[2]
             n_spatial = n_y * n_x
             # Conserve total ph/s/um when later summing over the sky plane
@@ -181,9 +177,7 @@ def pass_from_aperture_to_detector(
             "wavel": wavel,
             "flux_cube_post_screen_post_aperture_ph_sec_um": post_aperture_by_output,
         }
-        logging.info(
-            "Added instrument background %r into post-aperture beam", bg.name
-        )
+        logging.info("Added instrument background %r into post-aperture beam", bg.name)
 
     if plot:
         pass
