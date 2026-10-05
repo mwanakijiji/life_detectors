@@ -21,6 +21,7 @@ from modules.core.astrophysical import (
     generate_star_scene,
     generate_zodiacal_scene,
 )
+from modules.core.instrumental.dispersion import DispersionLaw
 from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
 from modules.utils.helpers.spectra import compute_collecting_area_m2
@@ -587,7 +588,7 @@ def _photons_and_adu_from_detector_footprint(
     total_adu = 0.0 * adu_unit
     for channel in instr.output_channels.values():
         footprint = channel.detector.footprint_cube
-        n_pix_per_wavel_bin = np.sum(footprint, axis=(1, 2)) * u.pix
+        n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint)
         for source_name in sources_to_include:
             sig = channel.astroph_signal.get(source_name)
             if sig is None:

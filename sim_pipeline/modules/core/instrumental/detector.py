@@ -7,8 +7,10 @@ from typing import Dict
 
 import astropy.io.fits as fits
 import numpy as np
+import scipy.sparse
 
 from ...utils.loader import config_getboolean
+from .dispersion import DispersionLaw
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ class Detector:
         self.num_wavel_bins = num_wavel_bins
         self.config = config
         self.quantum_efficiency = float(config["detector"]["quantum_efficiency"])
-        self.footprint_cube: np.ndarray | None = None
+        self.footprint_cube: np.ndarray | scipy.sparse.csr_matrix | None = None
 
         sys_section = "detector_systematics"
 
@@ -57,7 +59,9 @@ class Detector:
         self.systematics_multiplicative_dict = {}
         logging.info("Loaded detector systematics")
 
-    def set_footprint(self, footprint_cube: np.ndarray) -> None:
+    def set_footprint(
+        self, footprint_cube: np.ndarray | scipy.sparse.csr_matrix
+    ) -> None:
         """Attach an illumination footprint from a DispersionLaw."""
         self.footprint_cube = footprint_cube
 
@@ -72,7 +76,9 @@ class Detector:
                 "Detector.footprint_cube is unset; call set_footprint() with a DispersionLaw result first"
             )
 
-        canvas_systematics = np.zeros(self.footprint_cube[0, :, :].shape, dtype=float)
+        canvas_systematics = np.zeros(
+            (self.side_length_pix, self.side_length_pix), dtype=float
+        )
 
         if len(self.systematics_additive_dict) > 0:
             for key, value in self.systematics_additive_dict.items():
@@ -90,10 +96,6 @@ class Detector:
                     )
                     canvas_systematics = canvas_systematics * value
 
-        systematics_vector_1d = np.zeros(self.num_wavel_bins)
-        for wavel_bin_num in range(self.num_wavel_bins):
-            systematics_vector_1d[wavel_bin_num] = np.sum(
-                self.footprint_cube[wavel_bin_num, :, :] * canvas_systematics
-            )
-
-        return systematics_vector_1d
+        return DispersionLaw.weighted_sum_per_bin(
+            self.footprint_cube, canvas_systematics
+        )

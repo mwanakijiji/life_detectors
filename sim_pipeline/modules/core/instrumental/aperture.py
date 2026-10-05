@@ -43,7 +43,7 @@ class TransferMixin:
 
             if plot:  # pragma: no cover
                 plot_detector_footprint(
-                    np.sum(footprint_cube, axis=0),
+                    DispersionLaw.footprint_image(footprint_cube),
                     self.config,
                     str(self.config["dirs"]["save_s2n_data_unique_dir"])
                     + f"footprint_bool_{output_channel.name}.png",

@@ -7,6 +7,7 @@ from astropy.table import QTable, Column
 from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.keys import canonical_dc_rate
 from ...viz.tables import plot_debug_final_table
+from .dispersion import DispersionLaw
 
 
 #
@@ -28,7 +29,7 @@ class TablesMixin:
         )
         qt.meta["wavel_bin_edges"] = output_channel.bin_edges
         qt["npix"] = Column(
-            data=np.sum(output_channel.detector.footprint_cube, axis=(1, 2)) * u.pix,
+            data=DispersionLaw.n_pix_per_bin(output_channel.detector.footprint_cube),
             description="Number of detector pixels in wavelength bin footprint",
         )
         for source_name in self.sources_to_include:

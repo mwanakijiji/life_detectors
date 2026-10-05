@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import scipy.sparse
 from astropy import units as u
 from astropy.table import QTable
 
@@ -438,7 +439,7 @@ class TestBuildBaseAstroTable:
         det = _attach_detector_footprint(
             channel, detector_geometry_config, n_bins=n_bins
         )
-        n_pix_per_bin = np.sum(det.footprint_cube, axis=(1, 2)) * u.pix
+        n_pix_per_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
         channel.astroph_signal["star"] = _make_astroph_signal(
             channel.bin_centers, channel.bin_widths, n_pix_per_bin, flux_um=12.0
         )
@@ -474,7 +475,7 @@ class TestCombineAstroAndInstrumSignals:
             det = _attach_detector_footprint(
                 channel, detector_geometry_config, n_bins=3
             )
-            n_pix_per_bin = np.sum(det.footprint_cube, axis=(1, 2)) * u.pix
+            n_pix_per_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
             channel.astroph_signal["star"] = _make_astroph_signal(
                 channel.bin_centers,
                 channel.bin_widths,
@@ -649,7 +650,7 @@ class TestDispersionLaw:
     def test_make_footprint_stores_expected_cube(self, detector_geometry_config):
         law = DispersionLaw(detector_geometry_config)
         det = Detector(config=detector_geometry_config, num_wavel_bins=3)
-        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins)
+        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins, "dense")
         det.set_footprint(cube)
 
         assert cube.shape == (3, 400, 400)
@@ -665,6 +666,54 @@ class TestDispersionLaw:
         assert np.allclose(cube[0, rows, 300], 1.0)
         assert np.allclose(cube[0, rows, 301], 1.0)
         assert np.allclose(cube[0, rows, 302], 0.2)
+
+    def test_make_footprint_defaults_to_sparse(self, detector_geometry_config):
+        law = DispersionLaw(detector_geometry_config)
+        fp = law.make_footprint(400, 3)
+        assert scipy.sparse.issparse(fp)
+        assert fp.shape == (3, 400 * 400)
+
+    # pix_per_wavel_bin < 1 is excluded: bins inside a single pixel are mis-weighted
+    # by both methods (differently)
+    @pytest.mark.parametrize("pix_per_wavel_bin", ["2.2", "1.0", "1.3", "3.7"])
+    def test_sparse_footprint_matches_dense(
+        self, detector_geometry_config, pix_per_wavel_bin
+    ):
+        config = {
+            **detector_geometry_config,
+            "detector": {
+                **detector_geometry_config["detector"],
+                "pix_per_wavel_bin": pix_per_wavel_bin,
+            },
+        }
+        law = DispersionLaw(config)
+        side, n_bins = 400, 17
+        dense = law.make_footprint(side, n_bins, "dense")
+        sparse = law.make_footprint(side, n_bins, "sparse")
+
+        assert np.allclose(sparse.toarray().reshape(n_bins, side, side), dense)
+        assert u.allclose(
+            DispersionLaw.n_pix_per_bin(sparse), DispersionLaw.n_pix_per_bin(dense)
+        )
+        assert np.allclose(
+            DispersionLaw.footprint_image(sparse),
+            DispersionLaw.footprint_image(dense),
+        )
+
+        rng = np.random.default_rng(0)
+        image = rng.normal(size=(side, side))
+        assert np.allclose(
+            DispersionLaw.weighted_sum_per_bin(sparse, image),
+            DispersionLaw.weighted_sum_per_bin(dense, image),
+        )
+
+        vectors = []
+        for fp in (dense, sparse):
+            det = Detector(config=config, num_wavel_bins=n_bins)
+            det.set_footprint(fp)
+            det.systematics_additive_dict["read_noise_map"] = image
+            vectors.append(det.convert_2d_systematics_to_1d_vector())
+        assert np.allclose(vectors[0], vectors[1])
 
     def test_convert_2d_systematics_to_1d_vector_sums_within_footprint(
         self, detector_geometry_config
