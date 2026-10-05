@@ -95,6 +95,58 @@ def _attach_detector_footprint(
     return det
 
 
+def _make_footprint_sparse(
+    law: DispersionLaw, side_length_pix: int, num_wavel_bins: int
+) -> scipy.sparse.csr_matrix:
+    """Vectorized sparse equivalent of DispersionLaw.make_footprint, for cross-checks.
+
+    Returns a CSR matrix of shape (n_bins, n_pix * n_pix), each row a row-major
+    (y, x) flattening of that bin's footprint.
+    """
+    # vectorized: compute all bin start/end columns at once (they're a linear
+    # function of wavel_bin_num), then build row/col/data arrays for COO
+    # construction in one shot — no per-bin Python-level array allocation.
+    side = side_length_pix
+    bin_idx = np.arange(num_wavel_bins)
+    x_start = law.starting_pixel[1] + bin_idx * law.pix_per_wavel_bin
+    x_end = x_start + law.pix_per_wavel_bin
+
+    # same edge logic as the dense loop
+    ceil_start = np.ceil(x_start).astype(int)
+    floor_end = np.floor(x_end).astype(int)
+    frac_start = ceil_start - x_start
+    frac_end = x_end - floor_end
+
+    # each bin touches columns ceil_start-1 (frac_start),
+    # [ceil_start, floor_end) (1.0), and floor_end (frac_end); the count of
+    # full columns can differ by 1 between bins
+    n_cols = (floor_end - ceil_start) + 2
+    col_bin = np.repeat(bin_idx, n_cols)
+    offset = np.arange(n_cols.sum()) - np.repeat(np.cumsum(n_cols) - n_cols, n_cols)
+    col_x = ceil_start[col_bin] - 1 + offset
+    col_val = np.where(
+        offset == 0,
+        frac_start[col_bin],
+        np.where(offset == n_cols[col_bin] - 1, frac_end[col_bin], 1.0),
+    )
+
+    # broadcast across the spectral-width rows (constant for all bins)
+    y0 = int(law.starting_pixel[0])
+    y1 = int(law.starting_pixel[0] + law.pix_spectral_width)
+    ys = np.arange(y0, y1)
+    rows = np.repeat(col_bin, ys.size)
+    cols = (ys[None, :] * side + col_x[:, None]).ravel()
+    data = np.repeat(col_val, ys.size)
+    col_x_rep = np.repeat(col_x, ys.size)
+
+    # drop zero-weight edges and anything off the detector
+    keep = (data != 0) & (col_x_rep >= 0) & (col_x_rep < side)
+    return scipy.sparse.coo_matrix(
+        (data[keep], (rows[keep], cols[keep])),
+        shape=(num_wavel_bins, side * side),
+    ).tocsr()
+
+
 def _make_astroph_signal(
     bin_centers, bin_widths, n_pix_per_bin, flux_um: float = 10.0, qe: float = 0.8
 ):
@@ -650,7 +702,7 @@ class TestDispersionLaw:
     def test_make_footprint_stores_expected_cube(self, detector_geometry_config):
         law = DispersionLaw(detector_geometry_config)
         det = Detector(config=detector_geometry_config, num_wavel_bins=3)
-        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins, "dense")
+        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins)
         det.set_footprint(cube)
 
         assert cube.shape == (3, 400, 400)
@@ -667,12 +719,6 @@ class TestDispersionLaw:
         assert np.allclose(cube[0, rows, 301], 1.0)
         assert np.allclose(cube[0, rows, 302], 0.2)
 
-    def test_make_footprint_defaults_to_sparse(self, detector_geometry_config):
-        law = DispersionLaw(detector_geometry_config)
-        fp = law.make_footprint(400, 3)
-        assert scipy.sparse.issparse(fp)
-        assert fp.shape == (3, 400 * 400)
-
     # pix_per_wavel_bin < 1 is excluded: bins inside a single pixel are mis-weighted
     # by both methods (differently)
     @pytest.mark.parametrize("pix_per_wavel_bin", ["2.2", "1.0", "1.3", "3.7"])
@@ -688,32 +734,25 @@ class TestDispersionLaw:
         }
         law = DispersionLaw(config)
         side, n_bins = 400, 17
-        dense = law.make_footprint(side, n_bins, "dense")
-        sparse = law.make_footprint(side, n_bins, "sparse")
+        dense = law.make_footprint(side, n_bins)
+        sparse = _make_footprint_sparse(law, side, n_bins)
 
         assert np.allclose(sparse.toarray().reshape(n_bins, side, side), dense)
         assert u.allclose(
-            DispersionLaw.n_pix_per_bin(sparse), DispersionLaw.n_pix_per_bin(dense)
+            np.asarray(sparse.sum(axis=1)).ravel() * u.pix,
+            DispersionLaw.n_pix_per_bin(dense),
         )
         assert np.allclose(
-            DispersionLaw.footprint_image(sparse),
+            np.asarray(sparse.sum(axis=0)).reshape(side, side),
             DispersionLaw.footprint_image(dense),
         )
 
         rng = np.random.default_rng(0)
         image = rng.normal(size=(side, side))
         assert np.allclose(
-            DispersionLaw.weighted_sum_per_bin(sparse, image),
+            sparse @ image.ravel(),
             DispersionLaw.weighted_sum_per_bin(dense, image),
         )
-
-        vectors = []
-        for fp in (dense, sparse):
-            det = Detector(config=config, num_wavel_bins=n_bins)
-            det.set_footprint(fp)
-            det.systematics_additive_dict["read_noise_map"] = image
-            vectors.append(det.convert_2d_systematics_to_1d_vector())
-        assert np.allclose(vectors[0], vectors[1])
 
     def test_convert_2d_systematics_to_1d_vector_sums_within_footprint(
         self, detector_geometry_config

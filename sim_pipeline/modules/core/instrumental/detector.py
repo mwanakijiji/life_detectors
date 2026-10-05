@@ -7,7 +7,6 @@ from typing import Dict
 
 import astropy.io.fits as fits
 import numpy as np
-import scipy.sparse
 
 from ...utils.loader import config_getboolean
 from .dispersion import DispersionLaw
@@ -24,7 +23,7 @@ class Detector:
         self.num_wavel_bins = num_wavel_bins
         self.config = config
         self.quantum_efficiency = float(config["detector"]["quantum_efficiency"])
-        self.footprint_cube: np.ndarray | scipy.sparse.csr_matrix | None = None
+        self.footprint_cube: np.ndarray | None = None
 
         sys_section = "detector_systematics"
 
@@ -59,9 +58,7 @@ class Detector:
         self.systematics_multiplicative_dict = {}
         logging.info("Loaded detector systematics")
 
-    def set_footprint(
-        self, footprint_cube: np.ndarray | scipy.sparse.csr_matrix
-    ) -> None:
+    def set_footprint(self, footprint_cube: np.ndarray) -> None:
         """Attach an illumination footprint from a DispersionLaw."""
         self.footprint_cube = footprint_cube
 
