@@ -396,10 +396,9 @@ def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
     from modules.core.instrumental.channels import OutputChannel
 
     channel = OutputChannel(name=name, angle_deg=angle_deg)
-    channel.instrum_noise = {"stale": 1}
     channel.astroph_signal = {"stale": 2}
+    channel.detector_signal_e_bin = {"stale": 3}
     channel.tables_by_dark_current = {0.0: "table"}
-    channel.tables_by_dark_current_orig = {0.0: "orig"}
     return channel
 
 
@@ -606,6 +605,7 @@ def _photons_and_adu_from_detector_footprint(
 
 def _independent_adu_from_combine_tables(instr, sources_to_include):
     """Sum astro ADU columns from combine_astro_and_instrum_signals (production path)."""
+    instr.apply_detector_effects()
     instr.combine_astro_and_instrum_signals(plot=False)
     total_adu = 0.0 * u.adu
     for channel in instr.output_channels.values():
@@ -658,9 +658,6 @@ class TestRunSingleCalculation:
 
         # Pass through telescope aperture
         instr.pass_through_aperture(plot=False)
-
-        # set instrumental noise terms and update the OutputChannel objects
-        instr.calculate_instrinsic_instrumental_noise()
 
         # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
         instr.disperse_astro_signals_on_detector(plot=False)
@@ -943,6 +940,8 @@ class TestRunSingleCalculation:
             "output_3_dark": _make_dirty_output_channel("output_3_dark"),
         }
         mock_instrument.post_chop_tables_by_dark_current = {"stale": True}
+        mock_effect = MagicMock()
+        mock_instrument.detector_effects = [mock_effect]
         angles_seen = []
 
         def _capture_reset_state(
@@ -951,14 +950,12 @@ class TestRunSingleCalculation:
             assert mock_instrument.post_chop_tables_by_dark_current == {}
             for channel in mock_instrument.output_channels.values():
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
-                assert channel.instrum_noise == {}
                 assert channel.astroph_signal == {}
+                assert channel.detector_signal_e_bin == {}
                 assert channel.tables_by_dark_current == {}
-                assert channel.tables_by_dark_current_orig == {}
-                channel.instrum_noise["filled"] = angle_deg
                 channel.astroph_signal["filled"] = angle_deg
+                channel.detector_signal_e_bin["filled"] = angle_deg
                 channel.tables_by_dark_current[0.0] = angle_deg
-                channel.tables_by_dark_current_orig[0.0] = angle_deg
             mock_instrument.post_chop_tables_by_dark_current["filled"] = angle_deg
             return np.ones((6, 3, 3))
 
@@ -978,6 +975,8 @@ class TestRunSingleCalculation:
         assert result is True
         expected_angles = list(np.linspace(0, 360, num=2, endpoint=False))
         assert mock_instrument.generate_instrument_transmission.call_count == 2
+        assert mock_effect.reset.call_count == 2
+        assert mock_instrument.apply_detector_effects.call_count == 2
         assert angles_seen == [
             (expected_angles[0], "output_1_bright", expected_angles[0]),
             (expected_angles[0], "output_3_dark", expected_angles[0]),

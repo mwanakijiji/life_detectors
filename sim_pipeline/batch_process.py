@@ -290,11 +290,11 @@ def run_single_calculation(
             # reset the OutputChannel objects for this new angle
             for ch in instrument_dep_terms.output_channels.values():
                 ch.angle_deg = angle_deg
-                ch.instrum_noise.clear()
                 ch.astroph_signal.clear()
+                ch.detector_signal_e_bin.clear()
                 ch.tables_by_dark_current.clear()
-                if hasattr(ch, "tables_by_dark_current_orig"):
-                    ch.tables_by_dark_current_orig.clear()
+            for effect in instrument_dep_terms.detector_effects:
+                effect.reset()
             instrument_dep_terms.post_chop_tables_by_dark_current = {}
 
             # generate the transmission screens (one per output)
@@ -328,16 +328,6 @@ def run_single_calculation(
             logger.info("Passing from aperture to detector...")
             instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
 
-            # set instrumental noise terms and update the OutputChannel objects
-            # output units: e/pix/sec
-            logger.info("Assigning intrinsic instrumental noise ...")
-            instrument_dep_terms.calculate_instrinsic_instrumental_noise()
-
-            for ch in instrument_dep_terms.output_channels.values():
-                for effect in instrument_dep_terms.detector_effects:
-                    i = 0  # for now, only one readout index
-                    effect.apply(ch, readout_index=i)
-
             # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
             # output units:
             #   ph/sec/um
@@ -345,6 +335,10 @@ def run_single_calculation(
             #   ph/sec/pix
             logger.info("Dispersing signals on channel detectors ...")
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
+
+            # expose 2D detector frames per readout, apply detector effects, extract per-bin e-
+            logger.info("Applying detector effects to readout frames ...")
+            instrument_dep_terms.apply_detector_effects()
 
             # pack the signals together (and convert photons to electrons)
             # output units: ADU total in each wavel bin

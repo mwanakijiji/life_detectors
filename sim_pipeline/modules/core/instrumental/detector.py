@@ -1,21 +1,35 @@
-"""Detector: pixel grid, QE, and 2D systematics (not the spectrograph dispersion law)."""
+"""Detector: pixel grid, QE, gain and noise parameters (not the spectrograph dispersion law)."""
 
 from __future__ import annotations
 
 import logging
 from typing import Dict
 
-import astropy.io.fits as fits
+import astropy.units as u
 import numpy as np
 
-from ...utils.loader import config_getboolean
 from .dispersion import DispersionLaw
+from .effects import DetectorFrames, _config_get
 
 logger = logging.getLogger(__name__)
 
+# key in Detector.extract() output for non-astrophysical charge
+SYSTEMATICS_KEY = "instrum_systematics"
+
+
+def _parse_dark_current_rates(dark_current_str: str) -> np.ndarray:
+    if "," in dark_current_str:
+        parts = [float(x.strip()) for x in dark_current_str.split(",")]
+        # Historical tables.py behavior: any comma-separated list used as
+        # np.arange(start, stop, step) when it has three parts.
+        if len(parts) == 3:
+            return np.arange(parts[0], parts[1], parts[2])
+        return np.asarray(parts, dtype=float)
+    return np.fromstring(dark_current_str, sep=",")
+
 
 class Detector:
-    """Sensor model: geometry, quantum efficiency, and optional 2D systematics maps."""
+    """Sensor model: geometry, quantum efficiency, gain, read noise and dark current."""
 
     def __init__(self, config: Dict, num_wavel_bins: int):
         self.side_length_pix = int(config["detector"]["size"])
@@ -23,76 +37,89 @@ class Detector:
         self.num_wavel_bins = num_wavel_bins
         self.config = config
         self.quantum_efficiency = float(config["detector"]["quantum_efficiency"])
+        self.gain = (
+            float(_config_get(config, "detector", "gain", "1.0")) * u.electron / u.adu
+        )
+        self.e_per_ph = (
+            float(_config_get(config, "detector", "e_per_ph", "1.0"))
+            * u.electron
+            / u.ph
+        )
+
+        read_noise_str = _config_get(config, "detector", "read_noise", "0")
+        self.read_noise_e_rms = (
+            np.fromstring(str(read_noise_str), sep=",") * u.electron / u.pix
+        )
+        logger.info("Read noise is %s rms", self.read_noise_e_rms)
+
+        dark_current_str = str(_config_get(config, "detector", "dark_current", "0"))
+        self.dark_current_rate_e_pix_sec = (
+            _parse_dark_current_rates(dark_current_str)
+            * u.electron
+            / (u.pix * u.second)
+        )
+        logger.info(
+            "Dark current array is %s e-/pix/sec", self.dark_current_rate_e_pix_sec
+        )
+
         self.footprint_cube: np.ndarray | None = None
-
-        sys_section = "detector_systematics"
-
-        def _load_systematic_map(enable_key: str, file_key: str):
-            if not config_getboolean(self.config, sys_section, enable_key):
-                return None
-            section = self.config[sys_section]
-            file_path = (
-                section[file_key]
-                if isinstance(section, dict)
-                else section.get(file_key)
-            )
-            return fits.getdata(file_path)
-
-        read_noise_map = _load_systematic_map(
-            "enable_read_noise_2d", "read_noise_2d_file"
-        )
-        bias_map = _load_systematic_map("enable_dc_2d", "dc_2d_file")
-        cosmic_rays_map = _load_systematic_map(
-            "enable_cosmic_rays_2d", "cosmic_rays_2d_file"
-        )
-        hot_pixels_map = _load_systematic_map(
-            "enable_hot_pixels_2d", "hot_pixels_2d_file"
-        )
-
-        self.systematics_additive_dict = {
-            "read_noise_map": read_noise_map,
-            "bias_map": bias_map,
-            "cosmic_rays_map": cosmic_rays_map,
-            "hot_pixels_map": hot_pixels_map,
-        }
-        self.systematics_multiplicative_dict = {}
-        logging.info("Loaded detector systematics")
+        self._inv_footprint_image: np.ndarray | None = None
 
     def set_footprint(self, footprint_cube: np.ndarray) -> None:
         """Attach an illumination footprint from a DispersionLaw."""
         self.footprint_cube = footprint_cube
+        # 1 / (footprint summed over bins), zero off the footprint; used for flux-conserving extraction
+        footprint_image = DispersionLaw.footprint_image(footprint_cube)
+        self._inv_footprint_image = np.divide(
+            1.0,
+            footprint_image,
+            out=np.zeros_like(footprint_image, dtype=float),
+            where=footprint_image > 0,
+        )
 
     def apply_qe(self, flux):
         """Apply detector quantum efficiency to a photon-rate quantity or array."""
         return flux * self.quantum_efficiency
 
-    def convert_2d_systematics_to_1d_vector(self) -> np.ndarray:
-        """Sum 2D systematics within each wavelength-bin footprint."""
+    def _require_footprint(self) -> None:
         if self.footprint_cube is None:
             raise RuntimeError(
                 "Detector.footprint_cube is unset; call set_footprint() with a DispersionLaw result first"
             )
 
-        canvas_systematics = np.zeros(
+    def expose(self, astroph_signal: dict, t_frame: u.Quantity) -> DetectorFrames:
+        """Paint each source's per-bin photon rate onto the pixel grid for one readout (e-/pix)."""
+        self._require_footprint()
+        source_e = {}
+        for source_name, sig in astroph_signal.items():
+            e_pix_per_bin = (
+                sig["flux_astro_1d_interpolated_ph_sec_pixel"] * t_frame * self.e_per_ph
+            ).to_value(u.electron / u.pix)
+            source_e[source_name] = np.tensordot(
+                e_pix_per_bin, self.footprint_cube, axes=(0, 0)
+            )
+        systematics_e = np.zeros(
             (self.side_length_pix, self.side_length_pix), dtype=float
         )
+        return DetectorFrames(source_e=source_e, systematics_e=systematics_e)
 
-        if len(self.systematics_additive_dict) > 0:
-            for key, value in self.systematics_additive_dict.items():
-                if value is not None:
-                    logging.info(
-                        "Applying %s systematic (additive) to the detector", key
-                    )
-                    canvas_systematics = canvas_systematics + value
+    def extract(self, frames: DetectorFrames) -> Dict[str, u.Quantity]:
+        """
+        Per-bin charge (e-) for each source plus ``instrum_systematics``.
 
-        if len(self.systematics_multiplicative_dict) > 0:
-            for key, value in self.systematics_multiplicative_dict.items():
-                if value is not None:
-                    logging.info(
-                        "Applying %s systematic (multiplicative) to the detector", key
-                    )
-                    canvas_systematics = canvas_systematics * value
+        Uses flux-conserving weights footprint / footprint.sum(axis=0), so a pixel
+        shared by two bins is split between them and the total charge is conserved.
+        """
+        self._require_footprint()
 
-        return DispersionLaw.weighted_sum_per_bin(
-            self.footprint_cube, canvas_systematics
-        )
+        def _per_bin(image_e: np.ndarray) -> u.Quantity:
+            return (
+                DispersionLaw.weighted_sum_per_bin(
+                    self.footprint_cube, image_e * self._inv_footprint_image
+                )
+                * u.electron
+            )
+
+        extracted = {name: _per_bin(img) for name, img in frames.source_e.items()}
+        extracted[SYSTEMATICS_KEY] = _per_bin(frames.systematics_e)
+        return extracted

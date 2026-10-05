@@ -17,12 +17,12 @@ class OutputChannel:
 
     name: str
     detector: Optional[Detector] = None
-    instrum_noise: dict = field(
-        default_factory=dict
-    )  # instrumental terms for this channel
     astroph_signal: dict = field(
         default_factory=dict
     )  # astrophysical signals for this channel
+    detector_signal_e_bin: dict = field(
+        default_factory=dict
+    )  # per-bin charge (e-) extracted from detector frames, mean over readouts
     snr: Optional[float] = None
     spec_R: float | None = None  # spectral R
     angle_deg: float | None = None  # rotation angle of transmission screen

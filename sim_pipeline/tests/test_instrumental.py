@@ -17,10 +17,18 @@ from astropy.table import QTable
 sys.modules["ipdb"] = types.ModuleType("ipdb")
 sys.modules["ipdb"].set_trace = lambda: None
 
-from modules.core.instrumental.detector import Detector
+from modules.core.instrumental.detector import SYSTEMATICS_KEY, Detector
 from modules.core.instrumental.dispersion import DispersionLaw
 from modules.core.instrumental.channels import OutputChannel
+from modules.core.instrumental.effects import (
+    DetectorEffect,
+    DetectorFrames,
+    HotPixelsEffect,
+    apply_detector_effects,
+    build_detector_effects,
+)
 from modules.core.instrumental.pipeline import InstrumentDepTerms
+from modules.core.instrumental.tables import build_base_astro_table
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
@@ -201,7 +209,6 @@ class TestInstrumentDepTerms:
 
         assert instr.config is instrum_base_config
         assert instr.sources_to_include == ["star"]
-        assert isinstance(instr.sources_instrum, dict)
         assert isinstance(instr.prop_dict, dict)
 
         assert set(instr.output_channels.keys()) == {
@@ -218,59 +225,42 @@ class TestInstrumentDepTerms:
             assert len(channel.bin_edges) == n_bins + 1
             assert len(channel.bin_widths) == n_bins
 
-    def test_calculate_intrinsic_instrumental_noise_parses_arrays(
-        self, noise_calc_config
-    ):
-        instr = InstrumentDepTerms(
-            noise_calc_config,
-            sources_astroph={},
-            sources_to_include=[],
-        )
-
-        instr.calculate_instrinsic_instrumental_noise()
-
-        read_noise = instr.sources_instrum["read_noise_e_pix-1"]
-        dc_rate = instr.sources_instrum["dark_current_e_pix-1_sec-1"]
-        dc_total = instr.sources_instrum["dark_current_e_pix-1"]
-
-        assert read_noise.unit.is_equivalent(u.electron / u.pix)
-        assert np.allclose(read_noise.value, [2.0, 3.0])
-        assert dc_rate.unit.is_equivalent(u.electron / (u.pix * u.s))
-        assert np.allclose(dc_rate.value, [0.0, 0.1])
-        assert dc_total.unit.is_equivalent(u.electron / u.pix)
-        assert np.allclose(dc_total.value, [0.0, 1.0])  # t_int_frame * rate
-
-        for channel in instr.output_channels.values():
-            assert "read_noise_e_pix-1" in channel.instrum_noise
-            assert "dark_current_e_pix-1_sec-1" in channel.instrum_noise
-
-    def test_calculate_intrinsic_instrumental_noise_parses_single_values(
-        self, instrum_base_config
+    def test_detector_parses_noise_arrays(
+        self, noise_calc_config, detector_geometry_config
     ):
         config = {
-            **instrum_base_config,
+            **noise_calc_config,
             "detector": {
-                **instrum_base_config["detector"],
+                **noise_calc_config["detector"],
+                **detector_geometry_config["detector"],
+            },
+        }
+        det = Detector(config=config, num_wavel_bins=3)
+
+        assert det.read_noise_e_rms.unit.is_equivalent(u.electron / u.pix)
+        assert np.allclose(det.read_noise_e_rms.value, [2.0, 3.0])
+        dc_rate = det.dark_current_rate_e_pix_sec
+        assert dc_rate.unit.is_equivalent(u.electron / (u.pix * u.s))
+        assert np.allclose(dc_rate.value, [0.0, 0.1])  # start, stop, step
+        assert det.gain == 4.5 * u.electron / u.adu
+        assert det.e_per_ph == 1.0 * u.electron / u.ph
+
+    def test_detector_parses_single_noise_values(self, detector_geometry_config):
+        config = {
+            "detector": {
+                **detector_geometry_config["detector"],
                 "read_noise": "6.0",
                 "dark_current": "0.05",
                 "gain": "4.5",
             },
-            "observation": {"t_int_obs_total": "200", "t_int_frame": "20"},
         }
-        instr = InstrumentDepTerms(config, sources_astroph={}, sources_to_include=[])
+        det = Detector(config=config, num_wavel_bins=3)
 
-        instr.calculate_instrinsic_instrumental_noise()
-
-        read_noise = instr.sources_instrum["read_noise_e_pix-1"]
-        dc_rate = instr.sources_instrum["dark_current_e_pix-1_sec-1"]
-        dc_total = instr.sources_instrum["dark_current_e_pix-1"]
-
-        assert np.allclose(read_noise.value, [6.0])
-        assert np.allclose(dc_rate.value, [0.05])
-        assert np.allclose(dc_total.value, [1.0])  # 20 s * 0.05 e-/pix/s
+        assert np.allclose(det.read_noise_e_rms.value, [6.0])
+        assert np.allclose(det.dark_current_rate_e_pix_sec.value, [0.05])
 
     @patch(
-        "modules.core.instrumental.transfer.compute_collecting_area_m2",
+        "modules.core.instrumental.aperture.compute_collecting_area_m2",
         return_value=25.0,
     )
     def test_pass_through_aperture_scales_flux_cubes_by_collecting_area_and_throughput(
@@ -496,7 +486,7 @@ class TestBuildBaseAstroTable:
             channel.bin_centers, channel.bin_widths, n_pix_per_bin, flux_um=12.0
         )
 
-        table = instr._build_base_astro_table(channel)
+        table = build_base_astro_table(channel, instr.sources_to_include)
 
         assert len(table) == n_bins
         assert "bin" in table.colnames
@@ -517,16 +507,22 @@ class TestCombineAstroAndInstrumSignals:
         config = {**noise_calc_config}
         config["detector"]["read_noise"] = "6.0"
         config["observation"]["t_int_frame"] = "10"
+        config["observation"]["N_int_per_angle"] = "2"
         return config
 
     def _prepare_channels(self, instr, detector_geometry_config):
+        config = {
+            **instr.config,
+            "detector": {
+                **instr.config["detector"],
+                **detector_geometry_config["detector"],
+            },
+        }
         for channel in instr.output_channels.values():
             channel.bin_centers = channel.bin_centers[:3]
             channel.bin_widths = channel.bin_widths[:3]
             channel.bin_edges = channel.bin_edges[:4]
-            det = _attach_detector_footprint(
-                channel, detector_geometry_config, n_bins=3
-            )
+            det = _attach_detector_footprint(channel, config, n_bins=3)
             n_pix_per_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
             channel.astroph_signal["star"] = _make_astroph_signal(
                 channel.bin_centers,
@@ -556,20 +552,22 @@ class TestCombineAstroAndInstrumSignals:
             sources_astroph={},
             sources_to_include=["star"],
         )
-        instr.calculate_instrinsic_instrumental_noise()
         self._prepare_channels(instr, detector_geometry_config)
 
+        instr.apply_detector_effects()
         instr.combine_astro_and_instrum_signals(plot=True)
 
         channel = instr.output_channels["output_3_dark"]
-        assert 0.0 in channel.tables_by_dark_current_orig
-        assert 0.1 in channel.tables_by_dark_current_orig
-        assert np.all(channel.tables_by_dark_current_orig[0.0]["qe"] == 0.8)
+        assert set(channel.tables_by_dark_current) == {0.0, 0.1}
+        assert np.all(channel.tables_by_dark_current[0.0]["qe"] == 0.8)
 
         final = channel.tables_by_dark_current[0.0]
         assert "instrum_dc_rms_adu" in final.colnames
         assert "instrum_rn_rms_adu" in final.colnames
         assert "astro_star_adu" in final.colnames
+        assert "instrum_systematics_adu" in final.colnames
+        assert np.all(final["instrum_systematics_adu"].value == 0.0)
+        assert final["astro_star_adu"].unit == u.adu
         assert len(final) == 3
         mock_subplots.assert_called()
 
@@ -629,8 +627,8 @@ class TestGenerateInstrumentTransmission:
 
 
 class TestDisperseAstroSignalsOnDetector:
-    @patch("modules.core.instrumental.transfer.DispersionLaw")
-    @patch("modules.core.instrumental.transfer.Detector")
+    @patch("modules.core.instrumental.dispersion.DispersionLaw")
+    @patch("modules.core.instrumental.detector.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
         self, mock_detector_cls, mock_law_cls, disperse_config
     ):
@@ -754,41 +752,166 @@ class TestDispersionLaw:
             DispersionLaw.weighted_sum_per_bin(dense, image),
         )
 
-    def test_convert_2d_systematics_to_1d_vector_sums_within_footprint(
-        self, detector_geometry_config
-    ):
-        law = DispersionLaw(detector_geometry_config)
-        det = Detector(config=detector_geometry_config, num_wavel_bins=2)
-        det.set_footprint(law.make_footprint(det.side_length_pix, det.num_wavel_bins))
 
-        read_noise_map = np.zeros((400, 400))
-        # Place map only under wavelength bin 0 footprint (cols 300-301), not bin 1 (starts ~302.2)
-        read_noise_map[100:103, 300:302] = 2.0
-        det.systematics_additive_dict["read_noise_map"] = read_noise_map
+class _ScaleEffect(DetectorEffect):
+    """Toy multiplicative effect."""
 
-        vector = det.convert_2d_systematics_to_1d_vector()
+    name = "toy_scale"
 
-        assert vector.shape == (2,)
-        assert vector[0] > 0.0
-        assert np.isclose(vector[1], 0.0)
+    def apply(self, frames, readout_index):
+        for name in frames.source_e:
+            frames.source_e[name] *= 2.0
+        frames.systematics_e *= 2.0
 
-    @patch("modules.core.instrumental.detector.fits.getdata")
-    def test_init_loads_enabled_2d_systematics_maps(
-        self, mock_getdata, detector_geometry_config
-    ):
-        mock_getdata.return_value = np.ones((400, 400))
-        config = {
-            **detector_geometry_config,
-            "detector_systematics": {
-                "enable_read_noise_2d": "True",
-                "read_noise_2d_file": "/tmp/read_noise.fits",
-                "enable_dc_2d": "False",
-                "dc_2d_file": "/tmp/dc.fits",
-            },
+
+class _RecordTotalEffect(DetectorEffect):
+    """Toy light-dependent effect: remembers the previous readout's total charge."""
+
+    name = "toy_record"
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.previous_total = None
+        self.seen = []
+
+    def apply(self, frames, readout_index):
+        self.seen.append((readout_index, self.previous_total))
+        self.previous_total = frames.total_e.sum()
+
+    def reset(self):
+        self.previous_total = None
+
+
+class TestDetectorEffects:
+    @pytest.fixture
+    def channel_with_signal(self, detector_geometry_config):
+        channel = OutputChannel(name="output_3_dark")
+        n_bins = 3
+        det = _attach_detector_footprint(
+            channel, detector_geometry_config, n_bins=n_bins
+        )
+        # equal signal in every bin
+        channel.astroph_signal["star"] = {
+            "flux_astro_1d_interpolated_ph_sec_pixel": np.full(n_bins, 5.0)
+            * u.ph
+            / (u.s * u.pix)
         }
+        return channel, det
 
-        det = Detector(config=config, num_wavel_bins=2)
+    def test_extract_conserves_total_and_matches_npix_signal_t(
+        self, channel_with_signal
+    ):
+        channel, det = channel_with_signal
+        t_frame = 10.0 * u.s
+        frames = det.expose(channel.astroph_signal, t_frame)
+        extracted = det.extract(frames)
 
-        assert det.systematics_additive_dict["read_noise_map"] is not None
-        assert det.systematics_additive_dict["bias_map"] is None
-        mock_getdata.assert_called_once_with("/tmp/read_noise.fits")
+        npix = DispersionLaw.n_pix_per_bin(det.footprint_cube).value
+        expected = npix * 5.0 * 10.0
+        assert extracted["star"].unit == u.electron
+        assert np.allclose(extracted["star"].value, expected)
+        assert np.isclose(extracted["star"].value.sum(), frames.source_e["star"].sum())
+        assert np.all(extracted[SYSTEMATICS_KEY].value == 0.0)
+
+    def test_extract_conserves_total_for_unequal_bins(self, channel_with_signal):
+        channel, det = channel_with_signal
+        channel.astroph_signal["star"]["flux_astro_1d_interpolated_ph_sec_pixel"] = (
+            np.array([1.0, 4.0, 9.0]) * u.ph / (u.s * u.pix)
+        )
+        frames = det.expose(channel.astroph_signal, 1.0 * u.s)
+        extracted = det.extract(frames)
+        npix = DispersionLaw.n_pix_per_bin(det.footprint_cube).value
+        assert np.isclose(
+            extracted["star"].value.sum(), np.sum(npix * [1.0, 4.0, 9.0])
+        )
+
+    @patch("modules.core.instrumental.effects.fits.getdata")
+    def test_additive_map_lands_only_in_systematics(
+        self, mock_getdata, channel_with_signal
+    ):
+        channel, det = channel_with_signal
+        hot_map = np.zeros((400, 400))
+        # only under wavelength bin 0 footprint (cols 300-301), not bin 1 (starts ~302.2)
+        hot_map[100:103, 300:302] = 2.0
+        mock_getdata.return_value = hot_map
+        config = {
+            "detector_systematics": {
+                "enabled": "hot_pixels",
+                "hot_pixels_2d_file": "/tmp/hot.fits",
+            }
+        }
+        effects = build_detector_effects(config)
+        assert [type(e) for e in effects] == [HotPixelsEffect]
+        mock_getdata.assert_called_once_with("/tmp/hot.fits")
+
+        frames = det.expose(channel.astroph_signal, 1.0 * u.s)
+        star_before = frames.source_e["star"].copy()
+        effects[0].apply(frames, 0)
+
+        assert np.array_equal(frames.source_e["star"], star_before)
+        assert np.array_equal(frames.systematics_e, hot_map)
+        extracted = det.extract(frames)
+        assert np.isclose(extracted[SYSTEMATICS_KEY].value[0], hot_map.sum())
+        assert np.allclose(extracted[SYSTEMATICS_KEY].value[1:], 0.0)
+
+    def test_multiplicative_effect_scales_sources_and_systematics(self):
+        frames = DetectorFrames(
+            source_e={"star": np.ones((2, 2))}, systematics_e=np.full((2, 2), 3.0)
+        )
+        _ScaleEffect({}).apply(frames, 0)
+        assert np.all(frames.source_e["star"] == 2.0)
+        assert np.all(frames.systematics_e == 6.0)
+        assert np.all(frames.total_e == 8.0)
+
+    def test_light_dependent_effect_sees_total_and_is_cleared_by_reset(
+        self, channel_with_signal
+    ):
+        channel, det = channel_with_signal
+        effect = _RecordTotalEffect({})
+        apply_detector_effects(
+            {channel.name: channel}, [effect], t_frame=1.0 * u.s, n_readouts=2
+        )
+        total = det.expose(channel.astroph_signal, 1.0 * u.s).total_e.sum()
+        assert effect.seen[0] == (0, None)
+        assert effect.seen[1][0] == 1
+        assert np.isclose(effect.seen[1][1], total)
+
+        effect.reset()
+        assert effect.previous_total is None
+
+    def test_apply_detector_effects_averages_over_readouts(self, channel_with_signal):
+        channel, det = channel_with_signal
+        apply_detector_effects(
+            {channel.name: channel}, [], t_frame=1.0 * u.s, n_readouts=3
+        )
+        frames = det.expose(channel.astroph_signal, 1.0 * u.s)
+        single = det.extract(frames)
+        assert set(channel.detector_signal_e_bin) == {"star", SYSTEMATICS_KEY}
+        assert u.allclose(channel.detector_signal_e_bin["star"], single["star"])
+
+    @patch("modules.core.instrumental.effects.fits.getdata")
+    def test_build_detector_effects_keeps_order_and_skips_noise_params(
+        self, mock_getdata, caplog
+    ):
+        mock_getdata.return_value = np.zeros((4, 4))
+        config = {
+            "detector_systematics": {
+                "enabled": "persistence, readnoise, hot_pixels, dark_current, gain_variability",
+                "hot_pixels_2d_file": "/tmp/hot.fits",
+            }
+        }
+        effects = build_detector_effects(config)
+        assert [e.name for e in effects] == [
+            "persistence",
+            "hot_pixels",
+            "gain_variability",
+        ]
+        assert "readnoise" in caplog.text
+        assert "dark_current" in caplog.text
+
+    def test_build_detector_effects_rejects_unknown_name(self):
+        with pytest.raises(ValueError, match="not found"):
+            build_detector_effects({"detector_systematics": {"enabled": "nope"}})
+
+    def test_build_detector_effects_empty_by_default(self):
+        assert build_detector_effects({}) == []

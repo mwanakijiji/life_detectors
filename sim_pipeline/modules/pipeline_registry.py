@@ -90,29 +90,21 @@ def clear_registry() -> None:
     _IMPORTS_DONE = False
 
 
-def _register_planned_defaults() -> None:
-    # Lives between disperse and combine in the intended DAG; not implemented yet.
-    if "apply_detector_effects" not in _REGISTRY:
-        register_planned_stage(
-            "apply_detector_effects",
-            depends_on=("disperse_astro_signals_on_detector",),
-        )
-
-
 def ensure_stages_registered() -> Dict[str, StageSpec]:
     """Import decorated modules so the registry is populated."""
     global _IMPORTS_DONE
     if not _IMPORTS_DONE:
         # Import order is unimportant; each module self-registers via decorators.
         from modules.core import astrophysical as _astro  # noqa: F401
+        from modules.core.instrumental import aperture as _aperture  # noqa: F401
+        from modules.core.instrumental import dispersion as _dispersion  # noqa: F401
+        from modules.core.instrumental import effects as _effects  # noqa: F401
         from modules.core.instrumental import tables as _tables  # noqa: F401
-        from modules.core.instrumental import transfer as _transfer  # noqa: F401
         from modules.core.instrumental import (
             transmission as _transmission,
         )  # noqa: F401
         from modules.utils.helpers import hdf5_io as _hdf5_io  # noqa: F401
 
-        _register_planned_defaults()
         _IMPORTS_DONE = True
     return get_registry()
 
