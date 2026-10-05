@@ -103,7 +103,6 @@ def ensure_stages_registered() -> Dict[str, StageSpec]:
         from modules.core.instrumental import dispersion as _dispersion  # noqa: F401
         from modules.core.instrumental import effects as _effects  # noqa: F401
         from modules.core.instrumental import readouts as _readouts  # noqa: F401
-        from modules.core.instrumental import tables as _tables  # noqa: F401
         from modules.core.instrumental import (
             transmission as _transmission,
         )  # noqa: F401

@@ -102,12 +102,8 @@ def main():
     # One file per angle and QE: angle_{angle:06.2f}_qe_{qe:04.2f}.hdf5
     # Example hierarchical structure of output HDF5 files:
     #   angle_000.00_qe_0.80.hdf5
-    #       └── dc_00.200_qe_0.80/          # one group per dark-current rate (e-/pix/s)
-    #           ├── output_1_bright         # per-output table
-    #           ├── output_2_bright
-    #           ├── output_3_dark
-    #           └── output_4_dark
-    #       └── __extracted_qe_0.80/        # per-readout spectra box-summed from the readout FITS
+    #       └── __extracted_qe_0.80/        # per-readout spectra box-summed from the readout FITS,
+    #                                       # plus bin geometry (npix, center, width, edges)
     #
     # plus, per QE: extracted_cube_qe_{qe}_dc_{dc}.fits with (wavelength, readout, channel) cubes
 

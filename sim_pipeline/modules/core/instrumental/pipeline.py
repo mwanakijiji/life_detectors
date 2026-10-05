@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import astropy.units as u
 
-from . import aperture, dispersion, effects, readouts, tables, transmission
+from . import aperture, dispersion, effects, readouts, transmission
 from .aperture import (
     BACKGROUND_REGISTRY,
     InstrumentBackground,
@@ -130,11 +130,6 @@ class InstrumentDepTerms:
             self.detector_effects,
             t_frame=float(self.config["observation"]["t_int_frame"]) * u.second,
             n_readouts=int(self.config["observation"]["N_int_per_angle"]),
-        )
-
-    def combine_astro_and_instrum_signals(self, plot: bool = False):
-        tables.combine_astro_and_instrum_signals(
-            self.config, self.output_channels, self.sources_to_include, plot=plot
         )
 
     def write_detector_readouts(

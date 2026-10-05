@@ -33,6 +33,7 @@ from modules.utils.helpers.formatting import (
     format_astro_source_label,
     format_plot_title,
 )
+from modules.core.instrumental.dispersion import DispersionLaw
 from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
 from modules.utils.helpers.keys import (
     canonical_angle_deg,
@@ -421,66 +422,10 @@ class TestModifyConfigFileSweep:
 
 
 class TestRecordInfoAtAngleAndQe:
-    def test_writes_hdf5_groups_for_each_dark_current(self, tmp_path):
-        save_dir = str(tmp_path) + "/"
-        n_bins = 2
-        wavel = np.array([5.0, 10.0]) * u.um
-        width = np.array([0.5, 0.5]) * u.um
-
-        def _table(signal):
-            return QTable(
-                {
-                    "center": wavel,
-                    "width": width,
-                    "signal_adu": np.ones(n_bins) * signal * u.adu,
-                }
-            )
-
-        channel = MagicMock()
-        channel.tables_by_dark_current = {0.0: _table(1.0), 0.1: _table(2.0)}
-        output_channels = {
-            "output_1_bright": channel,
-            "output_2_bright": channel,
-            "output_3_dark": channel,
-            "output_4_dark": channel,
-        }
-
-        record_info_at_angle_and_qe(
-            angle_deg=45.0,
-            qe=0.7,
-            output_channels=output_channels,
-            save_dir=save_dir,
-            plot=False,
-        )
-
-        hdf5_path = tmp_path / "angle_045.00_qe_0.70.hdf5"
-        assert hdf5_path.exists()
-        restored = QTable.read(hdf5_path, path="dc_00.000_qe_0.70/output_1_bright")
-        assert len(restored) == n_bins
-        assert restored.meta["angle_deg"] == 45.0
-        assert restored.meta["qe"] == 0.7
-        with h5py.File(hdf5_path, "r") as handle:
-            assert set(handle.keys()) == {"dc_00.000_qe_0.70", "dc_00.100_qe_0.70"}
-            assert "chopped" not in handle["dc_00.000_qe_0.70"]
-
-    def test_writes_extracted_spectra_group(self, tmp_path):
-        save_dir = str(tmp_path) + "/"
-        n_bins, n_readouts = 2, 3
-        table = QTable(
-            {
-                "center": np.array([5.0, 10.0]) * u.um,
-                "width": np.array([0.5, 0.5]) * u.um,
-                "npix": np.array([4.0, 5.0]) * u.pix,
-                "t_int_frame": np.full(n_bins, 10.0) * u.s,
-            }
-        )
-        table.meta["wavel_bin_edges"] = np.array([4.75, 7.5, 10.25]) * u.um
-        channel = MagicMock()
-        channel.tables_by_dark_current = {0.0: table}
-        channel.detector.gain = 2.0 * u.electron / u.adu
+    @staticmethod
+    def _extracted(n_readouts: int, n_bins: int):
         names = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
-        output_channels = {name: channel for name in names}
-        extracted = {
+        return {
             name: {
                 "star": np.arange(n_readouts * n_bins).reshape(n_readouts, n_bins)
                 * (i + 1.0)
@@ -490,71 +435,61 @@ class TestRecordInfoAtAngleAndQe:
             for i, name in enumerate(names)
         }
 
+    def test_writes_only_extracted_spectra_group(self, tmp_path, make_output_channels):
+        save_dir = str(tmp_path) + "/"
+        n_bins, n_readouts = 3, 2
+        output_channels = make_output_channels(n_bins=n_bins, gain=2.0)
+        extracted = self._extracted(n_readouts, n_bins)
+
         record_info_at_angle_and_qe(
             angle_deg=45.0,
             qe=0.7,
             output_channels=output_channels,
             save_dir=save_dir,
+            t_frame=10.0 * u.s,
             extracted_spectra_adu=extracted,
             plot=False,
         )
 
         with h5py.File(tmp_path / "angle_045.00_qe_0.70.hdf5", "r") as handle:
+            assert list(handle.keys()) == ["__extracted_qe_0.70"]
             group = handle["__extracted_qe_0.70"]
             assert group.attrs["angle_deg"] == 45.0
+            assert group.attrs["qe"] == 0.7
             assert group.attrs["n_readouts"] == n_readouts
             assert group.attrs["t_frame_s"] == 10.0
             assert group.attrs["gain_e_per_adu"] == 2.0
-            assert np.allclose(group["npix"][()], [4.0, 5.0])
-            assert np.allclose(group["edges"][()], [4.75, 7.5, 10.25])
+            ref = output_channels["output_3_dark"]
+            npix = DispersionLaw.n_pix_per_bin(ref.detector.footprint_cube).value
+            assert np.allclose(group["npix"][()], npix)
+            assert np.allclose(group["center"][()], ref.bin_centers.value)
+            assert np.allclose(group["width"][()], ref.bin_widths.value)
+            assert np.allclose(group["edges"][()], ref.bin_edges.value)
+            assert set(group.keys()) >= set(extracted)
             assert set(group["output_3_dark"].keys()) == {"star", "instrum_systematics"}
             assert np.allclose(
                 group["output_3_dark"]["star"][()],
                 extracted["output_3_dark"]["star"].value,
             )
 
-    def test_clears_stale_groups_before_rewrite(self, tmp_path):
-        import h5py
-
+    def test_replaces_stale_file(self, tmp_path, make_output_channels):
         save_dir = str(tmp_path) + "/"
         hdf5_path = tmp_path / "angle_045.00_qe_0.70.hdf5"
-        n_bins = 2
-        wavel = np.array([5.0, 10.0]) * u.um
-        width = np.array([0.5, 0.5]) * u.um
-
-        def _table(signal):
-            return QTable(
-                {
-                    "center": wavel,
-                    "width": width,
-                    "signal_adu": np.ones(n_bins) * signal * u.adu,
-                }
-            )
-
-        stale = _table(99.0)
-        stale.write(hdf5_path, path="dc_00.000_qe_0.50/output_3_dark", overwrite=True)
-
-        channel = MagicMock()
-        channel.tables_by_dark_current = {0.0: _table(1.0)}
-        output_channels = {
-            "output_1_bright": channel,
-            "output_2_bright": channel,
-            "output_3_dark": channel,
-            "output_4_dark": channel,
-        }
+        with h5py.File(hdf5_path, "w") as handle:
+            handle.create_group("dc_00.000_qe_0.50")
 
         record_info_at_angle_and_qe(
             angle_deg=45.0,
             qe=0.7,
-            output_channels=output_channels,
+            output_channels=make_output_channels(),
             save_dir=save_dir,
+            t_frame=10.0 * u.s,
+            extracted_spectra_adu=self._extracted(1, 3),
             plot=False,
         )
 
         with h5py.File(hdf5_path, "r") as handle:
-            groups = set(handle.keys())
-        assert "dc_00.000_qe_0.50" not in groups
-        assert "dc_00.000_qe_0.70" in groups
+            assert set(handle.keys()) == {"__extracted_qe_0.70"}
 
 
 def test_validate_file_path_cases(tmp_path):

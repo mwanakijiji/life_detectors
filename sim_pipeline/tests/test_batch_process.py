@@ -396,8 +396,6 @@ def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
 
     channel = OutputChannel(name=name, angle_deg=angle_deg)
     channel.astroph_signal = {"stale": 2}
-    channel.detector_signal_e_bin = {"stale": 3}
-    channel.tables_by_dark_current = {0.0: "table"}
     return channel
 
 
@@ -574,8 +572,7 @@ def _photons_and_adu_from_detector_footprint(
     Sum QE-inclusive photon rates over each channel's spectral footprint, then
     convert integrated photons to ADU (ph -> e- via e_per_ph, e- -> ADU via gain).
 
-    Uses the same per-wavelength-bin bookkeeping as _build_base_astro_table /
-    combine_astro_and_instrum_signals: ph/sec/pixel × n_pix_per_wavel_bin.
+    Per-wavelength-bin bookkeeping: ph/sec/pixel × n_pix_per_wavel_bin.
     """
     ph_rate_unit = u.ph / u.s
     adu_unit = u.adu
@@ -602,18 +599,16 @@ def _photons_and_adu_from_detector_footprint(
     return total_ph, total_adu
 
 
-def _independent_adu_from_combine_tables(instr, sources_to_include):
-    """Sum astro ADU columns from combine_astro_and_instrum_signals (production path)."""
+def _independent_adu_from_readouts(instr, sources_to_include, file_name):
+    """Sum per-source spectra box-summed from the readout FITS (production path)."""
     instr.apply_detector_effects()
-    instr.combine_astro_and_instrum_signals(plot=False)
+    instr.write_detector_readouts(file_name)
+    instr.extract_spectra_from_readouts()
     total_adu = 0.0 * u.adu
-    for channel in instr.output_channels.values():
-        dc_rate = next(iter(channel.tables_by_dark_current))
-        table = channel.tables_by_dark_current[dc_rate]
+    for spectra in instr.extracted_spectra_adu.values():
         for source_name in sources_to_include:
-            col = f"astro_{source_name}_adu"
-            if col in table.colnames:
-                total_adu += np.sum(table[col])
+            if source_name in spectra:
+                total_adu += np.sum(spectra[source_name])
     return total_adu
 
 
@@ -769,13 +764,16 @@ class TestRunSingleCalculation:
                 instr, sources_to_include, t_frame, gain, e_per_ph
             )
         )
-        independent_adu = _independent_adu_from_combine_tables(
-            instr, sources_to_include
+        independent_adu = _independent_adu_from_readouts(
+            instr,
+            sources_to_include,
+            flux_conservation_config["dirs"]["save_s2n_data_unique_dir"]
+            + "readouts.fits",
         )
         np.testing.assert_allclose(
             total_adu_on_footprint.value,
             independent_adu.value,
-            err_msg="footprint ADU should match combine_astro_and_instrum_signals tables",
+            err_msg="footprint ADU should match spectra extracted from the readout FITS",
         )
         bin_widths = next(iter(instr.output_channels.values())).bin_widths
         independent_ph_rate = np.sum(independent_all_sources_ph_sec_um * bin_widths)
@@ -948,15 +946,11 @@ class TestRunSingleCalculation:
             for channel in mock_instrument.output_channels.values():
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
                 assert channel.astroph_signal == {}
-                assert channel.detector_signal_e_bin == {}
                 assert channel.readout_frames == []
                 assert channel.extracted_spectra_adu == {}
-                assert channel.tables_by_dark_current == {}
                 channel.astroph_signal["filled"] = angle_deg
-                channel.detector_signal_e_bin["filled"] = angle_deg
                 channel.readout_frames.append(angle_deg)
                 channel.extracted_spectra_adu["filled"] = angle_deg
-                channel.tables_by_dark_current[0.0] = angle_deg
             return np.ones((6, 3, 3))
 
         mock_instrument.generate_instrument_transmission.side_effect = (
@@ -993,7 +987,7 @@ class TestRunSingleCalculation:
         assert mock_assemble.call_args.kwargs["qe"] == 0.7
         assert mock_assemble.call_args.kwargs["read_dir"] == save_dir
         record_kwargs = mock_record_info.call_args.kwargs
-        assert "post_chop_tables_by_dark_current" not in record_kwargs
+        assert record_kwargs["t_frame"] == 10.0 * u.s
         assert (
             record_kwargs["extracted_spectra_adu"]
             is mock_instrument.extracted_spectra_adu

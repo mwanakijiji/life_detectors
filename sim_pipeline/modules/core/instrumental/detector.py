@@ -13,7 +13,7 @@ from .effects import DetectorFrames, _config_get
 
 logger = logging.getLogger(__name__)
 
-# key in Detector.extract() output for non-astrophysical charge
+# component name for non-astrophysical charge (readout FITS, extracted spectra, cubes)
 SYSTEMATICS_KEY = "instrum_systematics"
 
 
@@ -63,19 +63,10 @@ class Detector:
         )
 
         self.footprint_cube: np.ndarray | None = None
-        self._inv_footprint_image: np.ndarray | None = None
 
     def set_footprint(self, footprint_cube: np.ndarray) -> None:
         """Attach an illumination footprint from a DispersionLaw."""
         self.footprint_cube = footprint_cube
-        # 1 / (footprint summed over bins), zero off the footprint; used for flux-conserving extraction
-        footprint_image = DispersionLaw.footprint_image(footprint_cube)
-        self._inv_footprint_image = np.divide(
-            1.0,
-            footprint_image,
-            out=np.zeros_like(footprint_image, dtype=float),
-            where=footprint_image > 0,
-        )
 
     def bin_index_map(self) -> np.ndarray:
         """
@@ -122,24 +113,3 @@ class Detector:
             (self.side_length_pix, self.side_length_pix), dtype=float
         )
         return DetectorFrames(source_e=source_e, systematics_e=systematics_e)
-
-    def extract(self, frames: DetectorFrames) -> Dict[str, u.Quantity]:
-        """
-        Per-bin charge (e-) for each source plus ``instrum_systematics``.
-
-        Uses flux-conserving weights footprint / footprint.sum(axis=0), so a pixel
-        shared by two bins is split between them and the total charge is conserved.
-        """
-        self._require_footprint()
-
-        def _per_bin(image_e: np.ndarray) -> u.Quantity:
-            return (
-                DispersionLaw.weighted_sum_per_bin(
-                    self.footprint_cube, image_e * self._inv_footprint_image
-                )
-                * u.electron
-            )
-
-        extracted = {name: _per_bin(img) for name, img in frames.source_e.items()}
-        extracted[SYSTEMATICS_KEY] = _per_bin(frames.systematics_e)
-        return extracted

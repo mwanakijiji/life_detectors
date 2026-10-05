@@ -33,7 +33,6 @@ from modules.core.instrumental.readouts import (
     extract_spectra_from_readouts,
     write_detector_readouts,
 )
-from modules.core.instrumental.tables import build_base_astro_table
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
@@ -431,117 +430,6 @@ class TestInstrumentDepTerms:
         np.testing.assert_allclose(net_flux.value, scene.value)
 
 
-class TestBuildBaseAstroTable:
-    def test_build_base_astro_table_includes_metadata_and_source_columns(
-        self, instrum_base_config, detector_geometry_config
-    ):
-        instr = InstrumentDepTerms(
-            instrum_base_config,
-            sources_astroph={},
-            sources_to_include=["star", "exozodiacal"],
-        )
-        channel = instr.output_channels["output_1_bright"]
-        n_bins = 3
-        channel.bin_centers = np.array([5.0, 6.0, 7.0]) * u.um
-        channel.bin_widths = np.array([0.1, 0.1, 0.1]) * u.um
-        channel.bin_edges = np.array([4.95, 5.05, 6.05, 7.05]) * u.um
-
-        det = _attach_detector_footprint(
-            channel, detector_geometry_config, n_bins=n_bins
-        )
-        n_pix_per_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
-        channel.astroph_signal["star"] = _make_astroph_signal(
-            channel.bin_centers, channel.bin_widths, n_pix_per_bin, flux_um=12.0
-        )
-
-        table = build_base_astro_table(channel, instr.sources_to_include)
-
-        assert len(table) == n_bins
-        assert "bin" in table.colnames
-        assert "npix" in table.colnames
-        assert "astro_star_ph_s_um" in table.colnames
-        assert "astro_star_ph_s_bin" in table.colnames
-        assert "astro_star_ph_s_pix" in table.colnames
-        assert "astro_exozodiacal_ph_s_um" not in table.colnames
-        assert np.allclose(table["npix"].value, n_pix_per_bin.value)
-        assert table.meta["wavel_bin_edges"] is channel.bin_edges
-        assert table["bin"].info.description
-        assert table["astro_star_ph_s_um"].info.description
-
-
-class TestCombineAstroAndInstrumSignals:
-    @pytest.fixture
-    def combine_config(self, noise_calc_config):
-        config = {**noise_calc_config}
-        config["detector"]["read_noise"] = "6.0"
-        config["observation"]["t_int_frame"] = "10"
-        config["observation"]["N_int_per_angle"] = "2"
-        return config
-
-    def _prepare_channels(self, instr, detector_geometry_config):
-        config = {
-            **instr.config,
-            "detector": {
-                **instr.config["detector"],
-                **detector_geometry_config["detector"],
-            },
-        }
-        for channel in instr.output_channels.values():
-            channel.bin_centers = channel.bin_centers[:3]
-            channel.bin_widths = channel.bin_widths[:3]
-            channel.bin_edges = channel.bin_edges[:4]
-            det = _attach_detector_footprint(channel, config, n_bins=3)
-            n_pix_per_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
-            channel.astroph_signal["star"] = _make_astroph_signal(
-                channel.bin_centers,
-                channel.bin_widths,
-                n_pix_per_bin,
-                flux_um=8.0,
-                qe=1.0,
-            )
-
-    @patch("modules.viz.tables.plt.close")
-    @patch("modules.viz.tables.plt.savefig")
-    @patch("modules.viz.tables.plt.subplots")
-    @patch("builtins.print")
-    def test_combine_builds_per_dc_tables_with_instrumental_and_astro_columns(
-        self,
-        _mock_print,
-        mock_subplots,
-        _mock_savefig,
-        _mock_close,
-        combine_config,
-        detector_geometry_config,
-    ):
-        mock_subplots.return_value = (MagicMock(), MagicMock())
-
-        instr = InstrumentDepTerms(
-            combine_config,
-            sources_astroph={},
-            sources_to_include=["star"],
-        )
-        self._prepare_channels(instr, detector_geometry_config)
-
-        instr.apply_detector_effects()
-        instr.combine_astro_and_instrum_signals(plot=True)
-
-        channel = instr.output_channels["output_3_dark"]
-        assert set(channel.tables_by_dark_current) == {0.0, 0.1}
-        assert np.all(channel.tables_by_dark_current[0.0]["qe"] == 0.8)
-
-        final = channel.tables_by_dark_current[0.0]
-        assert "instrum_dc_rms_adu" in final.colnames
-        assert "instrum_rn_rms_adu" in final.colnames
-        assert "astro_star_adu" in final.colnames
-        assert "instrum_systematics_adu" in final.colnames
-        assert u.allclose(final["t_int_frame"], np.full(3, 10.0) * u.s)
-        assert not any(col.startswith("col") for col in final.colnames)
-        assert np.all(final["instrum_systematics_adu"].value == 0.0)
-        assert final["astro_star_adu"].unit == u.adu
-        assert len(final) == 3
-        mock_subplots.assert_called()
-
-
 class TestGenerateInstrumentTransmission:
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_returns_six_slice_cube_and_writes_fits(
@@ -723,6 +611,17 @@ class TestDispersionLaw:
         )
 
 
+def _box_sum(det, image):
+    """Per-bin box sum of a 2D image, as in extract_spectra_from_readouts."""
+    bin_map = det.bin_index_map()
+    on_footprint = bin_map >= 0
+    return np.bincount(
+        bin_map[on_footprint],
+        weights=image[on_footprint],
+        minlength=det.num_wavel_bins,
+    )
+
+
 class _ScaleEffect(DetectorEffect):
     """Toy multiplicative effect."""
 
@@ -768,30 +667,28 @@ class TestDetectorEffects:
         }
         return channel, det
 
-    def test_extract_conserves_total_and_matches_npix_signal_t(
-        self, channel_with_signal
-    ):
+    def test_expose_paints_per_bin_signal_onto_footprint(self, channel_with_signal):
         channel, det = channel_with_signal
-        t_frame = 10.0 * u.s
-        frames = det.expose(channel.astroph_signal, t_frame)
-        extracted = det.extract(frames)
+        frames = det.expose(channel.astroph_signal, 10.0 * u.s)
 
+        star = frames.source_e["star"]
+        # equal per-pixel signal in every bin: frame = s * t * (footprint summed over bins)
+        assert np.allclose(
+            star, 5.0 * 10.0 * DispersionLaw.footprint_image(det.footprint_cube)
+        )
         npix = DispersionLaw.n_pix_per_bin(det.footprint_cube).value
-        expected = npix * 5.0 * 10.0
-        assert extracted["star"].unit == u.electron
-        assert np.allclose(extracted["star"].value, expected)
-        assert np.isclose(extracted["star"].value.sum(), frames.source_e["star"].sum())
-        assert np.all(extracted[SYSTEMATICS_KEY].value == 0.0)
+        assert np.isclose(star.sum(), np.sum(npix) * 5.0 * 10.0)
+        assert np.all(frames.systematics_e == 0.0)
 
-    def test_extract_conserves_total_for_unequal_bins(self, channel_with_signal):
+    def test_box_sum_conserves_total_for_unequal_bins(self, channel_with_signal):
         channel, det = channel_with_signal
         channel.astroph_signal["star"]["flux_astro_1d_interpolated_ph_sec_pixel"] = (
             np.array([1.0, 4.0, 9.0]) * u.ph / (u.s * u.pix)
         )
         frames = det.expose(channel.astroph_signal, 1.0 * u.s)
-        extracted = det.extract(frames)
+        spectrum = _box_sum(det, frames.source_e["star"])
         npix = DispersionLaw.n_pix_per_bin(det.footprint_cube).value
-        assert np.isclose(extracted["star"].value.sum(), np.sum(npix * [1.0, 4.0, 9.0]))
+        assert np.isclose(spectrum.sum(), np.sum(npix * [1.0, 4.0, 9.0]))
 
     @patch("modules.core.instrumental.effects.fits.getdata")
     def test_additive_map_lands_only_in_systematics(
@@ -818,9 +715,9 @@ class TestDetectorEffects:
 
         assert np.array_equal(frames.source_e["star"], star_before)
         assert np.array_equal(frames.systematics_e, hot_map)
-        extracted = det.extract(frames)
-        assert np.isclose(extracted[SYSTEMATICS_KEY].value[0], hot_map.sum())
-        assert np.allclose(extracted[SYSTEMATICS_KEY].value[1:], 0.0)
+        systematics = _box_sum(det, frames.systematics_e)
+        assert np.isclose(systematics[0], hot_map.sum())
+        assert np.allclose(systematics[1:], 0.0)
 
     def test_multiplicative_effect_scales_sources_and_systematics(self):
         frames = DetectorFrames(
@@ -847,15 +744,18 @@ class TestDetectorEffects:
         effect.reset()
         assert effect.previous_total is None
 
-    def test_apply_detector_effects_averages_over_readouts(self, channel_with_signal):
+    def test_apply_detector_effects_stores_one_frame_set_per_readout(
+        self, channel_with_signal
+    ):
         channel, det = channel_with_signal
         apply_detector_effects(
             {channel.name: channel}, [], t_frame=1.0 * u.s, n_readouts=3
         )
-        frames = det.expose(channel.astroph_signal, 1.0 * u.s)
-        single = det.extract(frames)
-        assert set(channel.detector_signal_e_bin) == {"star", SYSTEMATICS_KEY}
-        assert u.allclose(channel.detector_signal_e_bin["star"], single["star"])
+        expected = det.expose(channel.astroph_signal, 1.0 * u.s)
+        assert len(channel.readout_frames) == 3
+        for frames in channel.readout_frames:
+            assert frames.channel_name == channel.name
+            assert np.array_equal(frames.source_e["star"], expected.source_e["star"])
 
     @patch("modules.core.instrumental.effects.fits.getdata")
     def test_build_detector_effects_keeps_order_and_skips_noise_params(

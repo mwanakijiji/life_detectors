@@ -299,10 +299,8 @@ def run_single_calculation(
             for ch in instrument_dep_terms.output_channels.values():
                 ch.angle_deg = angle_deg
                 ch.astroph_signal.clear()
-                ch.detector_signal_e_bin.clear()
                 ch.readout_frames.clear()
                 ch.extracted_spectra_adu.clear()
-                ch.tables_by_dark_current.clear()
             for effect in instrument_dep_terms.detector_effects:
                 effect.reset()
 
@@ -345,13 +343,9 @@ def run_single_calculation(
             logger.info("Dispersing signals on channel detectors ...")
             instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
 
-            # expose 2D detector frames per readout, apply detector effects, extract per-bin e-
+            # expose 2D detector frames per readout and apply detector effects
             logger.info("Applying detector effects to readout frames ...")
             instrument_dep_terms.apply_detector_effects()
-
-            # pack the signals together (and convert photons to electrons)
-            # output units: ADU total in each wavel bin
-            instrument_dep_terms.combine_astro_and_instrum_signals(plot=plot)
 
             # write the detector readouts to FITS (one HDU per output channel):
             # a cutout around the spectral trace at every angle, plus one full-frame example
@@ -399,6 +393,7 @@ def run_single_calculation(
                 qe=qe,
                 output_channels=instrument_dep_terms.output_channels,
                 save_dir=save_dir,
+                t_frame=float(config["observation"]["t_int_frame"]) * u.second,
                 extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
                 plot=plot,
             )
