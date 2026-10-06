@@ -24,7 +24,9 @@ def _extracted_group_name(qe: float) -> str:
 
 
 def _to_value(quantity, unit: str) -> np.ndarray:
-    return np.asarray(quantity.to_value(unit) if hasattr(quantity, "to_value") else quantity)
+    return np.asarray(
+        quantity.to_value(unit) if hasattr(quantity, "to_value") else quantity
+    )
 
 
 def _write_extracted_spectra(
