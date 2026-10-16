@@ -301,6 +301,8 @@ def run_single_calculation(
                 ch.astroph_signal.clear()
                 ch.readout_frames.clear()
                 ch.extracted_spectra_adu.clear()
+                ch.extracted_error_adu = None
+                ch.extracted_vark_adu2 = None
             for effect in instrument_dep_terms.detector_effects:
                 effect.reset()
 
@@ -383,7 +385,7 @@ def run_single_calculation(
                 readouts_file_name, header_cards=header_cards, cutout=True
             )
 
-            # extract counts vs. wavelength from the readouts (simple box summation)
+            # extract counts vs. wavelength from the readouts ([extraction] method: Sharp & Birchall or box sum)
             logger.info("Extracting spectra from detector readouts ...")
             instrument_dep_terms.extract_spectra_from_readouts()
 
@@ -395,6 +397,8 @@ def run_single_calculation(
                 save_dir=save_dir,
                 t_frame=float(config["observation"]["t_int_frame"]) * u.second,
                 extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
+                extracted_errors_adu=instrument_dep_terms.extracted_errors_adu,
+                extraction_method=instrument_dep_terms.extraction_method,
                 plot=plot,
             )
 
@@ -403,7 +407,6 @@ def run_single_calculation(
         cube_file_names = assemble_extracted_spectra_cubes(
             read_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
             qe=qe,
-            config=config,
             save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
         )
 

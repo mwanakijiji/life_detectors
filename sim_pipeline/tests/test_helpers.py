@@ -422,17 +422,17 @@ class TestModifyConfigFileSweep:
 
 
 class TestRecordInfoAtAngleAndQe:
-    @staticmethod
-    def _extracted(n_readouts: int, n_bins: int):
-        names = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
+    NAMES = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
+
+    @classmethod
+    def _extracted(cls, n_readouts: int, n_bins: int, n_dc: int = 1):
+        shape = (n_dc, n_readouts, n_bins)
         return {
             name: {
-                "star": np.arange(n_readouts * n_bins).reshape(n_readouts, n_bins)
-                * (i + 1.0)
-                * u.adu,
-                "instrum_systematics": np.zeros((n_readouts, n_bins)) * u.adu,
+                "star": np.arange(np.prod(shape)).reshape(shape) * (i + 1.0) * u.adu,
+                "instrum_systematics": np.zeros(shape) * u.adu,
             }
-            for i, name in enumerate(names)
+            for i, name in enumerate(cls.NAMES)
         }
 
     def test_writes_only_extracted_spectra_group(self, tmp_path, make_output_channels):
@@ -459,6 +459,8 @@ class TestRecordInfoAtAngleAndQe:
             assert group.attrs["n_readouts"] == n_readouts
             assert group.attrs["t_frame_s"] == 10.0
             assert group.attrs["gain_e_per_adu"] == 2.0
+            assert group.attrs["extraction_method"] == "sharp_birchall"
+            assert np.allclose(group["dc_rates"][()], [0.0])
             ref = output_channels["output_3_dark"]
             npix = DispersionLaw.n_pix_per_bin(ref.detector.footprint_cube).value
             assert np.allclose(group["npix"][()], npix)
@@ -466,10 +468,61 @@ class TestRecordInfoAtAngleAndQe:
             assert np.allclose(group["width"][()], ref.bin_widths.value)
             assert np.allclose(group["edges"][()], ref.bin_edges.value)
             assert set(group.keys()) >= set(extracted)
+            # no errors passed -> no __ datasets
             assert set(group["output_3_dark"].keys()) == {"star", "instrum_systematics"}
             assert np.allclose(
                 group["output_3_dark"]["star"][()],
                 extracted["output_3_dark"]["star"].value,
+            )
+
+    def test_writes_errors_and_dc_axis(self, tmp_path, make_output_channels):
+        save_dir = str(tmp_path) + "/"
+        output_channels = make_output_channels(n_bins=3)
+        for channel in output_channels.values():
+            channel.detector.dark_current_rate_e_pix_sec = (
+                np.array([0.1, 0.2]) * u.electron / (u.pix * u.s)
+            )
+        extracted = self._extracted(n_readouts=2, n_bins=3, n_dc=2)
+        errors = {
+            name: {
+                "error": np.full((2, 2, 3), 1.5) * u.adu,
+                "vark": np.full((2, 2, 3), 2.0) * u.adu**2,
+            }
+            for name in self.NAMES
+        }
+
+        record_info_at_angle_and_qe(
+            angle_deg=0.0,
+            qe=0.7,
+            output_channels=output_channels,
+            save_dir=save_dir,
+            t_frame=10.0 * u.s,
+            extracted_spectra_adu=extracted,
+            extracted_errors_adu=errors,
+            extraction_method="sharp_birchall",
+            plot=False,
+        )
+
+        with h5py.File(tmp_path / "angle_000.00_qe_0.70.hdf5", "r") as handle:
+            group = handle["__extracted_qe_0.70"]
+            assert np.allclose(group["dc_rates"][()], [0.1, 0.2])
+            assert group.attrs["n_readouts"] == 2
+            ch = group["output_3_dark"]
+            assert ch["star"].shape == (2, 2, 3)
+            assert np.allclose(ch["__error_total"][()], 1.5)
+            assert np.allclose(ch["__vark_total"][()], 2.0)
+            assert ch["__error_total"].attrs["unit"] == "adu"
+
+    def test_rejects_wrong_number_of_dc_slices(self, tmp_path, make_output_channels):
+        with pytest.raises(ValueError, match="DC slices"):
+            record_info_at_angle_and_qe(
+                angle_deg=0.0,
+                qe=0.7,
+                output_channels=make_output_channels(),
+                save_dir=str(tmp_path) + "/",
+                t_frame=10.0 * u.s,
+                extracted_spectra_adu=self._extracted(1, 3, n_dc=2),
+                plot=False,
             )
 
     def test_replaces_stale_file(self, tmp_path, make_output_channels):

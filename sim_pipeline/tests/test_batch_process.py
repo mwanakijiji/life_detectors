@@ -396,6 +396,8 @@ def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
 
     channel = OutputChannel(name=name, angle_deg=angle_deg)
     channel.astroph_signal = {"stale": 2}
+    channel.extracted_error_adu = "stale"
+    channel.extracted_vark_adu2 = "stale"
     return channel
 
 
@@ -947,6 +949,8 @@ class TestRunSingleCalculation:
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
                 assert channel.astroph_signal == {}
                 assert channel.readout_frames == []
+                assert channel.extracted_error_adu is None
+                assert channel.extracted_vark_adu2 is None
                 assert channel.extracted_spectra_adu == {}
                 channel.astroph_signal["filled"] = angle_deg
                 channel.readout_frames.append(angle_deg)

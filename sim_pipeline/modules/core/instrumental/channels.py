@@ -32,7 +32,13 @@ class OutputChannel:
     )  # DetectorFrames for each readout at this angle (written to FITS)
     extracted_spectra_adu: dict = field(
         default_factory=dict
-    )  # per-component ADU, shape (n_readouts, n_bins), box-summed from the FITS readouts
+    )  # per-component ADU, shape (n_dc, n_readouts, n_bins), extracted from the FITS readouts
+    extracted_error_adu: Optional[np.ndarray] = (
+        None  # 1-sigma on the extracted total, (n_dc, n_readouts, n_bins); None for box sum
+    )
+    extracted_vark_adu2: Optional[np.ndarray] = (
+        None  # Sharp & Birchall Eqn 19 vark, (n_dc, n_readouts, n_bins); None for box sum
+    )
     snr: Optional[float] = None
     spec_R: float | None = None  # spectral R
     angle_deg: float | None = None  # rotation angle of transmission screen

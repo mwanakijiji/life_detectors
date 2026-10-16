@@ -12,7 +12,7 @@ from .aperture import (
     _enabled_background_names,
 )
 from .channels import OutputChannel
-from .effects import DetectorEffect, build_detector_effects
+from .effects import DetectorEffect, _config_get, build_detector_effects
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,25 @@ class InstrumentDepTerms:
         return written
 
     def extract_spectra_from_readouts(self):
+        method = str(
+            _config_get(self.config, "extraction", "method", "sharp_birchall")
+        ).strip()
+        ref_detector = next(iter(self.output_channels.values())).detector
         self.extracted_spectra_adu = readouts.extract_spectra_from_readouts(
-            self.output_channels, self.readouts_file_name
+            self.output_channels,
+            self.readouts_file_name,
+            method=method,
+            t_frame=float(self.config["observation"]["t_int_frame"]) * u.second,
+            dc_rates=ref_detector.dark_current_rate_e_pix_sec.to_value(
+                u.electron / (u.pix * u.second)
+            ),
         )
+        self.extraction_method = method
+        self.extracted_errors_adu = {
+            name: {
+                "error": ch.extracted_error_adu,
+                "vark": ch.extracted_vark_adu2,
+            }
+            for name, ch in self.output_channels.items()
+            if ch.extracted_error_adu is not None
+        }

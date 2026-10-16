@@ -25,6 +25,7 @@ charset="utf-8"
 "sim_pipeline.modules.core.planet_spectrum_provider.PopulationSpectrumProvider" [color="black", fontcolor="black", label=<PopulationSpectrumProvider>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.effects.ReadPatternEffect" [color="black", fontcolor="black", label=<ReadPatternEffect>, shape="record", style="solid"];
 "sim_pipeline.modules.core.calculator.s2n_cube.S2NCube" [color="black", fontcolor="black", label=<S2NCube>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.sharp_birchall.SharpBirchallExtractor" [color="black", fontcolor="black", label=<SharpBirchallExtractor>, shape="record", style="solid"];
 "sim_pipeline.modules.core.planet_spectrum_provider.SingleModelFileProvider" [color="black", fontcolor="black", label=<SingleModelFileProvider>, shape="record", style="solid"];
 "sim_pipeline.modules.data.spectra.SpectralData" [color="black", fontcolor="black", label=<SpectralData>, shape="record", style="solid"];
 "sim_pipeline.modules.pipeline_registry.StageSpec" [color="black", fontcolor="black", label=<StageSpec>, shape="record", style="solid"];

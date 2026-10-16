@@ -865,8 +865,9 @@ class TestDetectorReadouts:
             # nothing illuminated outside the cutout
             assert np.isclose(hdu.data[0, 0].sum(), full.sum())
 
+    @pytest.mark.parametrize("method", ["sharp_birchall", "box_sum"])
     def test_extract_from_cutout_matches_full_frame(
-        self, channels_with_frames, tmp_path
+        self, channels_with_frames, tmp_path, method
     ):
         cutout_file = str(tmp_path / "cutout.fits")
         full_file = str(tmp_path / "full.fits")
@@ -874,16 +875,30 @@ class TestDetectorReadouts:
         write_detector_readouts(
             channels_with_frames, full_file, t_frame=10.0 * u.s, cutout=False
         )
-        from_full = extract_spectra_from_readouts(channels_with_frames, full_file)
-        from_cutout = extract_spectra_from_readouts(channels_with_frames, cutout_file)
+        kwargs = dict(method=method, t_frame=10.0 * u.s, dc_rates=[0.1])
+        from_full = extract_spectra_from_readouts(channels_with_frames, full_file, **kwargs)
+        errors_full = {n: ch.extracted_error_adu for n, ch in channels_with_frames.items()}
+        from_cutout = extract_spectra_from_readouts(
+            channels_with_frames, cutout_file, **kwargs
+        )
         for ch_name, spectra in from_full.items():
             for comp, spectrum in spectra.items():
                 assert u.allclose(from_cutout[ch_name][comp], spectrum)
+            if method == "sharp_birchall":
+                assert u.allclose(
+                    channels_with_frames[ch_name].extracted_error_adu,
+                    errors_full[ch_name],
+                )
 
-    def test_extract_keeps_readout_axis_and_conserves_total(
-        self, detector_geometry_config, tmp_path
-    ):
-        config = {"detector": {**detector_geometry_config["detector"], "gain": "2.0"}}
+    @staticmethod
+    def _ramp_channels(detector_geometry_config, read_noise="6.0"):
+        config = {
+            "detector": {
+                **detector_geometry_config["detector"],
+                "gain": "2.0",
+                "read_noise": read_noise,
+            }
+        }
         channels = {}
         for name in [
             "output_1_bright",
@@ -903,28 +918,87 @@ class TestDetectorReadouts:
         apply_detector_effects(
             channels, [_ReadoutRampEffect({})], t_frame=10.0 * u.s, n_readouts=3
         )
+        return channels
+
+    def test_box_sum_keeps_readout_axis_and_conserves_total(
+        self, detector_geometry_config, tmp_path
+    ):
+        channels = self._ramp_channels(detector_geometry_config)
         file_name = str(tmp_path / "readouts.fits")
         write_detector_readouts(channels, file_name, t_frame=10.0 * u.s)
-        extracted = extract_spectra_from_readouts(channels, file_name)
+        extracted = extract_spectra_from_readouts(channels, file_name, method="box_sum")
 
         channel = channels["output_3_dark"]
         star = extracted["output_3_dark"]["star"]
         systematics = extracted["output_3_dark"][SYSTEMATICS_KEY]
         assert star.unit == u.adu
-        assert star.shape == (3, 3)  # (n_readouts, n_bins)
+        assert star.shape == (1, 3, 3)  # (n_dc, n_readouts, n_bins)
         assert channel.extracted_spectra_adu["star"] is star
+        assert channel.extracted_error_adu is None
         bin_map = channel.detector.bin_index_map()
         for i, frames in enumerate(channel.readout_frames):
             image_adu = frames.source_e["star"] / 2.0
-            assert np.isclose(star.value[i].sum(), image_adu.sum())
+            assert np.isclose(star.value[0, i].sum(), image_adu.sum())
             # box sum: each bin is the sum of the pixels assigned to it
             for b in range(3):
-                assert np.isclose(star.value[i, b], image_adu[bin_map == b].sum())
+                assert np.isclose(star.value[0, i, b], image_adu[bin_map == b].sum())
             assert np.isclose(
-                systematics.value[i].sum(),
+                systematics.value[0, i].sum(),
                 (frames.systematics_e[bin_map >= 0] / 2.0).sum(),
             )
-        assert systematics.value[0].sum() < systematics.value[2].sum()
+        assert systematics.value[0, 0].sum() < systematics.value[0, 2].sum()
+
+    def test_sharp_birchall_conserves_totals_and_gives_errors_per_dc(
+        self, detector_geometry_config, tmp_path, caplog
+    ):
+        channels = self._ramp_channels(detector_geometry_config, read_noise="6.0")
+        file_name = str(tmp_path / "readouts.fits")
+        write_detector_readouts(channels, file_name, t_frame=10.0 * u.s)
+        dc_rates = [0.1, 0.5]
+        with caplog.at_level("WARNING"):
+            extracted = extract_spectra_from_readouts(
+                channels, file_name, t_frame=10.0 * u.s, dc_rates=dc_rates
+            )
+        assert "modelled from noiseless readout frames" in caplog.text
+
+        channel = channels["output_3_dark"]
+        det = channel.detector
+        star = extracted["output_3_dark"]["star"]
+        systematics = extracted["output_3_dark"][SYSTEMATICS_KEY]
+        error = channel.extracted_error_adu
+        assert star.shape == systematics.shape == error.shape == (2, 3, 3)
+        assert error.unit == u.adu
+        assert channel.extracted_vark_adu2.shape == (2, 3, 3)
+
+        y0, y1, x0, x1 = det.footprint_bbox()
+        fp = det.footprint_cube[:, y0:y1, x0:x1]
+        image = fp.sum(axis=0)
+        fraction = fp.sum(axis=1) / image.sum(axis=0)  # (n_bins, nx)
+        on_trace = image > 0
+        gain, t, rn = 2.0, 10.0, 6.0
+        for i_dc, dc in enumerate(dc_rates):
+            for i, frames in enumerate(channel.readout_frames):
+                star_adu = frames.source_e["star"][y0:y1, x0:x1] / gain
+                sys_adu = frames.systematics_e[y0:y1, x0:x1] / gain
+                # flux conserved, and split between bins by fractional column coverage
+                assert np.isclose(star.value[i_dc, i].sum(), star_adu[on_trace].sum())
+                assert np.allclose(star.value[i_dc, i], fraction @ star_adu.sum(axis=0))
+                assert np.isclose(systematics.value[i_dc, i].sum(), sys_adu[on_trace].sum())
+                # error^2 = sum_x f^2 Var(column), Var(column) = 1 / sum_y (phi^2 / sigma^2)
+                total_e = (star_adu + sys_adu) * gain
+                sigma2 = (total_e + dc * t) / gain**2 + (rn / gain) ** 2
+                phi = image / image.sum(axis=0)
+                col_var = 1.0 / np.sum(phi**2 / sigma2, axis=0)
+                assert np.allclose(error.value[i_dc, i] ** 2, (fraction**2) @ col_var)
+        # more dark current, larger errors; same flux
+        assert np.all(error.value[1] > error.value[0])
+        assert u.allclose(star[0], star[1])
+
+    def test_unknown_extraction_method_raises(self, channels_with_frames, tmp_path):
+        file_name = str(tmp_path / "readouts.fits")
+        write_detector_readouts(channels_with_frames, file_name, t_frame=10.0 * u.s)
+        with pytest.raises(ValueError, match="Unknown extraction method"):
+            extract_spectra_from_readouts(channels_with_frames, file_name, method="nope")
 
 
 class _ReadoutRampEffect(DetectorEffect):
