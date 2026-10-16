@@ -6,14 +6,8 @@ import configparser
 import logging
 import os
 import re
-import sys
-import types
 
 import pytest
-
-# Mock ipdb before importing loader (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
 
 from modules.utils.loader import config_getboolean, load_config, setup_logging
 
@@ -55,6 +49,7 @@ class TestConfigGetBoolean:
 class TestLoadConfig:
     @pytest.fixture
     def ini_config_path(self, tmp_path):
+        """Path to a small INI config file."""
         config_path = tmp_path / "test_config.ini"
         cfg = configparser.ConfigParser()
         cfg.add_section("dirs")
@@ -67,7 +62,7 @@ class TestLoadConfig:
         cfg.set("nulling", "enabled", "false")
         cfg.add_section("target")
         cfg.set("target", "planet_source", "BB")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             cfg.write(f)
         return str(config_path)
 
@@ -91,7 +86,8 @@ class TestLoadConfig:
     def test_empty_config_returns_empty_dict(self, tmp_path):
         config_path = tmp_path / "empty.ini"
         config_path.write_text("")
-        assert load_config(str(config_path), makedirs=False) == {}
+        result = load_config(str(config_path), makedirs=False)
+        assert isinstance(result, dict) and not result
 
     def test_logs_loaded_sections(self, ini_config_path, caplog):
         with caplog.at_level(logging.INFO):
@@ -104,6 +100,7 @@ class TestLoadConfig:
 class TestSetupLogging:
     @pytest.fixture(autouse=True)
     def reset_logging(self):
+        """Restore the root logger after each test."""
         yield
         root = logging.getLogger()
         root.handlers = []
@@ -138,7 +135,7 @@ class TestSetupLogging:
         for handler in logging.getLogger().handlers:
             handler.flush()
 
-        with open(log_path) as f:
+        with open(log_path, encoding="utf-8") as f:
             assert "loader test message" in f.read()
 
     def test_creates_log_dir_when_missing(self, tmp_path):

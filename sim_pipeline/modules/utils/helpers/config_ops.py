@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 def get_sweep_range(obs: dict, prefix: str) -> list[float]:
     """
-    Build [start, start+step, ..., stop] from obs[prefix_start], obs[prefix_stop], obs[prefix_step].
+    Build [start, start+step, ..., stop] from obs[prefix_start], obs[prefix_stop],
+    obs[prefix_step].
 
     The stop value is included by extending the range by one step.
     """
@@ -38,7 +39,7 @@ def validate_file_path(filepath: Union[str, Path]) -> bool:
     try:
         path = Path(filepath)
         return path.exists() and path.is_file() and path.stat().st_size > 0
-    except Exception:
+    except (OSError, TypeError, ValueError):
         return False
 
 
@@ -72,10 +73,10 @@ def apply_output_root_override(config_path: str, output_root: Optional[str]) -> 
     os.makedirs(normalized_root, exist_ok=True)
     config.set("dirs", "save_s2n_data_unique_dir", normalized_root)
 
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         config.write(f)
 
-    logger.info(f"Using overridden output root: {normalized_root}")
+    logger.info("Using overridden output root: %s", normalized_root)
     return config_path
 
 
@@ -101,7 +102,7 @@ def modify_config_file_sweep(
     )
     if not os.path.exists(temp_config_dir):
         os.makedirs(temp_config_dir, exist_ok=True)
-    with open(temp_config_path, "w") as f:
+    with open(temp_config_path, "w", encoding="utf-8") as f:
         config.write(f)
 
     return temp_config_path
@@ -141,7 +142,7 @@ def modify_config_file_pl_system_params(
         str(system_params["abs_file_name_psg_spectrum"]),
     )
     logger.info(
-        f"NASA PSG spectrum file name: {system_params['abs_file_name_psg_spectrum']}"
+        "NASA PSG spectrum file name: %s", system_params["abs_file_name_psg_spectrum"]
     )
     config.set("target", "Stype", str(system_params["Stype"]))
     config.set("target", "Nuniverse", str(system_params["Nuniverse"]))
@@ -189,10 +190,10 @@ def modify_config_file_pl_system_params(
 
     temp_config_dir = os.path.dirname(temp_config_path)
     os.makedirs(temp_config_dir, exist_ok=True)
-    with open(temp_config_path, "w") as f:
+    with open(temp_config_path, "w", encoding="utf-8") as f:
         config.write(f)
     logger.info(
-        f"Created temporary config file for one planetary system: {temp_config_path}"
+        "Created temporary config file for one planetary system: %s", temp_config_path
     )
 
     return temp_config_path

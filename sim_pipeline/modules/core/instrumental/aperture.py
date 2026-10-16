@@ -3,8 +3,8 @@
 import logging
 from typing import List, Sequence
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 
 from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.spectra import compute_collecting_area_m2
@@ -31,6 +31,8 @@ class InstrumentBackground:
 
 
 class TelescopeThermalBackground(InstrumentBackground):
+    """Thermal emission of the telescope (placeholder: zero until a model is added)."""
+
     name = "telescope_thermal"
 
     def flux_ph_sec_um(self, wavel: u.Quantity, config) -> u.Quantity:
@@ -51,9 +53,13 @@ def pass_through_aperture(
     prop_dict: dict,
     plot: bool = False,
 ):
-    # pass each astrophysical source through the telescope aperture, and update prop_dict with the propagated terms
+    # pass each astrophysical source through the telescope aperture, and update
+    # prop_dict with the propagated terms
     # photons/sec/m^2 -> photons/sec
 
+    """Pass each source through the telescope aperture: apply throughput and
+    collecting area (ph/s/m^2/um -> ph/s/um), storing the cubes in prop_dict.
+    """
     transmission_screen_order = [
         "output_1_bright",
         "output_2_bright",
@@ -68,7 +74,7 @@ def pass_through_aperture(
     # apply throughput and collecting area to the flux
     for source_name, source_val in sources_astroph.items():
 
-        post_aperture_flux_by_output = {
+        post_aperture_flux = {
             output_name: eta_t
             * np.multiply(
                 collecting_area,
@@ -77,14 +83,17 @@ def pass_through_aperture(
             for output_name in transmission_screen_order
         }
 
-        # note telescope throughput is incorporated at the stage of passing through the aperture
-        ## ## TODO; make a separate module for throughput, and add other terms (telescope background, etc.)
+        # note telescope throughput is incorporated at the stage of passing through the
+        # aperture
+        # ## TODO; make a separate module for throughput, and add other terms (telescope
+        # background, etc.)
         prop_dict[source_name] = {
             "wavel": source_val["wavel"],
             "flux_cube_post_screen_pre_aperture_ph_sec_m2_um": source_val[
                 "flux_cube_post_screen_ph_sec_m2_um"
             ],
-            "flux_cube_post_screen_post_aperture_ph_sec_um": post_aperture_flux_by_output,  # includes chop signal if enabled
+            # includes chop signal if enabled
+            "flux_cube_post_screen_post_aperture_ph_sec_um": post_aperture_flux,
         }
 
     # overplot all the sources
@@ -130,9 +139,7 @@ def pass_through_aperture(
                 save_dir + f"poster_post_aperture_flux_{output_name}.pdf",
             )
 
-    logging.info(f"Passed astrophysical flux through telescope aperture...")
-
-    return
+    logging.info("Passed astrophysical flux through telescope aperture...")
 
 
 @pipeline_stage(depends_on=("pass_through_aperture",))

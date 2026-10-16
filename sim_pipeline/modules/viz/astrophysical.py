@@ -29,7 +29,8 @@ def plot_incident_flux(
     plt.ylabel(f"Flux ({flux.unit})")
     plt.title(
         format_plot_title(
-            f"Incident flux from {source_name} (at Earth, rescaled for distance {distance_pc} pc)",
+            f"Incident flux from {source_name} (at Earth, rescaled for distance "
+            f"{distance_pc} pc)",
             config,
         )
     )
@@ -62,7 +63,7 @@ def plot_onsky_scene_fyi(
         ax.set_title(f"{name}")
         try:
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        except Exception:
+        except (ValueError, TypeError):
             logger.warning("No colorbar for %s", name)
 
     ax = axes[0, -1]

@@ -15,6 +15,7 @@ import pandas as pd
 from ...pipeline_registry import pipeline_stage
 from ...viz.aperture import plot_astro_ph_sec_pixel
 from ...viz.detector import plot_detector_footprint
+from .detector import Detector
 
 logger = logging.getLogger(__name__)
 
@@ -123,10 +124,7 @@ def disperse_astro_signals_on_detector(
     Disperse post-aperture flux onto each channel detector via DispersionLaw,
     then apply detector QE.
     """
-    # imported here: detector.py imports DispersionLaw from this module
-    from .detector import Detector
-
-    ## ## TODO: allow different dispersion laws for each output channel
+    # ## TODO: allow different dispersion laws for each output channel
     dispersion_law = DispersionLaw(config)
 
     source_names = list(source_names) + list(background_source_names)
@@ -136,7 +134,7 @@ def disperse_astro_signals_on_detector(
             output_channel.detector = Detector(
                 config=config, num_wavel_bins=len(output_channel.bin_centers)
             )
-        logging.info(f"Dispersing signals on detector for {output_channel.name}")
+        logging.info("Dispersing signals on detector for %s", output_channel.name)
 
         footprint_cube = dispersion_law.make_footprint(
             output_channel.detector.side_length_pix,
@@ -153,7 +151,7 @@ def disperse_astro_signals_on_detector(
             )
 
         n_int_this_angle = int(config["observation"]["N_int_per_angle"])
-        logging.info(f"Number of frames at this angle position: {n_int_this_angle:d}")
+        logging.info("Number of frames at this angle position: %d", n_int_this_angle)
 
         n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint_cube)
 
@@ -206,11 +204,14 @@ def disperse_astro_signals_on_detector(
                 flux_astro_1d_interpolated_ph_sec_um
             )
 
+            per_um = flux_astro_1d_interpolated_ph_sec_um.decompose()
+            per_bin = flux_astro_1d_interpolated_ph_sec_wavel_bin.decompose()
+            per_pixel = flux_astro_1d_interpolated_ph_sec_pixel.decompose()
             output_channel.astroph_signal[source_name] = {
                 "wavel": output_channel.bin_centers,
-                "flux_astro_1d_interpolated_ph_sec_um": flux_astro_1d_interpolated_ph_sec_um.decompose(),
-                "flux_astro_1d_interpolated_ph_sec_wavel_bin": flux_astro_1d_interpolated_ph_sec_wavel_bin.decompose(),
-                "flux_astro_1d_interpolated_ph_sec_pixel": flux_astro_1d_interpolated_ph_sec_pixel.decompose(),
+                "flux_astro_1d_interpolated_ph_sec_um": per_um,
+                "flux_astro_1d_interpolated_ph_sec_wavel_bin": per_bin,
+                "flux_astro_1d_interpolated_ph_sec_pixel": per_pixel,
                 "n_pix_per_wavel_bin": n_pix_per_wavel_bin.decompose(),
             }
 
@@ -300,5 +301,3 @@ def disperse_astro_signals_on_detector(
                 config,
                 file_name_plot,
             )
-
-    return

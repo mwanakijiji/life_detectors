@@ -20,9 +20,9 @@ digraph pipeline {
 
   calculate_received_astro_fluxes [label="calculate_received_astro_fluxes"];
   arrange_onsky_scene [label="arrange_onsky_scene"];
+  apply_detector_effects [label="apply_detector_effects"];
   disperse_astro_signals_on_detector [label="disperse_astro_signals_on_detector"];
   record_info_at_angle_and_qe [label="record_info_at_angle_and_qe"];
-  apply_detector_effects [label="apply_detector_effects"];
   assemble_extracted_spectra_cubes [label="assemble_extracted_spectra_cubes"];
   pass_through_aperture [label="pass_through_aperture"];
   pass_from_aperture_to_detector [label="pass_from_aperture_to_detector"];
@@ -32,9 +32,9 @@ digraph pipeline {
   pass_through_transmission_screens [label="pass_through_transmission_screens"];
 
   calculate_received_astro_fluxes -> arrange_onsky_scene;
+  disperse_astro_signals_on_detector -> apply_detector_effects;
   pass_from_aperture_to_detector -> disperse_astro_signals_on_detector;
   extract_spectra_from_readouts -> record_info_at_angle_and_qe;
-  disperse_astro_signals_on_detector -> apply_detector_effects;
   record_info_at_angle_and_qe -> assemble_extracted_spectra_cubes;
   pass_through_transmission_screens -> pass_through_aperture;
   pass_through_aperture -> pass_from_aperture_to_detector;

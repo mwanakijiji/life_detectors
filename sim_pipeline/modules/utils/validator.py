@@ -5,10 +5,8 @@ This module validates configuration files to ensure all required
 parameters are present and have valid values.
 """
 
-from typing import Dict, Any, List, Optional
 import logging
-import ipdb
-import numpy as np
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +61,7 @@ class ConfigValidator:
         # Check for required sections
         for section in self.required_sections:
             if section not in config:
-                logging.error(f"Missing required section: {section}")
+                logging.error("Missing required section: %s", section)
 
         # Validate telescope section
         if "telescope" in config:
@@ -85,44 +83,38 @@ class ConfigValidator:
         if "astrophysical_sources" in config:
             self._validate_astrophysical_sources(config["astrophysical_sources"])
 
-        return
-
     def _validate_telescope(self, telescope_config: Dict[str, Any]) -> List[str]:
         """Validate telescope configuration section."""
 
         for field in self.required_telescope_fields:
             if field not in telescope_config:
-                logging.error(f"Missing telescope field: {field}")
+                logging.error("Missing telescope field: %s", field)
             else:
                 value = telescope_config[field]
                 if not isinstance(float(value), (int, float)) or float(value) <= 0:
                     # all values here should be convertable to floats
-                    logging.error(f"Invalid telescope {field}: must be positive number")
-
-        return
+                    logging.error(
+                        "Invalid telescope %s: must be positive number", field
+                    )
 
     def _validate_target(self, target_config: Dict[str, Any]) -> List[str]:
         """Validate target configuration section."""
 
         for field in self.required_target_fields:
             if field not in target_config:
-                logging.error(f"Missing target field: {field}")
+                logging.error("Missing target field: %s", field)
             else:
                 value = target_config[field]
                 if not isinstance(float(value), (int, float)) or float(value) <= 0:
                     # all values here should be convertable to floats
-                    logging.error(f"Invalid target {field}: must be positive number")
-
-        return
+                    logging.error("Invalid target %s: must be positive number", field)
 
     def _validate_detector(self, detector_config: Dict[str, Any]) -> List[str]:
         """Validate detector configuration section."""
 
         for field in self.required_detector_fields:
             if field not in detector_config:
-                logging.error(f"Missing detector field: {field}")
-
-        return
+                logging.error("Missing detector field: %s", field)
 
     def _validate_wavelength_range(
         self, wavelength_config: Dict[str, Any]
@@ -131,20 +123,18 @@ class ConfigValidator:
 
         for field in self.required_wavelength_fields:
             if field not in wavelength_config:
-                logging.error(f"Missing wavelength_range field: {field}")
+                logging.error("Missing wavelength_range field: %s", field)
             else:
                 value = wavelength_config[field]
                 if not isinstance(float(value), (int, float)) or float(value) <= 0:
                     logging.error(
-                        f"Invalid wavelength_range {field}: must be positive number"
+                        "Invalid wavelength_range %s: must be positive number", field
                     )
 
         # Check that min < max
         if "min" in wavelength_config and "max" in wavelength_config:
             if float(wavelength_config["min"]) >= float(wavelength_config["max"]):
                 logging.error("wavelength_range min must be less than max")
-
-        return
 
     def _validate_astrophysical_sources(
         self, sources_config: Dict[str, Any]
@@ -155,9 +145,7 @@ class ConfigValidator:
 
         for source in expected_sources:
             if source not in sources_config:
-                logging.error(f"Missing astrophysical source: {source}")
-
-        return
+                logging.error("Missing astrophysical source: %s", source)
 
 
 def validate_config(config: Dict[str, Any]) -> bool:
@@ -177,12 +165,12 @@ def validate_config(config: Dict[str, Any]) -> bool:
     handler = logging.Handler()
     handler.emit = lambda record: errors.append(record.getMessage())
     handler.setLevel(logging.ERROR)
-    logger = logging.getLogger()
-    logger.addHandler(handler)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
     try:
         validator.validate_config(config)
         return len(errors) == 0
     except (ValueError, TypeError):
         return False
     finally:
-        logger.removeHandler(handler)
+        root_logger.removeHandler(handler)

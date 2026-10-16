@@ -2,24 +2,17 @@
 Unit tests for astrophysical calculations in AstrophysicalSources.
 """
 
+# pytest fixtures are injected by argument name
+# pylint: disable=redefined-outer-name
+# the private flux helper is exercised directly
+# pylint: disable=protected-access
+
 import configparser
-import sys
-import types
 from unittest.mock import MagicMock, patch
-
-# Mock ipdb before importing project modules (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
-
-from modules.utils.helpers.spectra import (
-    generate_star_spectrum,
-    generate_planet_bb_spectrum,
-)
 
 import numpy as np
 import pandas as pd
 import pytest
-import astropy.constants as const
 from astropy import units as u
 from astropy.units import UnitConversionError
 
@@ -33,7 +26,12 @@ from modules.core.astrophysical import (
     generate_star_scene,
     generate_zodiacal_scene,
 )
+from modules.core.planet_spectrum_provider import SingleModelFileProvider
 from modules.data.spectra import SpectralData
+from modules.utils.helpers.spectra import (
+    generate_planet_bb_spectrum,
+    generate_star_spectrum,
+)
 
 
 class TestAstrophysicalSources:
@@ -41,6 +39,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def config_with_sources(self):
+        """Config whose sources library points at the sample spectrum files."""
         config = configparser.ConfigParser()
         config.add_section("nulling")
         config.set("nulling", "nulling_factor", "0.00001")
@@ -52,6 +51,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def config_no_sources(self):
+        """Config with no astrophysical sources library section."""
         config = configparser.ConfigParser()
         config.add_section("nulling")
         config.set("nulling", "nulling_factor", "0.00001")
@@ -59,6 +59,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def sample_spectrum_zodiacal(self):
+        """Flat sample zodiacal spectrum."""
         wavelength = np.array([1.0, 2.0, 3.0])
         flux = np.array([10.0, 20.0, 30.0])
         return SpectralData(
@@ -72,6 +73,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def sample_spectrum_star(self):
+        """Sample stellar spectrum with photon-rate units."""
         wavelength = np.array([1.0, 2.0, 3.0])
         flux = np.array([10.0, 20.0, 30.0])
         return SpectralData(
@@ -85,6 +87,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def sample_spectrum_star_bb_spectrum(self):
+        """Blackbody stellar spectrum for a Sun-like star."""
         cfg = configparser.ConfigParser()
         cfg["target"] = {"rad_star": "1.0", "T_star": "5778"}
         cfg["dirs"] = {"save_s2n_data_unique_dir": "/tmp"}  # only needed if plot=True
@@ -103,6 +106,7 @@ class TestAstrophysicalSources:
 
     @pytest.fixture
     def sample_spectrum_bad_units(self):
+        """Sample spectrum with inconsistent units."""
         wavelength = np.array([1.0, 2.0, 3.0])
         flux = np.array([10.0, 20.0, 30.0])
         return SpectralData(
@@ -121,7 +125,9 @@ class TestAstrophysicalSources:
             "modules.core.astrophysical.load_spectrum_from_file",
             return_value=sample_spectrum_star,
         ) as loader:
-            sources = AstrophysicalSources(config_with_sources)
+            sources = AstrophysicalSources(
+                config_with_sources, planet_spectrum_provider=MagicMock()
+            )
 
         assert set(sources.spectra.keys()) == {"star", "exozodiacal", "zodiacal"}
         assert loader.call_count == 3
@@ -131,9 +137,11 @@ class TestAstrophysicalSources:
 
     def test_load_spectra_missing_section_logs_warning(self, config_no_sources, caplog):
         with caplog.at_level("WARNING"):
-            sources = AstrophysicalSources(config_no_sources)
+            sources = AstrophysicalSources(
+                config_no_sources, planet_spectrum_provider=MagicMock()
+            )
 
-        assert sources.spectra == {}
+        assert isinstance(sources.spectra, dict) and not sources.spectra
         assert (
             "No [astrophysical_sources_library] section found in config file."
             in caplog.text
@@ -142,7 +150,9 @@ class TestAstrophysicalSources:
     def test_calculate_flux_from_spectrum_zodiacal_no_distance(
         self, config_with_sources, sample_spectrum_zodiacal
     ):
-        sources = AstrophysicalSources(config_with_sources)
+        sources = AstrophysicalSources(
+            config_with_sources, planet_spectrum_provider=MagicMock()
+        )
         sources.spectra["zodiacal"] = sample_spectrum_zodiacal
 
         wavelength = np.array([1.5, 2.5]) * u.um
@@ -162,9 +172,12 @@ class TestAstrophysicalSources:
     def test_calculate_flux_from_ad_hoc_spectrum_applies_distance(
         self, config_with_sources, sample_spectrum_star
     ):
-        # checks if the distance correction is applied correctly (emitted spectrum is completely ad hoc)
+        # checks if the distance correction is applied correctly (emitted spectrum is
+        # completely ad hoc)
 
-        sources = AstrophysicalSources(config_with_sources)
+        sources = AstrophysicalSources(
+            config_with_sources, planet_spectrum_provider=MagicMock()
+        )
         sources.spectra["star"] = sample_spectrum_star
         wavelength = np.array([1.5, 2.5]) * u.um
 
@@ -196,10 +209,9 @@ class TestAstrophysicalSources:
                 flux_incident_predicted.value, flux_incident_expected.value
             )
 
-    def test_calculate_flux_from_bb_spectrum_applies_distance(
-        self, config_with_sources, sample_spectrum_star
-    ):
-        # checks if the distance correction is applied correctly (emitted spectrum is BB)
+    def test_calculate_flux_from_bb_spectrum_applies_distance(self):
+        # checks if the distance correction is applied correctly (emitted spectrum is
+        # BB)
 
         # config with star like Sun
         cfg_ersatz = configparser.ConfigParser()
@@ -207,7 +219,7 @@ class TestAstrophysicalSources:
         cfg_ersatz["dirs"] = {
             "save_s2n_data_unique_dir": "/tmp"
         }  # only needed if plot=True
-        sources = AstrophysicalSources(cfg_ersatz)
+        sources = AstrophysicalSources(cfg_ersatz, planet_spectrum_provider=MagicMock())
 
         wavelength_grid = np.array([1.0, 5.0]) * u.um
         lum_phot_star, _ = generate_star_spectrum(
@@ -262,7 +274,7 @@ class TestAstrophysicalSources:
         cfg_ersatz["dirs"] = {
             "save_s2n_data_unique_dir": "/tmp"
         }  # only needed if plot=True
-        sources = AstrophysicalSources(cfg_ersatz)
+        sources = AstrophysicalSources(cfg_ersatz, planet_spectrum_provider=MagicMock())
 
         wavelength_grid = np.array([1.0, 5.0]) * u.um
         lum_phot_planet, _ = generate_planet_bb_spectrum(
@@ -294,10 +306,9 @@ class TestAstrophysicalSources:
             incident_predicted.value, incident_expected_dist_10, rtol=1e-2
         )
 
-    def test_calculate_flux_from_spectrum_star_bb_spectrum_at_source(
-        self, sample_spectrum_star_bb_spectrum
-    ):
-        # check if the emitted stellar flux makes physical sense (note this is not the incident flux at Earth)
+    def test_calculate_flux_from_spectrum_star_bb_spectrum_at_source(self):
+        # check if the emitted stellar flux makes physical sense (note this is not the
+        # incident flux at Earth)
 
         # config with star like Sun
         cfg_ersatz = configparser.ConfigParser()
@@ -332,7 +343,9 @@ class TestAstrophysicalSources:
     def test_calculate_flux_from_spectrum_logs_warning_for_inconsistent_units(
         self, config_with_sources, sample_spectrum_bad_units, caplog
     ):
-        sources = AstrophysicalSources(config_with_sources)
+        sources = AstrophysicalSources(
+            config_with_sources, planet_spectrum_provider=MagicMock()
+        )
         sources.spectra["zodiacal"] = sample_spectrum_bad_units
         wavelength = np.array([1.5, 2.5]) * u.um
 
@@ -373,13 +386,15 @@ class TestAstrophysicalSources:
     @pytest.mark.parametrize(
         "source_name", ["star", "exoplanet_bb", "exozodiacal", "zodiacal"]
     )
-    def test_calculate_received_astro_fluxes_source_branch_returns_expected_units_and_values(
+    def test_received_astro_fluxes_source_branch_units_and_values(
         self, config_for_incident_flux, source_name
     ):
         expected_flux = np.array([11.0, 22.0, 33.0]) * u.ph / (u.um * u.m**2 * u.s)
 
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
-            sources = AstrophysicalSources(config_for_incident_flux)
+            sources = AstrophysicalSources(
+                config_for_incident_flux, planet_spectrum_provider=MagicMock()
+            )
 
         with patch.object(
             sources, "_calculate_flux_from_spectrum", return_value=expected_flux
@@ -432,10 +447,11 @@ class TestAstrophysicalSources:
         )
 
         # temporarily replace some functions with mock functions
+        provider = SingleModelFileProvider("/tmp/model_10pc.txt")
         with patch("modules.core.astrophysical.load_spectrum_from_file"), patch(
-            "modules.core.astrophysical.pd.read_csv", return_value=df_model
+            "modules.core.planet_spectrum_provider.pd.read_csv", return_value=df_model
         ):
-            sources = AstrophysicalSources(config)
+            sources = AstrophysicalSources(config, planet_spectrum_provider=provider)
             incident = sources.calculate_received_astro_fluxes(
                 source_name="exoplanet_model_10pc", plot=False
             )
@@ -451,7 +467,8 @@ class TestAstrophysicalSources:
 
         empirical = incident["pre_screen_astro_flux_ph_sec_m2_um"]
 
-        # calculate_received_astro_fluxes always uses 100 wavelength points (ignores n_points in config)
+        # calculate_received_astro_fluxes always uses 100 wavelength points (ignores
+        # n_points in config)
         wavelength = np.linspace(1.0, 3.0, 100) * u.micron
         flux_photons_expected = flux_photons_10pc * (10.0 / 20.0) ** 2
         expected = np.interp(
@@ -475,14 +492,16 @@ class TestAstrophysicalSources:
         self, config_for_incident_flux
     ):
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
-            sources = AstrophysicalSources(config_for_incident_flux)
+            sources = AstrophysicalSources(
+                config_for_incident_flux, planet_spectrum_provider=MagicMock()
+            )
 
         result = sources.calculate_received_astro_fluxes(
             source_name="not_a_source", plot=False
         )
 
         assert isinstance(result, np.ndarray)
-        assert result.size == 0
+        assert np.size(result) == 0
 
     @patch("modules.viz.astrophysical.plt.savefig")
     @patch("modules.viz.astrophysical.plt.plot")
@@ -492,7 +511,9 @@ class TestAstrophysicalSources:
         expected_flux = np.array([11.0, 22.0, 33.0]) * u.ph / (u.um * u.m**2 * u.s)
 
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
-            sources = AstrophysicalSources(config_for_incident_flux)
+            sources = AstrophysicalSources(
+                config_for_incident_flux, planet_spectrum_provider=MagicMock()
+            )
 
         with patch.object(
             sources, "_calculate_flux_from_spectrum", return_value=expected_flux
@@ -566,7 +587,8 @@ class TestExozodiKernel:
         )
         center = 11 // 2
 
-        # r=0 is non-finite in the power law; implementation assigns it the peak ring value.
+        # r=0 is non-finite in the power law; implementation assigns it the peak ring
+        # value.
         assert kernel[center, center] == pytest.approx(np.max(kernel))
         assert kernel[center, center] >= kernel[center, center + 1]
         assert kernel[center, center] >= kernel[center + 1, center]
@@ -611,6 +633,7 @@ class TestZodiacalKernel:
 
 @pytest.fixture
 def sample_flux_1d():
+    """Small 1D flux array for kernel/scene tests."""
     return np.array([1.0, 2.0, 3.0]) * u.ph / (u.um * u.m**2 * u.s)
 
 
@@ -676,7 +699,9 @@ class TestGenerateZodiacalScene:
 class TestGenerateOnskyScene:
     @staticmethod
     def _mock_subplots_axes(n_cols: int = 5):
-        """Mimic plt.subplots(..., squeeze=False): shape (1, n_cols) object array of Axes."""
+        """Mimic plt.subplots(..., squeeze=False): shape (1,
+        n_cols) object array of Axes.
+        """
         fig = MagicMock()
         axes = np.empty((1, n_cols), dtype=object)
         for j in range(n_cols):
@@ -687,6 +712,7 @@ class TestGenerateOnskyScene:
 
     @pytest.fixture
     def onsky_config(self, tmp_path):
+        """Config for building an on-sky scene."""
         config = configparser.ConfigParser()
         config.add_section("onsky_scene")
         config.set("onsky_scene", "n_pix", "11")
@@ -703,6 +729,7 @@ class TestGenerateOnskyScene:
 
     @pytest.fixture
     def incident_dict(self):
+        """Incident fluxes for star, planet, exozodi and zodi."""
         wavel = np.linspace(4.0, 18.0, 5) * u.um
         flux_unit = u.ph / (u.um * u.m**2 * u.s)
         return {
@@ -732,17 +759,19 @@ class TestGenerateOnskyScene:
     def test_builds_scene_for_all_sources(
         self,
         mock_subplots,
-        mock_savefig,
-        mock_writeto,
-        mock_colorbar,
-        mock_close,
+        _mock_savefig,
+        _mock_writeto,
+        _mock_colorbar,
+        _mock_close,
         onsky_config,
         incident_dict,
     ):
         mock_subplots.return_value = self._mock_subplots_axes()
 
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
-            sources = AstrophysicalSources(onsky_config)
+            sources = AstrophysicalSources(
+                onsky_config, planet_spectrum_provider=MagicMock()
+            )
 
         scene = sources.arrange_onsky_scene(incident_dict, plot=False)
 
@@ -759,7 +788,7 @@ class TestGenerateOnskyScene:
     @patch("modules.viz.astrophysical.plt.savefig")
     @patch("modules.viz.astrophysical.plt.subplots")
     def test_raises_when_source_flux_units_differ(
-        self, mock_subplots, mock_savefig, mock_writeto, onsky_config, incident_dict
+        self, mock_subplots, _mock_savefig, _mock_writeto, onsky_config, incident_dict
     ):
         mock_subplots.return_value = self._mock_subplots_axes()
         incident_dict["exozodiacal"]["pre_screen_astro_flux_ph_sec_m2_um"] = (
@@ -767,7 +796,9 @@ class TestGenerateOnskyScene:
         )
 
         with patch("modules.core.astrophysical.load_spectrum_from_file"):
-            sources = AstrophysicalSources(onsky_config)
+            sources = AstrophysicalSources(
+                onsky_config, planet_spectrum_provider=MagicMock()
+            )
 
         with pytest.raises(ValueError, match="flux units differ"):
             sources.arrange_onsky_scene(incident_dict, plot=False)

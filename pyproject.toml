@@ -47,6 +47,8 @@ target-version = ['py38']
 
 [tool.pytest.ini_options]
 testpaths = ["sim_pipeline/tests"]
+# code imports "modules...." / "batch_process" relative to sim_pipeline/
+pythonpath = ["sim_pipeline"]
 python_files = ["test_*.py"]
 addopts = "--cov=batch_process --cov=modules --cov-report=html --cov-report=term-missing"
 

@@ -61,26 +61,38 @@
 <path fill="none" stroke="#444444" d="M444.23,-51.57C452.28,-52.97 460.45,-54.4 468.6,-55.82"/>
 <polygon fill="#444444" stroke="#444444" points="467.73,-59.23 478.18,-57.5 468.93,-52.33 467.73,-59.23"/>
 </g>
-<!-- disperse_astro_signals_on_detector -->
-<g id="node4" class="node">
-<title>disperse_astro_signals_on_detector</title>
-<path fill="white" stroke="black" d="M1324.75,-94C1324.75,-94 1140.75,-94 1140.75,-94 1134.75,-94 1128.75,-88 1128.75,-82 1128.75,-82 1128.75,-70 1128.75,-70 1128.75,-64 1134.75,-58 1140.75,-58 1140.75,-58 1324.75,-58 1324.75,-58 1330.75,-58 1336.75,-64 1336.75,-70 1336.75,-70 1336.75,-82 1336.75,-82 1336.75,-88 1330.75,-94 1324.75,-94"/>
-<text xml:space="preserve" text-anchor="middle" x="1232.75" y="-70.95" font-family="Times,serif" font-size="14.00">disperse_astro_signals_on_detector</text>
-</g>
 <!-- apply_detector_effects -->
-<g id="node6" class="node">
+<g id="node4" class="node">
 <title>apply_detector_effects</title>
 <path fill="white" stroke="black" d="M1499.75,-94C1499.75,-94 1384.75,-94 1384.75,-94 1378.75,-94 1372.75,-88 1372.75,-82 1372.75,-82 1372.75,-70 1372.75,-70 1372.75,-64 1378.75,-58 1384.75,-58 1384.75,-58 1499.75,-58 1499.75,-58 1505.75,-58 1511.75,-64 1511.75,-70 1511.75,-70 1511.75,-82 1511.75,-82 1511.75,-88 1505.75,-94 1499.75,-94"/>
 <text xml:space="preserve" text-anchor="middle" x="1442.25" y="-70.95" font-family="Times,serif" font-size="14.00">apply_detector_effects</text>
 </g>
+<!-- write_detector_readouts -->
+<g id="node10" class="node">
+<title>write_detector_readouts</title>
+<path fill="white" stroke="black" d="M1682.25,-94C1682.25,-94 1559.75,-94 1559.75,-94 1553.75,-94 1547.75,-88 1547.75,-82 1547.75,-82 1547.75,-70 1547.75,-70 1547.75,-64 1553.75,-58 1559.75,-58 1559.75,-58 1682.25,-58 1682.25,-58 1688.25,-58 1694.25,-64 1694.25,-70 1694.25,-70 1694.25,-82 1694.25,-82 1694.25,-88 1688.25,-94 1682.25,-94"/>
+<text xml:space="preserve" text-anchor="middle" x="1621" y="-70.95" font-family="Times,serif" font-size="14.00">write_detector_readouts</text>
+</g>
+<!-- apply_detector_effects&#45;&gt;write_detector_readouts -->
+<g id="edge8" class="edge">
+<title>apply_detector_effects&#45;&gt;write_detector_readouts</title>
+<path fill="none" stroke="#444444" d="M1512.09,-76C1519.93,-76 1527.99,-76 1536,-76"/>
+<polygon fill="#444444" stroke="#444444" points="1535.74,-79.5 1545.74,-76 1535.74,-72.5 1535.74,-79.5"/>
+</g>
+<!-- disperse_astro_signals_on_detector -->
+<g id="node5" class="node">
+<title>disperse_astro_signals_on_detector</title>
+<path fill="white" stroke="black" d="M1324.75,-94C1324.75,-94 1140.75,-94 1140.75,-94 1134.75,-94 1128.75,-88 1128.75,-82 1128.75,-82 1128.75,-70 1128.75,-70 1128.75,-64 1134.75,-58 1140.75,-58 1140.75,-58 1324.75,-58 1324.75,-58 1330.75,-58 1336.75,-64 1336.75,-70 1336.75,-70 1336.75,-82 1336.75,-82 1336.75,-88 1330.75,-94 1324.75,-94"/>
+<text xml:space="preserve" text-anchor="middle" x="1232.75" y="-70.95" font-family="Times,serif" font-size="14.00">disperse_astro_signals_on_detector</text>
+</g>
 <!-- disperse_astro_signals_on_detector&#45;&gt;apply_detector_effects -->
-<g id="edge4" class="edge">
+<g id="edge2" class="edge">
 <title>disperse_astro_signals_on_detector&#45;&gt;apply_detector_effects</title>
 <path fill="none" stroke="#444444" d="M1337.2,-76C1345.24,-76 1353.3,-76 1361.15,-76"/>
 <polygon fill="#444444" stroke="#444444" points="1361,-79.5 1371,-76 1361,-72.5 1361,-79.5"/>
 </g>
 <!-- record_info_at_angle_and_qe -->
-<g id="node5" class="node">
+<g id="node6" class="node">
 <title>record_info_at_angle_and_qe</title>
 <path fill="white" stroke="black" d="M2115.5,-94C2115.5,-94 1962.25,-94 1962.25,-94 1956.25,-94 1950.25,-88 1950.25,-82 1950.25,-82 1950.25,-70 1950.25,-70 1950.25,-64 1956.25,-58 1962.25,-58 1962.25,-58 2115.5,-58 2115.5,-58 2121.5,-58 2127.5,-64 2127.5,-70 2127.5,-70 2127.5,-82 2127.5,-82 2127.5,-88 2121.5,-94 2115.5,-94"/>
 <text xml:space="preserve" text-anchor="middle" x="2038.88" y="-70.95" font-family="Times,serif" font-size="14.00">record_info_at_angle_and_qe</text>
@@ -96,18 +108,6 @@
 <title>record_info_at_angle_and_qe&#45;&gt;assemble_extracted_spectra_cubes</title>
 <path fill="none" stroke="#444444" d="M2127.88,-76C2135.76,-76 2143.81,-76 2151.86,-76"/>
 <polygon fill="#444444" stroke="#444444" points="2151.72,-79.5 2161.72,-76 2151.72,-72.5 2151.72,-79.5"/>
-</g>
-<!-- write_detector_readouts -->
-<g id="node10" class="node">
-<title>write_detector_readouts</title>
-<path fill="white" stroke="black" d="M1682.25,-94C1682.25,-94 1559.75,-94 1559.75,-94 1553.75,-94 1547.75,-88 1547.75,-82 1547.75,-82 1547.75,-70 1547.75,-70 1547.75,-64 1553.75,-58 1559.75,-58 1559.75,-58 1682.25,-58 1682.25,-58 1688.25,-58 1694.25,-64 1694.25,-70 1694.25,-70 1694.25,-82 1694.25,-82 1694.25,-88 1688.25,-94 1682.25,-94"/>
-<text xml:space="preserve" text-anchor="middle" x="1621" y="-70.95" font-family="Times,serif" font-size="14.00">write_detector_readouts</text>
-</g>
-<!-- apply_detector_effects&#45;&gt;write_detector_readouts -->
-<g id="edge8" class="edge">
-<title>apply_detector_effects&#45;&gt;write_detector_readouts</title>
-<path fill="none" stroke="#444444" d="M1512.09,-76C1519.93,-76 1527.99,-76 1536,-76"/>
-<polygon fill="#444444" stroke="#444444" points="1535.74,-79.5 1545.74,-76 1535.74,-72.5 1535.74,-79.5"/>
 </g>
 <!-- pass_through_aperture -->
 <g id="node8" class="node">
@@ -128,7 +128,7 @@
 <polygon fill="#444444" stroke="#444444" points="889.27,-79.5 899.27,-76 889.27,-72.5 889.27,-79.5"/>
 </g>
 <!-- pass_from_aperture_to_detector&#45;&gt;disperse_astro_signals_on_detector -->
-<g id="edge2" class="edge">
+<g id="edge3" class="edge">
 <title>pass_from_aperture_to_detector&#45;&gt;disperse_astro_signals_on_detector</title>
 <path fill="none" stroke="#444444" d="M1093.08,-76C1100.98,-76 1109.02,-76 1117.05,-76"/>
 <polygon fill="#444444" stroke="#444444" points="1116.86,-79.5 1126.86,-76 1116.86,-72.5 1116.86,-79.5"/>
@@ -146,7 +146,7 @@
 <polygon fill="#444444" stroke="#444444" points="1718.25,-79.5 1728.25,-76 1718.25,-72.5 1718.25,-79.5"/>
 </g>
 <!-- extract_spectra_from_readouts&#45;&gt;record_info_at_angle_and_qe -->
-<g id="edge3" class="edge">
+<g id="edge4" class="edge">
 <title>extract_spectra_from_readouts&#45;&gt;record_info_at_angle_and_qe</title>
 <path fill="none" stroke="#444444" d="M1914.58,-76C1922.57,-76 1930.68,-76 1938.72,-76"/>
 <polygon fill="#444444" stroke="#444444" points="1938.53,-79.5 1948.53,-76 1938.53,-72.5 1938.53,-79.5"/>

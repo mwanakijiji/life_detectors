@@ -1,4 +1,6 @@
-"""Detector: pixel grid, QE, gain and noise parameters (not the spectrograph dispersion law)."""
+"""Detector: pixel grid, QE, gain and noise parameters (not the spectrograph dispersion
+law).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +10,6 @@ from typing import Dict
 import astropy.units as u
 import numpy as np
 
-from .dispersion import DispersionLaw
 from .effects import DetectorFrames, _config_get
 
 logger = logging.getLogger(__name__)
@@ -68,22 +69,30 @@ class Detector:
         """Attach an illumination footprint from a DispersionLaw."""
         self.footprint_cube = footprint_cube
 
+    def footprint_image(self) -> np.ndarray:
+        """Footprint summed over wavelength bins, as a 2D (n_pix, n_pix) image."""
+        self._require_footprint()
+        return np.sum(self.footprint_cube, axis=0)
+
     def bin_index_map(self) -> np.ndarray:
         """
-        (n_pix, n_pix) map of the wavelength bin each pixel belongs to, for box extraction.
+        (n_pix, n_pix) map of the wavelength bin each pixel belongs to, for box
+        extraction.
 
         A pixel shared by two bins goes entirely to the bin covering most of it
         (the lower bin on a tie); pixels off the footprint are -1.
         """
         self._require_footprint()
         bin_map = np.argmax(self.footprint_cube, axis=0)
-        bin_map[DispersionLaw.footprint_image(self.footprint_cube) <= 0] = -1
+        bin_map[self.footprint_image() <= 0] = -1
         return bin_map
 
     def footprint_bbox(self) -> tuple[int, int, int, int]:
-        """(y0, y1, x0, x1) bounding box of the illuminated footprint (end-exclusive)."""
+        """(y0, y1, x0, x1) bounding box of the
+        illuminated footprint (end-exclusive).
+        """
         self._require_footprint()
-        on_footprint = DispersionLaw.footprint_image(self.footprint_cube) > 0
+        on_footprint = self.footprint_image() > 0
         rows = np.flatnonzero(on_footprint.any(axis=1))
         cols = np.flatnonzero(on_footprint.any(axis=0))
         return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
@@ -95,11 +104,14 @@ class Detector:
     def _require_footprint(self) -> None:
         if self.footprint_cube is None:
             raise RuntimeError(
-                "Detector.footprint_cube is unset; call set_footprint() with a DispersionLaw result first"
+                "Detector.footprint_cube is unset; call set_footprint() with a "
+                "DispersionLaw result first"
             )
 
     def expose(self, astroph_signal: dict, t_frame: u.Quantity) -> DetectorFrames:
-        """Paint each source's per-bin photon rate onto the pixel grid for one readout (e-/pix)."""
+        """Paint each source's per-bin photon rate onto the pixel grid for one readout
+        (e-/pix).
+        """
         self._require_footprint()
         source_e = {}
         for source_name, sig in astroph_signal.items():

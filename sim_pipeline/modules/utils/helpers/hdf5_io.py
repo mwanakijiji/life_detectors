@@ -45,7 +45,10 @@ def _write_extracted_spectra(
     extracted_errors_adu: dict | None,
     extraction_method: str,
 ) -> None:
-    """Write per-readout extracted spectra (and errors) and bin geometry to an angle HDF5 file."""
+    """Write per-readout extracted spectra (and errors) and bin geometry to an angle
+    HDF5
+    file.
+    """
     ref_channel = output_channels["output_3_dark"]
     det = ref_channel.detector
     dc_rates = np.atleast_1d(
@@ -69,7 +72,9 @@ def _write_extracted_spectra(
         for ch_name, spectra in extracted_spectra_adu.items():
             ch_group = group.create_group(ch_name)
             for component, spectrum in spectra.items():
-                values = np.asarray(spectrum.to_value("adu"))  # (n_dc, n_readouts, n_bins)
+                values = np.asarray(
+                    spectrum.to_value("adu")
+                )  # (n_dc, n_readouts, n_bins)
                 if values.shape[0] != len(dc_rates):
                     raise ValueError(
                         f"{ch_name}/{component}: {values.shape[0]} DC slices, "
@@ -102,8 +107,7 @@ def record_info_at_angle_and_qe(
     extracted_spectra_adu: dict,
     extracted_errors_adu: dict | None = None,
     extraction_method: str = "sharp_birchall",
-    plot: bool = True,
-) -> dict:
+) -> None:
     """
     Save one HDF5 file for this rotation angle and QE (any existing file is replaced)
 
@@ -114,10 +118,13 @@ def record_info_at_angle_and_qe(
             dc_rates                    dark-current values (e-/pix/s), one per DC slice
             npix, center, width, edges  bin geometry (pix, um)
             {channel}/{component}       (n_dc, n_readouts, n_bins) ADU per frame
-            {channel}/__error_total     (n_dc, n_readouts, n_bins) 1-sigma on the total, ADU
-            {channel}/__vark_total      (n_dc, n_readouts, n_bins) Sharp & Birchall Eqn 19 vark, ADU^2
+            {channel}/__error_total     (n_dc, n_readouts, n_bins) 1-sigma on the total,
+            ADU
+            {channel}/__vark_total      (n_dc, n_readouts, n_bins) Sharp & Birchall Eqn
+            19 vark, ADU^2
                                         (the two __ datasets only for Sharp & Birchall)
-            attrs: angle_deg, qe, t_frame_s, gain_e_per_adu, n_readouts, extraction_method
+            attrs: angle_deg, qe, t_frame_s, gain_e_per_adu, n_readouts,
+                extraction_method
     """
 
     file_name_hdf5 = f"{save_dir}{format_angle_qe_hdf5_name(angle_deg, qe)}"
@@ -136,8 +143,8 @@ def record_info_at_angle_and_qe(
         extraction_method=extraction_method,
     )
     logger.info(
-        f"Recorded angle {angle_deg}: extracted spectra in "
-        f"{file_name_hdf5}:{_extracted_group_name(qe)}"
+        "Recorded angle %s: extracted spectra in %s:%s",
+        angle_deg,
+        file_name_hdf5,
+        _extracted_group_name(qe),
     )
-
-    return

@@ -47,7 +47,9 @@ def format_angle_qe_hdf5_name(angle_deg: float, qe: float) -> str:
 
 
 def format_angle_qe_fits_readouts_name(angle_deg: float, qe: float) -> str:
-    """Return ``readouts_angle_{angle}_qe_{qe}.fits`` (same formatting as the HDF5 names)."""
+    """Return ``readouts_angle_{angle}_qe_{qe}.fits``
+    (same formatting as the HDF5 names).
+    """
     return (
         f"readouts_angle_{canonical_angle_deg(angle_deg):06.2f}"
         f"_qe_{canonical_qe(qe):04.2f}.fits"
@@ -55,7 +57,9 @@ def format_angle_qe_fits_readouts_name(angle_deg: float, qe: float) -> str:
 
 
 def format_qe_fits_full_example_name(qe: float) -> str:
-    """Return ``readouts_full_example_qe_{qe}.fits`` (one full-frame example per QE run)."""
+    """Return ``readouts_full_example_qe_{qe}.fits`` (one
+    full-frame example per QE run).
+    """
     return f"readouts_full_example_qe_{canonical_qe(qe):04.2f}.fits"
 
 
@@ -77,7 +81,9 @@ def parse_angle_from_hdf5_path(path: Union[str, Path]) -> float:
 
 
 def parse_qe_from_hdf5_path(path: Union[str, Path]) -> Optional[float]:
-    """Parse QE from ``angle_*_qe_{qe}.hdf5``; return None if the name has no QE suffix."""
+    """Parse QE from ``angle_*_qe_{qe}.hdf5``; return
+    None if the name has no QE suffix.
+    """
     stem = Path(path).stem
     if "_qe_" not in stem:
         return None
@@ -86,7 +92,9 @@ def parse_qe_from_hdf5_path(path: Union[str, Path]) -> Optional[float]:
 
 
 def hdf5_path_matches_qe(path: Union[str, Path], qe: float) -> bool:
-    """True when ``path`` is an angle HDF5 for ``qe`` (legacy names without QE always match)."""
+    """True when ``path`` is an angle HDF5 for ``qe`` (legacy names without QE always
+    match).
+    """
     file_qe = parse_qe_from_hdf5_path(path)
     if file_qe is None:
         return True
@@ -94,7 +102,9 @@ def hdf5_path_matches_qe(path: Union[str, Path], qe: float) -> bool:
 
 
 def parse_dc_qe_group(dc_qe_str: str) -> tuple[float, float]:
-    """Parse ``dc_{dc}_qe_{qe}`` group names written by ``record_info_at_angle_and_qe``."""
+    """Parse ``dc_{dc}_qe_{qe}`` group names written by
+    ``record_info_at_angle_and_qe``.
+    """
     match = _DC_QE_GROUP_RE.match(dc_qe_str)
     if match is None:
         raise ValueError(f"Unrecognized HDF5 group name: {dc_qe_str!r}")

@@ -4,7 +4,7 @@ Unit tests for modules.utils.helpers.
 
 import configparser
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import astropy.constants as const
 import h5py
@@ -13,8 +13,8 @@ import pandas as pd
 import pytest
 import yaml
 from astropy import units as u
-from astropy.table import QTable
 
+from modules.core.instrumental.dispersion import DispersionLaw
 from modules.utils.helpers.config_ops import (
     _normalize_output_root,
     apply_output_root_override,
@@ -33,7 +33,6 @@ from modules.utils.helpers.formatting import (
     format_astro_source_label,
     format_plot_title,
 )
-from modules.core.instrumental.dispersion import DispersionLaw
 from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
 from modules.utils.helpers.keys import (
     canonical_angle_deg,
@@ -234,7 +233,8 @@ class TestTitleBuilders:
     def test_format_plot_title_two_column_astrophysical_sources(self):
         cfg = {
             "plotting": {
-                "title_context": "collecting area = 25.00 m^2\ntelescope throughput = 0.05"
+                "title_context": "collecting area = 25.00 m^2\n"
+                "telescope throughput = 0.05"
             },
             "astrophysical_sources_to_use": {
                 "star": True,
@@ -313,7 +313,7 @@ class TestParseSkyPosition:
 
 class TestComputeCollectingAreaM2:
     def test_matches_aperture_yaml_and_mirror_diameter(self):
-        with open(APERTURE_YAML) as f:
+        with open(APERTURE_YAML, encoding="utf-8") as f:
             n_apertures = len(yaml.safe_load(f)["apertures"])
         diameter_m = 2.0
         config = {
@@ -369,7 +369,7 @@ class TestApplyOutputRootOverride:
         cfg = configparser.ConfigParser()
         cfg.add_section("dirs")
         cfg.set("dirs", "save_s2n_data_unique_dir", "/old/path/")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             cfg.write(f)
 
         result_path = apply_output_root_override(str(config_path), str(output_root))
@@ -391,12 +391,13 @@ class TestApplyOutputRootOverride:
 class TestModifyConfigFileSweep:
     @pytest.fixture
     def minimal_config_path(self, tmp_path):
+        """Path to a minimal config file for sweep-config tests."""
         config_path = tmp_path / "main_config.ini"
         cfg = configparser.ConfigParser()
         cfg.add_section("detector")
         cfg.set("detector", "quantum_efficiency", "0.8")
         cfg.set("detector", "read_noise", "6")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             cfg.write(f)
         return str(config_path)
 
@@ -448,7 +449,6 @@ class TestRecordInfoAtAngleAndQe:
             save_dir=save_dir,
             t_frame=10.0 * u.s,
             extracted_spectra_adu=extracted,
-            plot=False,
         )
 
         with h5py.File(tmp_path / "angle_045.00_qe_0.70.hdf5", "r") as handle:
@@ -500,7 +500,6 @@ class TestRecordInfoAtAngleAndQe:
             extracted_spectra_adu=extracted,
             extracted_errors_adu=errors,
             extraction_method="sharp_birchall",
-            plot=False,
         )
 
         with h5py.File(tmp_path / "angle_000.00_qe_0.70.hdf5", "r") as handle:
@@ -522,7 +521,6 @@ class TestRecordInfoAtAngleAndQe:
                 save_dir=str(tmp_path) + "/",
                 t_frame=10.0 * u.s,
                 extracted_spectra_adu=self._extracted(1, 3, n_dc=2),
-                plot=False,
             )
 
     def test_replaces_stale_file(self, tmp_path, make_output_channels):
@@ -538,7 +536,6 @@ class TestRecordInfoAtAngleAndQe:
             save_dir=save_dir,
             t_frame=10.0 * u.s,
             extracted_spectra_adu=self._extracted(1, 3),
-            plot=False,
         )
 
         with h5py.File(hdf5_path, "r") as handle:
@@ -643,7 +640,6 @@ class TestGeneratePlanetBBSpectrum:
 
     def test_generate_planet_bb_spectrum_physical_sense_10pc(self):
         cfg = self._make_config(rad_planet=1.0, pl_temp=300.0)
-        wavelength_um = np.array([5.0, 10.0, 15.0]) * u.um
         # photons/s/um; W/um
         lph_5_um, len_5_um = generate_planet_bb_spectrum(
             cfg, wavelength_um=5.0 * u.um, plot=False
@@ -726,12 +722,8 @@ class TestGenerateZodiacalSpectrum:
         cfg_lo = self._make_config(tau_opt=4e-8)
         cfg_hi = self._make_config(tau_opt=8e-8)
 
-        ph_lo, en_lo, en_MJy_sr_lo = generate_zodiacal_spectrum(
-            cfg_lo, wavelength_um, plot=False
-        )
-        ph_hi, en_hi, en_MJy_sr_hi = generate_zodiacal_spectrum(
-            cfg_hi, wavelength_um, plot=False
-        )
+        ph_lo, en_lo, _ = generate_zodiacal_spectrum(cfg_lo, wavelength_um, plot=False)
+        ph_hi, en_hi, _ = generate_zodiacal_spectrum(cfg_hi, wavelength_um, plot=False)
 
         # Model is linear in tau_opt, so doubling tau_opt doubles outputs.
         assert np.allclose((ph_hi / ph_lo).value, 2.0)
@@ -786,7 +778,6 @@ class TestCreateSampleData:
     def test_create_sample_data_writes_expected_files(self, tmp_path, monkeypatch):
         cfg = self._make_config(str(tmp_path / "data"))
         n = 100
-        wavelength_um = np.logspace(-1, 1.4, n) * u.um
         photons_um_s = np.ones(n) * u.ph / (u.um * u.s)
         energy_w_um = np.ones(n) * u.W / u.um
         photons_um_s_m2 = np.ones(n) * u.ph / (u.um * u.s * u.m**2)

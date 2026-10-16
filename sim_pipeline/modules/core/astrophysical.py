@@ -7,23 +7,20 @@ stars, exoplanets, exozodiacal disks, and zodiacal backgrounds.
 Sky coordinate convention: y first, x second (see instrumental.py module doc).
 """
 
-import numpy as np
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
-import logging
-import ipdb
 import configparser
-from astropy import units as u
+import logging
+
 import astropy.constants as const
+import numpy as np
 import pandas as pd
+from astropy import units as u
 from astropy.io import fits
 
-
-from ..data.spectra import SpectralData, load_spectrum_from_file
+from ..core.planet_spectrum_provider import PlanetSpectrumProvider
+from ..data.spectra import load_spectrum_from_file
 from ..pipeline_registry import pipeline_stage
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
 from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
-from ..core.planet_spectrum_provider import PlanetSpectrumProvider
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +38,9 @@ def _box_kernel(n_pix: int, idx_y: int, idx_x: int, half_pix: int) -> np.ndarray
 
 
 def _circle_kernel(n_pix: int, idx_y: int, idx_x: int, half_pix: int) -> np.ndarray:
-    """Normalized circular kernel centered on (idx_y, idx_x); half_pix is the radius in pixels."""
+    """Normalized circular kernel centered on (idx_y, idx_x); half_pix is the radius in
+    pixels.
+    """
     y_idx, x_idx = np.ogrid[:n_pix, :n_pix]
     kernel = ((y_idx - idx_y) ** 2 + (x_idx - idx_x) ** 2 <= half_pix**2).astype(float)
     kernel /= kernel.sum()
@@ -60,7 +59,8 @@ def _exozodi_kernel(
     Sigma_m_0=7.12e-08,
 ) -> np.ndarray:
     """
-    Conical exozodi kernel
+    Conical exozodi kernel (centred on the array; idx_y/idx_x are accepted for
+    interface symmetry with the other kernels but not used yet)
 
     INPUTS:
         n_pix: number of pixels in the scene
@@ -76,21 +76,24 @@ def _exozodi_kernel(
     RETURNS:
         kernel: 2D array of the exozodi
     """
+    del idx_y, idx_x
 
     # Ref.: Kennedy+ 2015 ApJSS 216:23, Eqn. (3)
     # Sigma_m(r) = z * Sigma_m_0 * (r/r0)^(-alpha)
 
-    # note that a single spectrum is just spread across this resolved shape according to surface
+    # note that a single spectrum is just spread across this resolved shape according to
+    # surface
     # density, for simplicity at the moment
 
-    ## ## TODO: peg exozodi parameters to the model that generates the spectrum
+    # ## TODO: peg exozodi parameters to the model that generates the spectrum
 
     r0_arsec = (r0_au / dist_pc).value * u.arcsec
 
     # make a slice representing au from the center of the disk
     kernel = np.zeros((n_pix, n_pix))
 
-    # n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to simplify centering
+    # n_pix = int(self.config['onsky_scene']['n_pix']) # should be odd number to
+    # simplify centering
     axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
     sky_xx_arcsec, sky_yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing="xy")
 
@@ -113,8 +116,10 @@ def _exozodi_kernel(
 
 def _zodiacal_kernel(n_pix: int, pix_size_arcsec: float) -> np.ndarray:
     """
-    Zodiacal background kernel
+    Zodiacal background kernel (uniform; pix_size_arcsec is accepted for interface
+    symmetry with the other kernels but not used)
     """
+    del pix_size_arcsec
     kernel = np.ones((n_pix, n_pix))
     kernel /= kernel.sum()
 
@@ -237,12 +242,15 @@ class AstrophysicalSources:
                         spectrum_file_name
                     )
                     logger.info(
-                        f"Loaded spectrum for {source_name}: {spectrum_file_name}"
+                        "Loaded spectrum for %s: %s", source_name, spectrum_file_name
                     )
 
-                except Exception as e:
+                except (OSError, ValueError, KeyError) as e:
                     logger.warning(
-                        f"Did not load self-generated spectrum for {source_name}: {e}; either missing, or will need to read in from other file"
+                        "Did not load self-generated spectrum for %s: %s; either "
+                        "missing, or will need to read in from other file",
+                        source_name,
+                        e,
                     )
         else:
             logger.warning(
@@ -257,29 +265,34 @@ class AstrophysicalSources:
         null: bool = False,
     ) -> u.Quantity:
         """
-        Helper function to interpolate a stored spectrum and apply distance corrections (but not nulling yet!)
+        Helper function to interpolate a stored spectrum and apply distance corrections
+        (but not nulling yet!)
 
         Args:
             source_name: Name of the source (star, exoplanet_bb, exozodiacal, zodiacal)
             wavelength: Wavelength grid (with units)
             distance_set: Distance to the source (pc); ignored if source is zodiacal
-            null: Whether to apply nulling for the star (vestigial; null is applied in the S/N calculator)
+            null: Whether to apply nulling for the star (vestigial; null is applied in
+                the S/N calculator)
 
         Returns:
             Flux array with units ph / (um m^2 s)
         """
+        del null  # vestigial: nulling is applied in the S/N calculator
 
         spectrum = self.spectra[source_name]
 
         # Interpolate to the requested wavelength grid
-        # (note this is not integrating over wavelength for each interpolated data point)
+        # (note this is not integrating over wavelength for each interpolated data
+        # point)
         interpolated_spectrum = spectrum.interpolate(wavelength)
 
-        # Apply distance correction, if the source is not zodiacal (which is already in brightness units as seen from Earth)
+        # Apply distance correction, if the source is not zodiacal (which is already in
+        # brightness units as seen from Earth)
         if source_name != "zodiacal":
             distance = distance_set * u.pc  # parsecs
             distance_correction = 1.0 / (4 * np.pi * distance**2)  # 1/r^2 law
-            logging.info(f"Distance of object set to: {distance_set} pc")
+            logging.info("Distance of object set to: %s pc", distance_set)
         else:
             distance_correction = 1.0
 
@@ -291,9 +304,9 @@ class AstrophysicalSources:
             flux_incident = flux_incident * distance_correction
 
         if flux_incident.unit.is_equivalent(u.ph / (u.um * u.m**2 * u.s)):
-            logger.info(f"Flux units consistent for source: {source_name}")
+            logger.info("Flux units consistent for source: %s", source_name)
         else:
-            logger.warning(f"Flux units not consistent for source: {source_name}")
+            logger.warning("Flux units not consistent for source: %s", source_name)
 
         return flux_incident.to(u.ph / (u.um * u.m**2 * u.s))
 
@@ -305,9 +318,11 @@ class AstrophysicalSources:
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
 
         Args:
-            source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb, exoplanet_model_10pc, exoplanet_psg)
+            source_name: Name of the source (star, zodiacal, exozodiacal, exoplanet_bb,
+                exoplanet_model_10pc, exoplanet_psg)
             null: apply the nulling factor? (only applies to star target)
-            system_params: system parameters dictionary (optional; use in case of planet population)
+            system_params: system parameters dictionary (optional; use in case of planet
+                population)
 
         Returns:
             Flux array, with units # in photons/sec/m^2/micron
@@ -317,7 +332,7 @@ class AstrophysicalSources:
 
         # should star be nulled?
         null = self.config.getboolean("nulling", "null")
-        logger.info(f"Nulling of star: {null}")
+        logger.info("Nulling of star: %s", null)
 
         wavelength_incident_cube_points = (
             np.linspace(
@@ -362,7 +377,8 @@ class AstrophysicalSources:
             "exozodiacal_psg",
         ]:
 
-            # read in the NASA PSG spectrum file name associated with the planets in the population
+            # read in the NASA PSG spectrum file name associated with the planets in the
+            # population
             df = pd.read_csv(
                 self.config["target"]["psg_spectrum_file_name"],
                 names=["wavel", "flux_total", "flux_noise", "flux_planet"],
@@ -371,7 +387,8 @@ class AstrophysicalSources:
             )
 
             logger.info(
-                f"!!! --- OVERWRITING PSG PLANET SPECTRUM FILE WITH A BLACKBODY; FIX LATER --- !!!"
+                "!!! --- OVERWRITING PSG PLANET SPECTRUM FILE WITH A BLACKBODY; FIX "
+                "LATER --- !!!"
             )
             flux_incident = self._calculate_flux_from_spectrum(
                 source_name=source_name,
@@ -382,9 +399,9 @@ class AstrophysicalSources:
 
             wavel = df["wavel"].values * u.micron
 
-            # note source is already at the desired distance; should not be rescaled as if it were at 10 pc
+            # note source is already at the desired distance; should not be rescaled as
+            # if it were at 10 pc
             flux_nu = df["flux_planet"].values * u.erg / (u.second * u.Hz * u.m**2)
-            err_flux_nu = df["flux_noise"].values * u.erg / (u.second * u.Hz * u.m**2)
 
             # convert to F_lambda
             flux_lambda = flux_nu * (const.c / wavel**2)
@@ -399,10 +416,11 @@ class AstrophysicalSources:
             )
 
             print(
-                "!!!------- FLUX CONVERSION FROM PSG FILE BEING DONE INCORRECTLY; CORRECT LATER -------!!!"
-            )  ## ## TODO
+                "!!!------- FLUX CONVERSION FROM PSG FILE BEING DONE INCORRECTLY; "
+                "CORRECT LATER -------!!!"
+            )  # ## TODO
 
-            ## ## TODO: MAKE SURE SCALING, UNITS ARE RIGHT
+            # ## TODO: MAKE SURE SCALING, UNITS ARE RIGHT
             # get BB spectrum for making a rough rescaling of the PSG spectrum
 
             flux_bb_incident = self._calculate_flux_from_spectrum(
@@ -410,7 +428,9 @@ class AstrophysicalSources:
                 wavelength=wavelength_incident_cube_points,
                 null=False,
             )
-            # flux_incident_junk = self._calculate_flux_from_spectrum(source_name="exoplanet_model_10pc", wavelength=wavelength, null=False)
+            # flux_incident_junk =
+            # self._calculate_flux_from_spectrum(source_name="exoplanet_model_10pc",
+            # wavelength=wavelength, null=False)
 
             # integrate the BB spectrum over the wavelength grid
             flux_incident_bb_integrated = np.trapz(
@@ -430,11 +450,12 @@ class AstrophysicalSources:
             flux_incident = flux_psg_incident / ratio_incident_psg_over_bb
 
         else:
-            logger.warning(f"Spectrum not available for {source_name}")
+            logger.warning("Spectrum not available for %s", source_name)
             return np.array([])
 
         incident_dict["wavel"] = wavelength_incident_cube_points
-        # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit consistency
+        # units ph/um/sec * (1/pc^2) * (pc / 3.086e16 m)^2 <-- last term is for unit
+        # consistency
         # = ph/um/m^2/sec
 
         incident_dict["pre_screen_astro_flux_ph_sec_m2_um"] = flux_incident
@@ -462,7 +483,8 @@ class AstrophysicalSources:
     )
     def arrange_onsky_scene(self, incident_dict: dict, plot: bool = False):
         """
-        Construct the on-sky scene from the incident flux dictionary and positions of objects as set in the config file.
+        Construct the on-sky scene from the incident flux dictionary and positions of
+        objects as set in the config file.
 
         INPUTS:
             incident_dict: dictionary of incident flux for each source
@@ -487,16 +509,17 @@ class AstrophysicalSources:
         sky_yy_arcsec = yy_arcsec
 
         # point sources only for now
-        ## ## TODO: ADD RESOLVED SOURCES
-        """
-        for source_name in incident_dict:
-            if source_name is "star":
-                x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in incident_dict[source_name]["pos_star_arcsec"].split(","))
-            elif source_name is "exoplanet_model_10pc":
-                x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in incident_dict[source_name]["pos_star_arcsec"].split(","))
-            else:
-                continue
-        """
+        # ## TODO: ADD RESOLVED SOURCES
+        # for source_name in incident_dict:
+        #     if source_name is "star":
+        #         x_star_arcsec, y_star_arcsec = (float(v.strip()) for v in
+        # incident_dict[source_name]["pos_star_arcsec"].split(","))
+        #     elif source_name is "exoplanet_model_10pc":
+        #         x_planet_arcsec, y_planet_arcsec = (float(v.strip()) for v in
+        # incident_dict[source_name]["pos_star_arcsec"].split(","))
+        #     else:
+        #         continue
+        #
         y_star_arcsec, x_star_arcsec = parse_sky_position_arcsec_yx(
             self.config["onsky_scene"]["pos_star_arcsec"]
         )
@@ -515,17 +538,24 @@ class AstrophysicalSources:
             ]  # to check units
             if flux_dict[source_name].unit != flux_star.unit:
                 raise ValueError(
-                    f"{source_name} flux units differ: {flux_dict[source_name].unit} vs {flux_star.unit}"
+                    f"{source_name} flux units differ: {flux_dict[source_name].unit} "
+                    f"vs {flux_star.unit}"
                 )
-            else:
-                logger.info(
-                    f"Constructing scene. {source_name} flux units are consistent: {flux_dict[source_name].unit}"
-                )
+            logger.info(
+                "Constructing scene. %s flux units are consistent: %s",
+                source_name,
+                flux_dict[source_name].unit,
+            )
 
-        # flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   # (n_wavel,) Quantity
-        # flux_planet = incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] # (n_wavel,) Quantity
-        # flux_exozodi = incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
-        # flux_zodiacal = incident_dict['zodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
+        # flux_star = incident_dict['star']['pre_screen_astro_flux_ph_sec_m2_um']   #
+        # (n_wavel,) Quantity
+        # flux_planet =
+        # incident_dict['exoplanet_model_10pc']['pre_screen_astro_flux_ph_sec_m2_um'] #
+        # (n_wavel,) Quantity
+        # flux_exozodi =
+        # incident_dict['exozodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
+        # flux_zodiacal =
+        # incident_dict['zodiacal']['pre_screen_astro_flux_ph_sec_m2_um']
 
         idx_y_star = (np.abs(sky_yy_arcsec[:, 0] - y_star_arcsec)).argmin()
         idx_x_star = (np.abs(sky_xx_arcsec[0, :] - x_star_arcsec)).argmin()
@@ -580,7 +610,7 @@ class AstrophysicalSources:
         if plot:  # pragma: no cover
             file_name_plot = (
                 str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                + f"/scene_no_screen_fyi.png"
+                + "/scene_no_screen_fyi.png"
             )
             plot_onsky_scene_fyi(
                 canvas_3D_dict,
@@ -598,10 +628,10 @@ class AstrophysicalSources:
             # save the scene to FITS file
             wavel_array = incident_dict["exoplanet_model_10pc"][
                 "wavel"
-            ]  ## ## TODO: GENERALIZE THIS
+            ]  # ## TODO: GENERALIZE THIS
             file_name_fits = (
                 str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                + f"scene_no_screen.fits"
+                + "scene_no_screen.fits"
             )
             hdul = fits.HDUList(
                 [
@@ -619,6 +649,6 @@ class AstrophysicalSources:
                 ]
             )
             hdul.writeto(file_name_fits, overwrite=True)
-            logger.info(f"Saved scene to {file_name_fits}")
+            logger.info("Saved scene to %s", file_name_fits)
 
         return dict_source_layered_scene

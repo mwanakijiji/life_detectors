@@ -8,6 +8,7 @@ flow — this module does not orchestrate execution.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -26,7 +27,21 @@ class StageSpec:
 
 
 _REGISTRY: Dict[str, StageSpec] = {}
-_IMPORTS_DONE = False
+# mutable module state (avoids `global`): whether the stage modules were imported
+_STATE = {"imports_done": False}
+
+# modules whose @pipeline_stage decorators populate the registry when imported;
+# import order is unimportant
+_STAGE_MODULES = (
+    "modules.core.astrophysical",
+    "modules.core.calculator.extracted_cube",
+    "modules.core.instrumental.aperture",
+    "modules.core.instrumental.dispersion",
+    "modules.core.instrumental.effects",
+    "modules.core.instrumental.readouts",
+    "modules.core.instrumental.transmission",
+    "modules.utils.helpers.hdf5_io",
+)
 
 
 def pipeline_stage(
@@ -80,35 +95,22 @@ def register_planned_stage(
 
 
 def get_registry() -> Dict[str, StageSpec]:
+    """Return a copy of the registered stages, keyed by stage id."""
     return dict(_REGISTRY)
 
 
 def clear_registry() -> None:
     """Test helper."""
-    global _IMPORTS_DONE
     _REGISTRY.clear()
-    _IMPORTS_DONE = False
+    _STATE["imports_done"] = False
 
 
 def ensure_stages_registered() -> Dict[str, StageSpec]:
     """Import decorated modules so the registry is populated."""
-    global _IMPORTS_DONE
-    if not _IMPORTS_DONE:
-        # Import order is unimportant; each module self-registers via decorators.
-        from modules.core import astrophysical as _astro  # noqa: F401
-        from modules.core.calculator import (
-            extracted_cube as _extracted_cube,
-        )  # noqa: F401
-        from modules.core.instrumental import aperture as _aperture  # noqa: F401
-        from modules.core.instrumental import dispersion as _dispersion  # noqa: F401
-        from modules.core.instrumental import effects as _effects  # noqa: F401
-        from modules.core.instrumental import readouts as _readouts  # noqa: F401
-        from modules.core.instrumental import (
-            transmission as _transmission,
-        )  # noqa: F401
-        from modules.utils.helpers import hdf5_io as _hdf5_io  # noqa: F401
-
-        _IMPORTS_DONE = True
+    if not _STATE["imports_done"]:
+        for module_name in _STAGE_MODULES:
+            importlib.import_module(module_name)
+        _STATE["imports_done"] = True
     return get_registry()
 
 

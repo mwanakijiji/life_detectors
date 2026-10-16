@@ -1,5 +1,7 @@
-from typing import Protocol
+"""Planet spectrum providers: from a planet-population row, or one model file."""
+
 import logging
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
@@ -8,29 +10,38 @@ from astropy import units as u
 
 from ..data.spectra import (
     SpectralData,
-    load_spectrum_from_file,
     create_blackbody_spectrum,
+    load_spectrum_from_file,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class PlanetSpectrumProvider(Protocol):
-    """Top-level source of a planet's spectrum: population-derived, or a single read-in file."""
+    """Top-level source of a planet's spectrum: population-derived, or a single read-in
+    file.
+    """
 
-    def get_spectrum(self, system_params=None) -> SpectralData: ...
+    def get_spectrum(self, system_params=None) -> SpectralData:
+        """Return the planet spectrum, given population parameters where relevant."""
 
 
 # --- inner: how does a population row become a spectrum (this is what grows later) ---
 class PopulationSpectrumGenerator(Protocol):
-    def generate(self, system_params) -> SpectralData: ...
+    """Turns one planet-population row into a spectrum."""
+
+    def generate(self, system_params) -> SpectralData:
+        """Return the spectrum for one planet-population row."""
 
 
 class BlackbodyFromParamsGenerator:
+    """Blackbody spectrum from a population row's temperature (Tp) and radius (Rp)."""
+
     def __init__(self, wavelength_range):
         self.wavelength_range = wavelength_range
 
     def generate(self, system_params):
+        """Blackbody spectrum of the planet described by system_params."""
         return create_blackbody_spectrum(
             temperature=system_params["Tp"],
             wavelength_range=self.wavelength_range,
@@ -38,18 +49,27 @@ class BlackbodyFromParamsGenerator:
         )
 
 
-class PSGSpectrumGenerator:  # later — same interface, drops in without touching PopulationSpectrumProvider
+# later — same interface, drops in without touching PopulationSpectrumProvider
+class PSGSpectrumGenerator:
+    """Spectrum read from the PSG file named in the population row."""
+
     def generate(self, system_params):
+        """Load the PSG spectrum named by
+        system_params['abs_file_name_psg_spectrum'].
+        """
         return load_spectrum_from_file(system_params["abs_file_name_psg_spectrum"])
 
 
 class PopulationSpectrumProvider:
-    """Derives a planet's spectrum from its population row, via a swappable generator."""
+    """Derives a planet's spectrum from its population
+    row, via a swappable generator.
+    """
 
     def __init__(self, generator: PopulationSpectrumGenerator):
         self.generator = generator
 
     def get_spectrum(self, system_params) -> SpectralData:
+        """Spectrum of the planet described by system_params (one population row)."""
         return self.generator.generate(system_params)
 
 
@@ -69,10 +89,12 @@ class SingleModelFileProvider:
         self.path = path
 
     def get_spectrum(self, system_params=None) -> SpectralData:
+        """Read the model file (system_params is ignored: one fixed spectrum)."""
+        del system_params
         df = pd.read_csv(
             self.path, delim_whitespace=True, names=["wavelength", "flux", "err_flux"]
         )
-        logger.info(f"Loaded model exoplanet spectrum: {self.path}")
+        logger.info("Loaded model exoplanet spectrum: %s", self.path)
 
         wavel = df["wavelength"].values * u.micron
         flux_nu_10pc = df["flux"].values * u.erg / (u.second * u.Hz * u.m**2)

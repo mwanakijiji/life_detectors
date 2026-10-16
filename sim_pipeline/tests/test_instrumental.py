@@ -2,25 +2,21 @@
 Unit tests for instrumental noise calculations.
 """
 
-import sys
-import types
+# pytest fixtures are injected by argument name
+# pylint: disable=redefined-outer-name
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import astropy.io.fits as fits
 import pytest
 import scipy.sparse
 from astropy import units as u
-from astropy.table import QTable
+from astropy.io import fits
 
-# Mock ipdb before importing project modules (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
-
+from modules.core.instrumental.channels import OutputChannel
 from modules.core.instrumental.detector import SYSTEMATICS_KEY, Detector
 from modules.core.instrumental.dispersion import DispersionLaw
-from modules.core.instrumental.channels import OutputChannel
 from modules.core.instrumental.effects import (
     DetectorEffect,
     DetectorFrames,
@@ -53,6 +49,7 @@ def instrum_base_config():
 
 @pytest.fixture
 def detector_geometry_config():
+    """Detector geometry for a 400x400 array and a 3-row trace."""
     return {
         "detector": {
             "size": "400",
@@ -66,6 +63,7 @@ def detector_geometry_config():
 
 @pytest.fixture
 def noise_calc_config(instrum_base_config):
+    """Config with read-noise, dark-current and gain values."""
     config = {
         **instrum_base_config,
         "detector": {
@@ -176,6 +174,7 @@ def _make_astroph_signal(
 
 @pytest.fixture
 def transmission_config(tmp_path):
+    """Config for generating transmission screens."""
     return {
         "detector": {"spec_res": "20"},
         "wavelength_range": {"min": "4.0", "max": "18.0"},
@@ -188,6 +187,7 @@ def transmission_config(tmp_path):
 
 @pytest.fixture
 def disperse_config(instrum_base_config, detector_geometry_config):
+    """Config for dispersing signals onto the detector."""
     return {
         **instrum_base_config,
         **detector_geometry_config,
@@ -293,18 +293,13 @@ class TestInstrumentDepTerms:
         assert post.unit.is_equivalent(u.ph / (u.um * u.s))
         assert np.allclose(post.value, expected.value)
 
-    def test_generate_instrument_transmission(
-        self, instrum_base_config, transmission_config
-    ):
-        # make sure sum of transmission screens is 1.0 (except for very center where star is)
+    def test_generate_instrument_transmission(self, transmission_config):
+        # make sure sum of transmission screens is 1.0 (except for very center where
+        # star is)
 
         Path(transmission_config["dirs"]["save_s2n_data_unique_dir"]).mkdir(
             parents=True, exist_ok=True
         )
-        config = {**instrum_base_config, "dirs": {"save_s2n_data_unique_dir": "/tmp/"}}
-        wavel = np.array([1.0, 2.0]) * u.um
-        scene = np.ones((2, 4, 4)) * u.ph / (u.um * u.m**2 * u.s)
-
         instr = InstrumentDepTerms(
             transmission_config,
             sources_astroph={},
@@ -317,34 +312,35 @@ class TestInstrumentDepTerms:
         )
 
         # for debugging
-        """
-        import matplotlib.pyplot as plt
-        screens = instr.generate_instrument_transmission(
-            wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
-        )
-        extent = [
-            screens[5].min(), screens[5].max(),  # x [arcsec]
-            screens[4].min(), screens[4].max(),  # y [arcsec]
-        ]
-        names = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
-        for ax, i, name in zip(axes.ravel(), range(4), names):
-            im = ax.imshow(screens[i], origin="lower", extent=extent, aspect="equal")
-            ax.set_title(name)
-            fig.colorbar(im, ax=ax, fraction=0.046)
-        plt.tight_layout()
-        plt.savefig(transmission_config["dirs"]["save_s2n_data_unique_dir"] + "test_transmission_screens.png")
-        plt.show()  # only if running interactively, not in headless pytest
-        """
+        # import matplotlib.pyplot as plt
+        # screens = instr.generate_instrument_transmission(
+        #     wavel_m=11e-6, override_stellar_mask=False, normalize=True, plot=False
+        # )
+        # extent = [
+        #     screens[5].min(), screens[5].max(),  # x [arcsec]
+        #     screens[4].min(), screens[4].max(),  # y [arcsec]
+        # ]
+        # names = ["output_1_bright", "output_2_bright", "output_3_dark",
+        # "output_4_dark"]
+        # fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        # for ax, i, name in zip(axes.ravel(), range(4), names):
+        #     im = ax.imshow(screens[i], origin="lower", extent=extent, aspect="equal")
+        #     ax.set_title(name)
+        #     fig.colorbar(im, ax=ax, fraction=0.046)
+        # plt.tight_layout()
+        # plt.savefig(transmission_config["dirs"]["save_s2n_data_unique_dir"] +
+        # "test_transmission_screens.png")
+        # plt.show()  # only if running interactively, not in headless pytest
+        #
 
         assert (
-            np.max(np.any(screens[0:5, :, :], axis=(0))) < 1.0 + 1e-6
+            np.max(np.any(screens[0:5, :, :], axis=0)) < 1.0 + 1e-6
         )  # transmission < 1
         net = np.sum(screens[0:4], axis=0)
         assert np.allclose(net, 1.0)
 
     def test_pass_through_transmission_screens_multiplies_scene_by_each_output(
-        self, instrum_base_config, transmission_config
+        self, transmission_config
     ):
         wavel = np.array([1.0, 2.0]) * u.um
         scene = np.zeros((2, 1001, 1001)) * u.ph / (u.um * u.m**2 * u.s)
@@ -392,39 +388,39 @@ class TestInstrumentDepTerms:
             "output_4_dark"
         ]
 
-        """
-        if np.logical_or(
-            np.round(test_flux_1, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
-            np.round(test_flux_2, 1) != np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
-        ):
-        """
+        # if np.logical_or(
+        #     np.round(test_flux_1, 1) !=
+        # np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1),
+        #     np.round(test_flux_2, 1) !=
+        # np.round(np.sum(source_dict_pre_screen[source_name], axis=(1,2)), 1)
+        # ):
+        #
 
         net_flux = bright_1 + bright_2 + dark_1 + dark_2
 
         # for debugging
-        """
-        import matplotlib.pyplot as plt
-        wavel_idx = 0
-        panels = [
-            ("scene", scene),
-            ("output_1_bright", bright_1),
-            ("output_2_bright", bright_2),
-            ("output_3_dark", dark_1),
-            ("output_4_dark", dark_2),
-            ("net_flux", net_flux),
-        ]
-        fig, axes = plt.subplots(2, 3, figsize=(12, 8))
-        for ax, (name, cube) in zip(axes.ravel(), panels):
-            im = ax.imshow(cube[wavel_idx, :, :].value, origin="lower")
-            ax.set_title(name)
-            fig.colorbar(im, ax=ax, fraction=0.046)
-        fig.suptitle(f"post-screen flux (wavel index {wavel_idx})")
-        plt.tight_layout()
-        out_dir = transmission_config["dirs"]["save_s2n_data_unique_dir"]
-        plt.show()
-        #plt.savefig(out_dir + "test_post_screen_flux_panels.png")
-        #plt.close(fig)
-        """
+        # import matplotlib.pyplot as plt
+        # wavel_idx = 0
+        # panels = [
+        #     ("scene", scene),
+        #     ("output_1_bright", bright_1),
+        #     ("output_2_bright", bright_2),
+        #     ("output_3_dark", dark_1),
+        #     ("output_4_dark", dark_2),
+        #     ("net_flux", net_flux),
+        # ]
+        # fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+        # for ax, (name, cube) in zip(axes.ravel(), panels):
+        #     im = ax.imshow(cube[wavel_idx, :, :].value, origin="lower")
+        #     ax.set_title(name)
+        #     fig.colorbar(im, ax=ax, fraction=0.046)
+        # fig.suptitle(f"post-screen flux (wavel index {wavel_idx})")
+        # plt.tight_layout()
+        # out_dir = transmission_config["dirs"]["save_s2n_data_unique_dir"]
+        # plt.show()
+        # #plt.savefig(out_dir + "test_post_screen_flux_panels.png")
+        # #plt.close(fig)
+        #
 
         # check flux conservation
         np.testing.assert_allclose(net_flux.value, scene.value)
@@ -465,7 +461,7 @@ class TestGenerateInstrumentTransmission:
 
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_override_stellar_mask_reduces_center_transmission(
-        self, mock_writeto, transmission_config
+        self, _mock_writeto, transmission_config
     ):
         instr = InstrumentDepTerms(
             transmission_config,
@@ -486,7 +482,7 @@ class TestGenerateInstrumentTransmission:
 
 class TestDisperseAstroSignalsOnDetector:
     @patch("modules.core.instrumental.dispersion.DispersionLaw")
-    @patch("modules.core.instrumental.detector.Detector")
+    @patch("modules.core.instrumental.dispersion.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
         self, mock_detector_cls, mock_law_cls, disperse_config
     ):
@@ -654,6 +650,7 @@ class _RecordTotalEffect(DetectorEffect):
 class TestDetectorEffects:
     @pytest.fixture
     def channel_with_signal(self, detector_geometry_config):
+        """One channel with a footprint and equal per-bin star signal."""
         channel = OutputChannel(name="output_3_dark")
         n_bins = 3
         det = _attach_detector_footprint(
@@ -672,7 +669,8 @@ class TestDetectorEffects:
         frames = det.expose(channel.astroph_signal, 10.0 * u.s)
 
         star = frames.source_e["star"]
-        # equal per-pixel signal in every bin: frame = s * t * (footprint summed over bins)
+        # equal per-pixel signal in every bin: frame = s * t * (footprint summed over
+        # bins)
         assert np.allclose(
             star, 5.0 * 10.0 * DispersionLaw.footprint_image(det.footprint_cube)
         )
@@ -696,7 +694,8 @@ class TestDetectorEffects:
     ):
         channel, det = channel_with_signal
         hot_map = np.zeros((400, 400))
-        # only under wavelength bin 0 footprint (cols 300-301), not bin 1 (starts ~302.2)
+        # only under wavelength bin 0 footprint (cols 300-301), not bin 1 (starts
+        # ~302.2)
         hot_map[100:103, 300:302] = 2.0
         mock_getdata.return_value = hot_map
         config = {
@@ -764,7 +763,8 @@ class TestDetectorEffects:
         mock_getdata.return_value = np.zeros((4, 4))
         config = {
             "detector_systematics": {
-                "enabled": "persistence, readnoise, hot_pixels, dark_current, gain_variability",
+                "enabled": "persistence, readnoise, hot_pixels, dark_current, "
+                "gain_variability",
                 "hot_pixels_2d_file": "/tmp/hot.fits",
             }
         }
@@ -782,12 +782,14 @@ class TestDetectorEffects:
             build_detector_effects({"detector_systematics": {"enabled": "nope"}})
 
     def test_build_detector_effects_empty_by_default(self):
-        assert build_detector_effects({}) == []
+        effects = build_detector_effects({})
+        assert isinstance(effects, list) and not effects
 
 
 class TestDetectorReadouts:
     @pytest.fixture
     def channels_with_frames(self, detector_geometry_config):
+        """Four channels with footprints and readout frames already applied."""
         config = {"detector": {**detector_geometry_config["detector"], "gain": "2.0"}}
         channels = {}
         for i, name in enumerate(
@@ -811,7 +813,8 @@ class TestDetectorReadouts:
         channel = OutputChannel(name="x")
         det = _attach_detector_footprint(channel, detector_geometry_config, n_bins=3)
         bin_map = det.bin_index_map()
-        # bin 0 covers cols 300-301 fully and 0.2 of col 302; bin 1 covers 0.8 of col 302
+        # bin 0 covers cols 300-301 fully and 0.2 of col 302; bin 1 covers 0.8 of col
+        # 302
         assert np.all(bin_map[100:103, 300:302] == 0)
         assert np.all(bin_map[100:103, 302] == 1)
         assert np.all(bin_map[:100] == -1)
@@ -875,9 +878,13 @@ class TestDetectorReadouts:
         write_detector_readouts(
             channels_with_frames, full_file, t_frame=10.0 * u.s, cutout=False
         )
-        kwargs = dict(method=method, t_frame=10.0 * u.s, dc_rates=[0.1])
-        from_full = extract_spectra_from_readouts(channels_with_frames, full_file, **kwargs)
-        errors_full = {n: ch.extracted_error_adu for n, ch in channels_with_frames.items()}
+        kwargs = {"method": method, "t_frame": 10.0 * u.s, "dc_rates": [0.1]}
+        from_full = extract_spectra_from_readouts(
+            channels_with_frames, full_file, **kwargs
+        )
+        errors_full = {
+            n: ch.extracted_error_adu for n, ch in channels_with_frames.items()
+        }
         from_cutout = extract_spectra_from_readouts(
             channels_with_frames, cutout_file, **kwargs
         )
@@ -983,8 +990,11 @@ class TestDetectorReadouts:
                 # flux conserved, and split between bins by fractional column coverage
                 assert np.isclose(star.value[i_dc, i].sum(), star_adu[on_trace].sum())
                 assert np.allclose(star.value[i_dc, i], fraction @ star_adu.sum(axis=0))
-                assert np.isclose(systematics.value[i_dc, i].sum(), sys_adu[on_trace].sum())
-                # error^2 = sum_x f^2 Var(column), Var(column) = 1 / sum_y (phi^2 / sigma^2)
+                assert np.isclose(
+                    systematics.value[i_dc, i].sum(), sys_adu[on_trace].sum()
+                )
+                # error^2 = sum_x f^2 Var(column), Var(column) = 1 / sum_y (phi^2 /
+                # sigma^2)
                 total_e = (star_adu + sys_adu) * gain
                 sigma2 = (total_e + dc * t) / gain**2 + (rn / gain) ** 2
                 phi = image / image.sum(axis=0)
@@ -998,7 +1008,9 @@ class TestDetectorReadouts:
         file_name = str(tmp_path / "readouts.fits")
         write_detector_readouts(channels_with_frames, file_name, t_frame=10.0 * u.s)
         with pytest.raises(ValueError, match="Unknown extraction method"):
-            extract_spectra_from_readouts(channels_with_frames, file_name, method="nope")
+            extract_spectra_from_readouts(
+                channels_with_frames, file_name, method="nope"
+            )
 
 
 class _ReadoutRampEffect(DetectorEffect):

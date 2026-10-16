@@ -5,17 +5,14 @@ This module provides classes and functions for loading and managing
 spectral data from files and handling different spectral formats.
 """
 
+from pathlib import Path
+from typing import Dict, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from astropy import units as u
-from typing import Dict, List, Tuple, Optional, Union
-from dataclasses import dataclass
-from pathlib import Path
-import warnings
-import logging
-import ipdb
-from scipy.interpolate import interp1d
 from scipy import constants
+from scipy.interpolate import interp1d
 
 # NumPy 2.0 renamed trapz -> trapezoid; support both.
 _trapz = getattr(np, "trapezoid", np.trapz)
@@ -61,7 +58,8 @@ class SpectralData:
         if self.wavelength.shape != self.flux.shape:
             raise ValueError("Wavelength and flux arrays must have the same shape")
 
-        # Sort by wavelength if not already sorted (redundant with a check upstream, but just in case)
+        # Sort by wavelength if not already sorted (redundant with a check upstream, but
+        # just in case)
         if not np.all(np.diff(self.wavelength) >= 0):
             sort_idx = np.argsort(self.wavelength)
             self.wavelength = self.wavelength[sort_idx]
@@ -174,45 +172,44 @@ def load_spectrum_from_file(filepath: Union[str, Path]) -> SpectralData:
         ValueError: If the file format is not supported
     """
     filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"Spectral data file not found: {filepath}")
 
-    if filepath.exists():
-
-        # read header for units
-        # Read units from the first two rows (if present)
-        # wavelength_unit = "um"  # Default
-        # flux_unit = "photon_sec_m2_um"  # Default
-        with open(filepath, "r") as f:
-            for _ in range(2):
-                line = f.readline()
-                if line.startswith("#"):
-                    if "wavelength_unit" in line:
-                        wavelength_unit = line.split("=")[-1].strip()
-                    elif "luminosity_photons_unit" in line:
-                        flux_unit = line.split("=")[-1].strip()
-
-        try:
-            # open file as dataframe
-            df = pd.read_csv(filepath, sep=",", header=2)
-            wavelength = df["wavel"].values
-            flux = df["luminosity_photons"].values
-            # sort by wavelength if not already sorted
-            sort_idx = np.argsort(wavelength)
-            wavelength = wavelength[sort_idx]
-            flux = flux[sort_idx]
-        except:
-            pass  # Use defaults if header parsing fails
-
-        return SpectralData(
-            wavelength=wavelength,
-            flux=flux,
-            wavelength_unit=wavelength_unit,
-            flux_unit=flux_unit,
-            source_name=filepath.stem,
-            metadata={"filepath": str(filepath)},
+    # read units from the first two (comment) rows
+    wavelength_unit = flux_unit = None
+    with open(filepath, "r", encoding="utf-8") as f:
+        for _ in range(2):
+            line = f.readline()
+            if line.startswith("#"):
+                if "wavelength_unit" in line:
+                    wavelength_unit = line.split("=")[-1].strip()
+                elif "luminosity_photons_unit" in line:
+                    flux_unit = line.split("=")[-1].strip()
+    if wavelength_unit is None or flux_unit is None:
+        raise ValueError(
+            f"{filepath}: missing '# wavelength_unit=' / '# luminosity_photons_unit=' "
+            "header lines"
         )
 
-    else:
-        logging.error(f"Failed to load spectral data from {filepath}: {e}")
+    try:
+        df = pd.read_csv(filepath, sep=",", header=2)
+        wavelength = df["wavel"].values
+        flux = df["luminosity_photons"].values
+    except (KeyError, pd.errors.ParserError, pd.errors.EmptyDataError) as err:
+        raise ValueError(
+            f"{filepath}: could not read wavel/luminosity_photons columns"
+        ) from err
+
+    # sort by wavelength if not already sorted
+    sort_idx = np.argsort(wavelength)
+    return SpectralData(
+        wavelength=wavelength[sort_idx],
+        flux=flux[sort_idx],
+        wavelength_unit=wavelength_unit,
+        flux_unit=flux_unit,
+        source_name=filepath.stem,
+        metadata={"filepath": str(filepath)},
+    )
 
 
 def create_blackbody_spectrum(
@@ -265,7 +262,8 @@ def create_blackbody_spectrum(
     radius_m = radius_r_earth * u.R_earth.to(u.m)
     luminosity_watt = 4.0 * np.pi * radius_m**2 * surface_flux_watt
 
-    # Convert to photon luminosity: E = hc/λ, so photon rate = energy rate / energy per photon
+    # Convert to photon luminosity: E = hc/λ, so photon rate = energy rate / energy per
+    # photon
     energy_per_photon = h * c / wavelength_m
     luminosity_photons = luminosity_watt / energy_per_photon
 

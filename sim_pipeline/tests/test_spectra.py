@@ -5,11 +5,12 @@ Unit tests for spectral data handling.
 import numpy as np
 import pytest
 from astropy import units as u
-from pathlib import Path
 
-from modules.data.spectra import SpectralData
-from modules.data.spectra import load_spectrum_from_file
-from modules.data.spectra import create_blackbody_spectrum
+from modules.data.spectra import (
+    SpectralData,
+    create_blackbody_spectrum,
+    load_spectrum_from_file,
+)
 
 
 class TestSpectralDataInit:
@@ -147,13 +148,16 @@ class TestLoadSpectrumFromFile:
         assert spectrum.source_name == "sample_spectrum"
         assert spectrum.metadata["filepath"] == str(file_path)
 
-    def test_load_spectrum_from_file_missing_file_currently_raises_nameerror(
-        self, tmp_path
-    ):
+    def test_load_spectrum_from_file_missing_file_raises(self, tmp_path):
         missing = tmp_path / "does_not_exist.csv"
-        # Current implementation logs with undefined variable 'e' in the missing-file branch.
-        with pytest.raises(NameError):
+        with pytest.raises(FileNotFoundError):
             load_spectrum_from_file(missing)
+
+    def test_load_spectrum_from_file_without_unit_header_raises(self, tmp_path):
+        file_path = tmp_path / "no_units.csv"
+        file_path.write_text("wavel,luminosity_photons\n1.0,10.0\n")
+        with pytest.raises(ValueError, match="header"):
+            load_spectrum_from_file(file_path)
 
 
 class TestCreateBlackbodySpectrum:

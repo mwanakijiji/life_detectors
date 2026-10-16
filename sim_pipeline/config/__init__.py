@@ -1,7 +1,6 @@
-"""Configuration management for the modules package."""
+"""Configuration files (.ini, .yaml); loading and validation live in modules.utils."""
 
-from .loader import load_config  # , save_config
-from .validator import validate_config, ConfigValidator
+from modules.utils.loader import load_config
+from modules.utils.validator import ConfigValidator, validate_config
 
-# __all__ = ["load_config", "save_config", "validate_config", "ConfigValidator"]
 __all__ = ["load_config", "validate_config", "ConfigValidator"]

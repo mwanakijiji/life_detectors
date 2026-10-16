@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Mapping, Sequence
+from typing import Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -66,7 +66,8 @@ def plot_source_transmission_triptych(
     im2 = axs[2].imshow(source_times_transmission_img, origin="lower", cmap="gray")
     axs[2].set_title(
         f"Source * Transmission ({screen_name})\n"
-        f"({np.sum(source_times_transmission_img) / np.sum(source_img):.2f} transmitted; not chopped)"
+        f"({np.sum(source_times_transmission_img) / np.sum(source_img):.2f} "
+        "transmitted; not chopped)"
     )
     fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
     fig.savefig(out_path)

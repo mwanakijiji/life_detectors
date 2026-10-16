@@ -124,7 +124,7 @@ def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]
         "Astrophysical sources considered to be symmetric: %s",
         list(sources_sym.keys()),
     )
-    for source_name, source_dict in sources_sym.items():
+    for source_dict in sources_sym.values():
         cols_sym_noise_var_3_elec = []
         for a in angles:
             sym_noise_var_this_source_this_angle_dark_3_elec = (
@@ -314,7 +314,8 @@ def calculate_s2n_post_rotation(
                 file_name_plot = (
                     str(config["dirs"]["save_s2n_data_unique_dir"])
                     + f"SNR_vs_wavelength_{dc_qe_str}"
-                    + f"_Nang_{cube.n_angles}_Nintpa_{cube.n_int_per_angle}_Ninttot_{cube.n_int_total}.png"
+                    + f"_Nang_{cube.n_angles}_Nintpa_{cube.n_int_per_angle}"
+                    + f"_Ninttot_{cube.n_int_total}.png"
                 )
                 plot_snr_vs_wavelength(
                     snr_lambda_array,

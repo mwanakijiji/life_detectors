@@ -16,7 +16,7 @@ def _config_get(
             return config[section].get(key, default)
         if isinstance(config, dict):
             return config.get(section, {}).get(key, default)
-    except Exception:
+    except (configparser.Error, AttributeError, KeyError, TypeError):
         return default
     return default
 
@@ -43,6 +43,7 @@ def _get_plot_title_context(config) -> str:
 
 
 def build_system_params_title(config) -> str:
+    """Plot-title text listing telescope and target parameters from the config."""
     lines = []
 
     collecting_area = _config_get(config, "telescope", "collecting_area")
@@ -57,14 +58,16 @@ def build_system_params_title(config) -> str:
     nulling_factor = _config_get(config, "nulling", "nulling_factor")
     if nulling is not None and nulling_factor is not None:
         lines.append(
-            f"stellar nulling = {bool(nulling)}, nulling transmission = {float(nulling_factor):.1e}"
+            f"stellar nulling = {bool(nulling)}, nulling transmission = "
+            f"{float(nulling_factor):.1e}"
         )
 
     lambda_rel = _config_get(config, "target", "lambda_rel_lon_los")
     beta = _config_get(config, "target", "beta_lat_los")
     if lambda_rel is not None and beta is not None:
         lines.append(
-            rf"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = {float(beta):.2f} deg"
+            rf"galactic $\lambda_{{\rm rel}}$ = {float(lambda_rel):.2f} deg, $\beta$ = "
+            rf"{float(beta):.2f} deg"
         )
 
     z_exozodiacal = _config_get(config, "target", "z_exozodiacal")
@@ -103,6 +106,7 @@ def build_system_params_title(config) -> str:
 
 
 def build_observation_detector_title(config) -> str:
+    """Plot-title text listing observation and detector parameters from the config."""
     lines = []
 
     t_int_frame = _config_get(config, "observation", "t_int_frame")
@@ -146,6 +150,7 @@ def build_observation_detector_title(config) -> str:
 
 
 def ensure_plot_title_context(config) -> str:
+    """Return the cached plot-title context, building and caching it if absent."""
     existing = _get_plot_title_context(config)
     if existing:
         return existing
@@ -200,7 +205,8 @@ def _join_two_column_text(left: str, right: str, gap: int = 4) -> str:
     return "\n".join(rows)
 
 
-def format_plot_title(base_title: str, config, font_size: int = 12) -> str:
+def format_plot_title(base_title: str, config) -> str:
+    """Return base_title underlined, followed by the config context columns."""
     title_context = _get_plot_title_context(config)
     sources_context = build_astrophysical_sources_to_use_title(config)
     body = _join_two_column_text(title_context, sources_context)
@@ -209,11 +215,11 @@ def format_plot_title(base_title: str, config, font_size: int = 12) -> str:
     separator = "\n" if base_title else ""
     # If 'base_title' is present, underline it; otherwise, just return the context.
     if base_title:
-        # Underline the base title with '=' (length matches without ANSI/formatting, just plain text)
+        # Underline the base title with '=' (length matches without ANSI/formatting,
+        # just plain text)
         underline = "=" * len(base_title)
         return f"{base_title}\n{underline}{separator}{body}"
-    else:
-        return f"{body}"
+    return body
 
 
 # end bunch of functions to get and set the plot title context

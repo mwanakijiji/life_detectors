@@ -2,11 +2,12 @@
 Unit tests for batch_process module.
 """
 
+# pytest fixtures are injected by argument name
+# pylint: disable=redefined-outer-name
+
 import configparser
 import logging
 import os
-import sys
-import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,21 +16,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from modules.core.astrophysical import (
-    generate_exoplanet_scene,
-    generate_exozodi_scene,
-    generate_star_scene,
-    generate_zodiacal_scene,
-)
-from modules.core.instrumental.dispersion import DispersionLaw
-from modules.core.instrumental.pipeline import InstrumentDepTerms
-from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
-from modules.utils.helpers.spectra import compute_collecting_area_m2
-
-# Mock ipdb before importing batch_process (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
-
 from batch_process import (
     batch_qe_nint_process,
     modify_config_file_pl_system_params,
@@ -37,6 +23,17 @@ from batch_process import (
     parameter_sweep,
     run_single_calculation,
 )
+from modules.core.astrophysical import (
+    generate_exoplanet_scene,
+    generate_exozodi_scene,
+    generate_star_scene,
+    generate_zodiacal_scene,
+)
+from modules.core.instrumental.channels import OutputChannel
+from modules.core.instrumental.dispersion import DispersionLaw
+from modules.core.instrumental.pipeline import InstrumentDepTerms
+from modules.utils.helpers.keys import parse_sky_position_arcsec_yx
+from modules.utils.helpers.spectra import compute_collecting_area_m2
 
 
 class TestModifyConfigFileSweep:
@@ -46,7 +43,9 @@ class TestModifyConfigFileSweep:
 
     @pytest.fixture
     def minimal_config_path(self, tmp_path):
-        """Create a minimal config file matching demo_config.ini [observation] and [detector]."""
+        """Create a minimal config file matching demo_config.ini [observation] and
+        [detector].
+        """
         config_path = tmp_path / "test_config.ini"
         config = configparser.ConfigParser()
         config.add_section("observation")
@@ -61,7 +60,7 @@ class TestModifyConfigFileSweep:
         config.add_section("target")
         config.set("target", "lambda_rel_lon_los", "135")
         config.set("target", "beta_lat_los", "45")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
         return str(config_path)
 
@@ -72,7 +71,8 @@ class TestModifyConfigFileSweep:
         assert result.endswith(".ini")
 
     def test_temp_path_format(self, minimal_config_path):
-        # Temp path has expected format: .../parameter_sweeps/{basename}_temp_n{n_int}_qe{qe_str}.ini.
+        # Temp path has expected format:
+        # .../parameter_sweeps/{basename}_temp_n{n_int}_qe{qe_str}.ini.
         result = modify_config_file_sweep(minimal_config_path, qe=0.87)
         assert "parameter_sweeps" in result
         assert "_temp_qe0p87.ini" in result
@@ -105,7 +105,9 @@ class TestModifyConfigFilePlSystemParams:
 
     @pytest.fixture
     def base_config_path(self, tmp_path):
-        """Create a config file matching demo_config.ini [dirs], [target], [observation]."""
+        """Create a config file matching demo_config.ini
+        [dirs], [target], [observation].
+        """
         config_path = tmp_path / "base_config.ini"
         config = configparser.ConfigParser()
         config.add_section("dirs")
@@ -131,7 +133,7 @@ class TestModifyConfigFilePlSystemParams:
         config.set("observation", "t_int_frame", "10")
         config.set("target", "lambda_rel_lon_los", "135")
         config.set("target", "beta_lat_los", "45")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
         return str(config_path)
 
@@ -249,7 +251,9 @@ class TestModifyConfigFilePlSystemParams:
     def test_filename_includes_system_params(
         self, base_config_path, system_params, lum_types
     ):
-        """Output path includes base_filename and key system params in directory structure."""
+        """Output path includes base_filename and key system
+        params in directory structure.
+        """
         result = modify_config_file_pl_system_params(
             base_config_path,
             base_filename="planet_00042",
@@ -309,7 +313,7 @@ def _write_run_calc_config(
     config.set("wavelength_range", "min", "4.0")
     config.set("wavelength_range", "max", "18.5")
     config.set("wavelength_range", "n_points", "30")
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         config.write(f)
 
 
@@ -341,18 +345,23 @@ class _DictRunConfig(dict):
     """Dict config with ConfigParser-like methods used before logging."""
 
     def read(self, *_args, **_kwargs):
+        """No-op: the dict is already populated."""
         return None
 
     def has_section(self, section):
+        """True if the section exists."""
         return section in self
 
     def has_option(self, section, option):
+        """True if the option exists in the section."""
         return option in self.get(section, {})
 
     def get(self, section, option, fallback=None):
+        del fallback  # signature mirrors ConfigParser.get
         return self[section][option]
 
     def set(self, section, option, value):
+        """Set an option, creating the section if needed."""
         self.setdefault(section, {})[option] = value
 
 
@@ -363,9 +372,11 @@ class _WeirdRunConfig:
         self._save_dir = save_dir
 
     def read(self, *_args, **_kwargs):
+        """No-op stand-in for ConfigParser.read."""
         return None
 
     def has_section(self, *_args, **_kwargs):
+        """Every section exists."""
         return False
 
     def __getitem__(self, key):
@@ -380,7 +391,7 @@ class _WeirdRunConfig:
         raise KeyError(key)
 
 
-def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data):
+def _patch_generate_sims_pipeline(mock_input, _mock_s2n, _mock_create_sample_data):
     mock_input.return_value = "n"
     mock_astro_instance = MagicMock()
     mock_astro_instance.calculate_received_astro_fluxes.return_value = {"flux": 1.0}
@@ -392,8 +403,6 @@ def _patch_generate_sims_pipeline(mock_input, mock_s2n, mock_create_sample_data)
 
 
 def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
-    from modules.core.instrumental.channels import OutputChannel
-
     channel = OutputChannel(name=name, angle_deg=angle_deg)
     channel.astroph_signal = {"stale": 2}
     channel.extracted_error_adu = "stale"
@@ -403,6 +412,7 @@ def _make_dirty_output_channel(name: str, angle_deg: float = 99.0):
 
 @pytest.fixture
 def run_calc_config_path(tmp_path):
+    """Path to a run config with generate_sims off and S/N on, plus its output dir."""
     save_dir = str(tmp_path / "hdf5_out") + "/"
     config_path = tmp_path / "run_calc_config.ini"
     _write_run_calc_config(
@@ -460,7 +470,9 @@ def flux_conservation_config(tmp_path):
 
 
 def _build_four_source_scenes(config, wavel):
-    """Build star, planet, exozodi, and zodiacal 3D scenes for flux conservation tests."""
+    """Build star, planet, exozodi, and zodiacal 3D
+    scenes for flux conservation tests.
+    """
     n_pix = int(config["onsky_scene"]["n_pix"])
     half_pix = int(config["onsky_scene"]["half_pix"])
     pix_size_arcsec = float(config["onsky_scene"]["pix_size_mas"]) / 1000.0
@@ -527,7 +539,9 @@ def _build_four_source_scenes(config, wavel):
 
 
 def _dispersed_flux_from_channels(instr, source_name, flux_rate_unit):
-    """Sum flux_astro_1d_interpolated_ph_sec_um for one source across output channels."""
+    """Sum flux_astro_1d_interpolated_ph_sec_um for one
+    source across output channels.
+    """
     wavel_bins = next(iter(instr.output_channels.values())).bin_centers
     n_bins = len(wavel_bins.value if hasattr(wavel_bins, "value") else wavel_bins)
     total = np.zeros(n_bins) * flux_rate_unit
@@ -655,10 +669,13 @@ class TestRunSingleCalculation:
         # Pass through telescope aperture
         instr.pass_through_aperture(plot=False)
 
-        # disperse astrophysical signals on the detector (i.e., update the OutputChannel objects; note that input astrophysical signals should still be photons, not electrons)
+        # disperse astrophysical signals on the detector (i.e., update the OutputChannel
+        # objects; note that input astrophysical signals should still be photons, not
+        # electrons)
         instr.disperse_astro_signals_on_detector(plot=False)
 
-        # is flux conserved before and after transmissions screens? (per source and total)
+        # is flux conserved before and after transmissions screens? (per source and
+        # total)
         for source_name in sources_to_include:
             scene = scenes[source_name]
             post_cubes = instr.sources_astroph[source_name][
@@ -684,7 +701,8 @@ class TestRunSingleCalculation:
                 err_msg=f"flux not conserved for {source_name} (integrated level)",
             )
 
-        # is flux conserved before and after the aperture, modulo throughput and the finite collecting area?
+        # is flux conserved before and after the aperture, modulo throughput and the
+        # finite collecting area?
         eta_t = float(flux_conservation_config["telescope"]["eta_t"])
         collecting_area = compute_collecting_area_m2(flux_conservation_config) * u.m**2
         post_transmission_cubes_all_sources_all_channels = (
@@ -726,10 +744,12 @@ class TestRunSingleCalculation:
         np.testing.assert_allclose(
             post_aperture_per_wavel_source_all_sources_all_channels.value,
             post_transmission_cubes_all_sources_all_channels.value,
-            err_msg="flux not conserved before and after the aperture, modulo throughput and the finite collecting area",
+            err_msg="flux not conserved before and after the aperture, "
+            "modulo throughput and the finite collecting area",
         )
 
-        # is flux conserved between dispersed detector and independent recomputation from prop_dict, modulo quantum efficiency? (per source and total)
+        # is flux conserved between dispersed detector and independent recomputation
+        # from prop_dict, modulo quantum efficiency? (per source and total)
         qe = float(flux_conservation_config["detector"]["quantum_efficiency"])
         flux_rate_unit = u.ph / (u.s * u.um)
         n_detector_bins = len(next(iter(instr.output_channels.values())).bin_centers)
@@ -757,14 +777,13 @@ class TestRunSingleCalculation:
             err_msg="total flux not conserved across all sources (detector level)",
         )
 
-        # is flux conserved between dispersed detector photons and ADU on the footprint, via gain?
+        # is flux conserved between dispersed detector photons and ADU on the footprint,
+        # via gain?
         t_frame = float(flux_conservation_config["observation"]["t_int_frame"]) * u.s
         gain = float(flux_conservation_config["detector"]["gain"])
         e_per_ph = float(flux_conservation_config["detector"]["photons_to_e"])
-        total_ph_on_footprint, total_adu_on_footprint = (
-            _photons_and_adu_from_detector_footprint(
-                instr, sources_to_include, t_frame, gain, e_per_ph
-            )
+        _, total_adu_on_footprint = _photons_and_adu_from_detector_footprint(
+            instr, sources_to_include, t_frame, gain, e_per_ph
         )
         independent_adu = _independent_adu_from_readouts(
             instr,
@@ -775,7 +794,8 @@ class TestRunSingleCalculation:
         np.testing.assert_allclose(
             total_adu_on_footprint.value,
             independent_adu.value,
-            err_msg="footprint ADU should match spectra extracted from the readout FITS",
+            err_msg="footprint ADU should match spectra extracted "
+            "from the readout FITS",
         )
         bin_widths = next(iter(instr.output_channels.values())).bin_widths
         independent_ph_rate = np.sum(independent_all_sources_ph_sec_um * bin_widths)
@@ -910,8 +930,8 @@ class TestRunSingleCalculation:
     @patch("batch_process.calculate_s2n_post_rotation")
     def test_resets_output_channels_at_each_angle(
         self,
-        mock_s2n,
-        mock_create_sample_data,
+        _mock_s2n,
+        _mock_create_sample_data,
         mock_astro_sources_cls,
         mock_instrument_cls,
         mock_record_info,
@@ -945,6 +965,7 @@ class TestRunSingleCalculation:
         def _capture_reset_state(
             *, override_stellar_mask=False, angle_deg=None, plot=False
         ):
+            del override_stellar_mask, plot  # keyword signature of the mocked stage
             for channel in mock_instrument.output_channels.values():
                 angles_seen.append((angle_deg, channel.name, channel.angle_deg))
                 assert channel.astroph_signal == {}
@@ -1043,7 +1064,9 @@ class TestBatchQeNintProcess:
     def test_passes_override_stellar_mask_true_while_prompt_disabled(
         self, mock_run_single, run_calc_config_path
     ):
-        """Stellar-mask prompt is commented out in batch_qe_nint_process; mask stays on."""
+        """Stellar-mask prompt is commented out in
+        batch_qe_nint_process; mask stays on.
+        """
         config_path, _ = run_calc_config_path
 
         batch_qe_nint_process(
@@ -1088,7 +1111,7 @@ class TestBatchQeNintProcess:
     @patch("batch_process.run_single_calculation", return_value=True)
     @patch("builtins.input", return_value="y")
     def test_forwards_qe_and_optional_args_to_run_single_calculation(
-        self, mock_input, mock_run_single, run_calc_config_path
+        self, _mock_input, mock_run_single, run_calc_config_path
     ):
         config_path, _ = run_calc_config_path
         system_params = {"Ds": 10.0, "Stype": "G"}
@@ -1157,7 +1180,7 @@ def _write_parameter_sweep_configs(
     single_obs.set("astrophysical_sources_to_use", "star", "True")
     single_obs.set("astrophysical_sources_to_use", "exoplanet_model_10pc", "True")
     single_obs.set("astrophysical_sources_to_use", "zodiacal", "False")
-    with open(single_obs_path, "w") as f:
+    with open(single_obs_path, "w", encoding="utf-8") as f:
         single_obs.write(f)
 
     sweep_path = tmp_path / "sweep.ini"
@@ -1166,7 +1189,7 @@ def _write_parameter_sweep_configs(
     sweep.set("observation", "qe_start", "0.5")
     sweep.set("observation", "qe_stop", "0.6")
     sweep.set("observation", "qe_step", "0.05")
-    with open(sweep_path, "w") as f:
+    with open(sweep_path, "w", encoding="utf-8") as f:
         sweep.write(f)
 
     population_path = tmp_path / "planet_population.ini"
@@ -1187,7 +1210,7 @@ def _write_parameter_sweep_configs(
     population.add_section("lum_type")
     population.set("lum_type", "G", "1.0")
     population.set("lum_type", "M", "0.05")
-    with open(population_path, "w") as f:
+    with open(population_path, "w", encoding="utf-8") as f:
         population.write(f)
 
     return str(single_obs_path), str(sweep_path), str(population_path)
@@ -1229,8 +1252,8 @@ class TestParameterSweep:
         self,
         mock_batch,
         mock_read_csv,
-        mock_merge_psg,
-        mock_plot_population,
+        _mock_merge_psg,
+        _mock_plot_population,
         tmp_path,
     ):
         population_csv = tmp_path / "population.csv"

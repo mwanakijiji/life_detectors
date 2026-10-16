@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Mapping, Sequence
+from typing import Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -53,7 +53,6 @@ def plot_astro_ph_sec_pixel(
         format_plot_title(
             f"Astrophysical photon rate per pixel — {channel_name}",
             config,
-            font_size=2,
         ),
         loc="left",
         pad=70,
@@ -139,7 +138,6 @@ def plot_poster_post_aperture_flux(
         format_plot_title(
             f"Post-aperture flux (all sources) — {output_name}",
             config,
-            font_size=2,
         ),
         loc="left",
         pad=70,

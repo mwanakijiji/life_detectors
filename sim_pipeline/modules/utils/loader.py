@@ -5,15 +5,12 @@ This module handles loading and saving YAML configuration files
 that define all parameters for noise calculations.
 """
 
-import yaml
-from pathlib import Path
-from typing import Dict, Any, Optional, Union
-import logging
 import configparser
+import logging
 import os
-from datetime import datetime
 import uuid
-import ipdb
+from datetime import datetime
+from typing import Any, Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -44,29 +41,27 @@ def config_getboolean(
     return default
 
 
-'''
-def save_config(config: Dict[str, Any], filepath: str) -> None:
-    """
-    Save configuration to a YAML file.
-    
-    Args:
-        config: Configuration dictionary to save
-        filepath: Path where to save the configuration file
-    """
-    filepath = Path(filepath)
-    
-    # Create directory if it doesn't exist
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        with open(filepath, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, indent=2)
-        
-        logger.info(f"Saved configuration to {filepath}")
-        
-    except Exception as e:
-        raise IOError(f"Error saving configuration to {filepath}: {e}")
-'''
+# def save_config(config: Dict[str, Any], filepath: str) -> None:
+#     """
+#     Save configuration to a YAML file.
+#
+#     Args:
+#         config: Configuration dictionary to save
+#         filepath: Path where to save the configuration file
+#     """
+#     filepath = Path(filepath)
+#
+#     # Create directory if it doesn't exist
+#     filepath.parent.mkdir(parents=True, exist_ok=True)
+#
+#     try:
+#         with open(filepath, 'w') as f:
+#             yaml.dump(config, f, default_flow_style=False, indent=2)
+#
+#         logger.info(f"Saved configuration to {filepath}")
+#
+#     except Exception as e:
+#         raise IOError(f"Error saving configuration to {filepath}: {e}")
 
 
 def load_config(config_file: str, makedirs: bool = True) -> dict:
@@ -82,8 +77,6 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
 
     config = configparser.ConfigParser()
     config.read(config_file)
-
-    logger = logging.getLogger(__name__)
 
     # Convert ConfigParser to regular dictionary
     config_dict = {}
@@ -104,20 +97,21 @@ def load_config(config_file: str, makedirs: bool = True) -> dict:
                     config_dict[section][key] = value
 
     # Log all sections and their parameters
-    for section in config_dict:
-        logger.info(f"[{section}]")
-        for key, value in config_dict[section].items():
-            logger.info(f"  {key} = {value}")
+    for section, params in config_dict.items():
+        logger.info("[%s]", section)
+        for key, value in params.items():
+            logger.info("  %s = %s", key, value)
 
     if makedirs and "dirs" in config_dict:
         for key, value in config_dict["dirs"].items():
             os.makedirs(value, exist_ok=True)
-            logger.info(f"Created directory: {value}")
+            logger.info("Created directory: %s", value)
 
     return config_dict
 
 
 def setup_logging(log_dir="logs", tag: Optional[str] = None):
+    """Log INFO to the console and to a timestamped file in log_dir; return its path."""
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

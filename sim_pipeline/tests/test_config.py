@@ -6,14 +6,8 @@ import configparser
 import logging
 import os
 import re
-import sys
-import types
 
 import pytest
-
-# Mock ipdb before importing config modules (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
 
 from modules.utils.loader import load_config, setup_logging
 from modules.utils.validator import ConfigValidator, validate_config
@@ -59,7 +53,7 @@ class TestLoadConfig:
         config.set("wavelength_range", "min", "1.0")
         config.set("wavelength_range", "max", "20.0")
         config.set("wavelength_range", "n_points", "30")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
         return str(config_path)
 
@@ -90,7 +84,7 @@ class TestLoadConfig:
         config.add_section("target")
         config.set("target", "planet_source", "file")
         config.set("target", "spectrum_path", "/path/to/spectrum.txt")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
         result = load_config(str(config_path), makedirs=False)
         assert result["target"]["planet_source"] == "file"
@@ -113,7 +107,7 @@ class TestLoadConfig:
         config_path = tmp_path / "empty.ini"
         config_path.write_text("")
         result = load_config(str(config_path), makedirs=False)
-        assert result == {}
+        assert isinstance(result, dict) and not result
 
 
 class TestSetupLogging:
@@ -128,7 +122,9 @@ class TestSetupLogging:
         root.setLevel(logging.WARNING)
 
     def test_returns_log_file_path(self, tmp_path):
-        """Returns path to log file with detectorsim_YYYYMMDD_HHMMSS_<tag>.log pattern."""
+        """Returns path to log file with
+        detectorsim_YYYYMMDD_HHMMSS_<tag>.log pattern.
+        """
         log_dir = tmp_path / "logs"
         result = setup_logging(str(log_dir), tag="config_test")
         assert result.endswith(".log")
@@ -146,7 +142,7 @@ class TestSetupLogging:
         logging.getLogger().info("test message")
         for handler in logging.getLogger().handlers:
             handler.flush()
-        with open(log_path) as f:
+        with open(log_path, encoding="utf-8") as f:
             content = f.read()
         assert "test message" in content
 

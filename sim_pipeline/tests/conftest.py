@@ -1,11 +1,14 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+"""Shared pytest fixtures (sim_pipeline/ is put on
+sys.path via pyproject's pythonpath).
+"""
 
 import numpy as np
 import pytest
 from astropy import units as u
+
+from modules.core.instrumental.channels import OutputChannel
+from modules.core.instrumental.detector import Detector
+from modules.core.instrumental.dispersion import DispersionLaw
 
 CHANNEL_NAMES = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
 
@@ -13,9 +16,6 @@ CHANNEL_NAMES = ["output_1_bright", "output_2_bright", "output_3_dark", "output_
 @pytest.fixture
 def make_output_channels():
     """Factory for the four OutputChannels with real detectors and footprints."""
-    from modules.core.instrumental.channels import OutputChannel
-    from modules.core.instrumental.detector import Detector
-    from modules.core.instrumental.dispersion import DispersionLaw
 
     def _make(n_bins: int = 3, gain: float = 2.0):
         config = {

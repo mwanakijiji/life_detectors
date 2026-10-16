@@ -1,12 +1,12 @@
 """Spectrum generation and sample data helpers."""
 
+import configparser
 import copy
 import glob
 import logging
 import os
 from pathlib import Path
 
-import configparser
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,7 +15,6 @@ from astropy import constants as const
 from astropy import units as u
 from astropy.modeling.physical_models import BlackBody
 from matplotlib.colors import LogNorm
-from scipy.interpolate import interp1d
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,10 @@ def plot_planet_population_sample(  # pragma: no cover
         )
     else:
         df_sample = copy.deepcopy(df_planet_population[cols_to_plot])
-    title_string = f"Sample of {len(df_sample)} planets from population of {len(df_planet_population)}"
+    title_string = (
+        f"Sample of {len(df_sample)} planets "
+        f"from population of {len(df_planet_population)}"
+    )
     axes = pd.plotting.scatter_matrix(df_sample, figsize=(10, 8))
     fig = axes[0, 0].figure
     fig.suptitle(title_string)
@@ -75,6 +77,9 @@ def generate_star_spectrum(
 ) -> np.ndarray:
 
     # host star radius
+    """Blackbody stellar spectrum (photon and energy luminosity per um) from the
+    config's T_star and rad_star; optionally plot it.
+    """
     rad_star = float(config["target"]["rad_star"]) * 69.6340 * 1e9 * u.cm
 
     # fluxes
@@ -89,13 +94,15 @@ def generate_star_spectrum(
     # stellar surface flux, Fs_nu: multiply by pi steradians
     # W / (micron m2 sr) --> W / (micron m2)
     flux_star = np.pi * u.sr * bb_star_lambda(wavelength_um)
-    # stellar luminosity in terms of energy, L_nu: rate at which the star radiates energy in all directions
+    # stellar luminosity in terms of energy, L_nu: rate at which the star radiates
+    # energy in all directions
     # W / (micron m2) --> W / micron
     luminosity_energy_star = 4 * np.pi * (rad_star**2) * flux_star
     luminosity_energy_star = luminosity_energy_star.to(
         u.W / u.micron
     )  # consistent units
-    # stellar luminosity in terms of photons, L_gamma_nu (divide by energy units E=hc/lambda)
+    # stellar luminosity in terms of photons, L_gamma_nu (divide by energy units
+    # E=hc/lambda)
     # W / micron --> photons / (um sec)
 
     luminosity_photons_star = (
@@ -107,13 +114,13 @@ def generate_star_spectrum(
 
     if plot:  # pragma: no cover
         plt.clf()
-        fig, ax1 = plt.subplots()
+        _, ax1 = plt.subplots()
         color1 = "tab:blue"
         ax1.set_xlabel(rf"$\lambda$ ({wavelength_um.unit})")
         ax1.set_ylabel(
             rf"$L_{{\lambda}}$ ({luminosity_photons_star.unit})", color=color1
         )
-        line1 = ax1.plot(
+        ax1.plot(
             wavelength_um, luminosity_photons_star, color=color1
         )  # Primary y-axis for luminosity_photons_star
         ax1.set_xscale("log")
@@ -122,7 +129,7 @@ def generate_star_spectrum(
         ax2 = ax1.twinx()
         color2 = "tab:red"
         ax2.set_ylabel(rf"$F(\lambda)$ ({flux_star.unit})", color=color2)
-        line2 = ax2.plot(
+        ax2.plot(
             wavelength_um, flux_star, color=color2
         )  # Secondary y-axis for flux_star
         ax2.set_xscale("log")
@@ -159,7 +166,7 @@ def generate_planet_bb_spectrum(
 
     # what should serve as the source of the planet spectrum? blackbody or file?
     planet_source = str(config["target"]["planet_source"])
-    logging.info(f"Planet source: {planet_source}")
+    logging.info("Planet source: %s", planet_source)
 
     # planet radius
     rad_planet = float(config["target"]["rad_planet"]) * 0.637 * 1e9 * u.cm
@@ -172,57 +179,72 @@ def generate_planet_bb_spectrum(
         temperature=temp_bb_planet * u.K, scale=1.0 * u.W / (u.m**2 * u.micron * u.sr)
     )
     # planet surface flux
-    """
-    if planet_source == 'file':
-
-        # this input file appears to be linearly-sampled in wavelength, with flux in units of u.photon / (u.s * u.m**2 * u.um)
-        file_to_read_in = '/Users/eckhartspalding/Documents/git.repos/life_detectors/data/example_planet_spectrum.txt'
-        df = pd.read_csv(file_to_read_in, delim_whitespace=True, names=('wavel','flux'))
-        logging.info(f"Read in planet spectrum from {file_to_read_in}")
-
-        # units of df['flux'] are u.photon / (u.s * u.m**2 * u.um)
-        # so total units of test_photons below are sr * (above) = u.photon / (u.micron * u.s * u.m**2)
-        test_luminosity = np.pi*u.sr * df['flux'].values * u.W/(u.m**2 * u.um) 
-        
-        
-        # resample the spectrum onto the wavelength grid we gave it above
-        #test_photons = test_photons.to(1 / u.micron / u.s)
-        # Create interpolation function
-        interp_func = interp1d(
-            df['wavel'].values, 
-            test_luminosity, 
-            kind='linear', 
-            bounds_error=False, 
-            fill_value=0.0
-        )
-        # Interpolate to new wavelength grid
-        new_flux = interp_func(wavelength_um)
-        luminosity_energy_earth = new_flux * u.W/(u.m**2 * u.um)
-
-        emission_photons = emission_energy * (wavelength_um / (const.h * const.c)) * u.photon
-        emission_photons = emission_photons.to(u.photon / (u.um * u.s * u.m**2)) # units ph / (s um m2)
-
-        test_photons = test_luminosity * (const.h * const.c / wavelength_um)
-
-        # current units are u.ph / (u.micron * u.s * u.m**2)
-        # want units of u.ph / (u.micron * u.s)
-
-        luminosity_photons_planet = 4 * np.pi * (rad_planet**2) * emission_photons
-        luminosity_photons_planet = luminosity_photons_planet.to(u.ph / (u.micron * u.s)) * (1/u.ph)  # last bit is to remove the photon units
-
-        # convert photons to energy by multiplying by hc/lambda
-        #test_energy = test_photons * (const.h * const.c / wavelength_um) * (1/u.photon) # last bit is to remove the photon units
-        # convert energy to W/micron by dividing by 4piR^2
-        #luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
-
-        #luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) # consistent units
-        #luminosity_photons_planet = luminosity_energy_planet / (const.h * const.c / wavelength_um)
-        #luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s) # consistent units
-
-        #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
-        #wavelength_um = df['wavel'].values * u.um
-        #luminosity_photons_planet = df['luminosity_photons'].values * 1 / u.micron / u.s
-    """
+    # if planet_source == 'file':
+    #
+    #     # this input file appears to be linearly-sampled in wavelength, with flux in
+    #     # units of u.photon / (u.s * u.m**2 * u.um)
+    #     file_to_read_in = (
+    #         "/Users/eckhartspalding/Documents/git.repos/life_detectors/data/"
+    #         "example_planet_spectrum.txt"
+    #     )
+    #     df = pd.read_csv(file_to_read_in, delim_whitespace=True,
+    # names=('wavel','flux'))
+    #     logging.info(f"Read in planet spectrum from {file_to_read_in}")
+    #
+    #     # units of df['flux'] are u.photon / (u.s * u.m**2 * u.um)
+    #     # so total units of test_photons below are sr * (above) = u.photon / (u.micron
+    # *
+    #     # u.s * u.m**2)
+    #     test_luminosity = np.pi*u.sr * df['flux'].values * u.W/(u.m**2 * u.um)
+    #
+    #
+    #     # resample the spectrum onto the wavelength grid we gave it above
+    #     #test_photons = test_photons.to(1 / u.micron / u.s)
+    #     # Create interpolation function
+    #     interp_func = interp1d(
+    #         df['wavel'].values,
+    #         test_luminosity,
+    #         kind='linear',
+    #         bounds_error=False,
+    #         fill_value=0.0
+    #     )
+    #     # Interpolate to new wavelength grid
+    #     new_flux = interp_func(wavelength_um)
+    #     luminosity_energy_earth = new_flux * u.W/(u.m**2 * u.um)
+    #
+    #     emission_photons = emission_energy * (wavelength_um / (const.h * const.c)) *
+    # u.photon
+    #     emission_photons = emission_photons.to(u.photon / (u.um * u.s * u.m**2)) #
+    # units ph / (s um m2)
+    #
+    #     test_photons = test_luminosity * (const.h * const.c / wavelength_um)
+    #
+    #     # current units are u.ph / (u.micron * u.s * u.m**2)
+    #     # want units of u.ph / (u.micron * u.s)
+    #
+    #     luminosity_photons_planet = 4 * np.pi * (rad_planet**2) * emission_photons
+    #     luminosity_photons_planet = luminosity_photons_planet.to(u.ph / (u.micron *
+    # u.s)) * (1/u.ph)  # last bit is to remove the photon units
+    #
+    #     # convert photons to energy by multiplying by hc/lambda
+    #     # test_energy = test_photons * (const.h * const.c / wavelength_um) *
+    #     # (1/u.photon) # last bit is to remove the photon units
+    #     # convert energy to W/micron by dividing by 4piR^2
+    #     #luminosity_energy_planet = 4 * np.pi * (rad_planet**2) * test_energy
+    #
+    #     # luminosity_energy_planet = luminosity_energy_planet.to(u.W / u.micron) #
+    #     # consistent units
+    #     # luminosity_photons_planet = luminosity_energy_planet / (const.h * const.c /
+    #     # wavelength_um)
+    #     # luminosity_photons_planet = luminosity_photons_planet.to(1 / u.micron / u.s)
+    # #
+    #     # consistent units
+    #
+    #     #flux_planet = flux_planet.to(u.W / (u.micron * u.m**2 * u.sr))
+    #     #wavelength_um = df['wavel'].values * u.um
+    #     # luminosity_photons_planet = df['luminosity_photons'].values * 1 / u.micron /
+    #     # u.s
+    #
     # bb_planet_lambda() units are W / (micron sr m2)
     # so total units of flux_planet are sr * (above) = W / (micron m2)
     flux_planet = np.pi * u.sr * bb_planet_lambda(wavelength_um)
@@ -240,7 +262,7 @@ def generate_planet_bb_spectrum(
 
     if plot:  # pragma: no cover
         plt.clf()
-        fig, ax1 = plt.subplots()
+        _, ax1 = plt.subplots()
 
         # Primary y-axis for luminosity_photons_planet
         color1 = "tab:blue"
@@ -248,7 +270,7 @@ def generate_planet_bb_spectrum(
         ax1.set_ylabel(
             rf"$L_{{\lambda}}$ ({luminosity_photons_planet.unit})", color=color1
         )
-        line1 = ax1.plot(wavelength_um, luminosity_photons_planet, color=color1)
+        ax1.plot(wavelength_um, luminosity_photons_planet, color=color1)
         # ax1.set_xscale('log')
         # ax1.set_xlim(4., 18.)
         # ax1.set_ylim(1e-4, 1e0)
@@ -260,7 +282,7 @@ def generate_planet_bb_spectrum(
         ax2 = ax1.twinx()
         color2 = "tab:red"
         ax2.set_ylabel(rf"$F(\lambda)$ ({flux_planet.unit})", color=color2)
-        line2 = ax2.plot(wavelength_um, flux_planet, color=color2)
+        ax2.plot(wavelength_um, flux_planet, color=color2)
         # ax2.set_xscale('log')
         ax2.set_yscale("log")
         ax2.tick_params(axis="y", labelcolor=color2)
@@ -272,7 +294,7 @@ def generate_planet_bb_spectrum(
         )
 
         plt.savefig(file_name_plot)
-        logging.info(f"Wrote planet emission plot {file_name_plot}")
+        logging.info("Wrote planet emission plot %s", file_name_plot)
 
     # luminosity without regard to distance
     return luminosity_photons_planet, luminosity_energy_planet
@@ -295,6 +317,9 @@ def generate_zodiacal_spectrum(
     # luminosity_energy_zodiacal: zodiacal luminosity in W/um/m**2
 
     # set some parameters
+    """Zodiacal background spectrum (Dannert+ 2022 sec. 2.2.3) per m^2 of collecting
+    area: returns photon, energy and MJy/sr luminosities; optionally plot them.
+    """
     tau_opt = float(config["target"]["tau_opt_zodiacal"])
     T_eff_zodiacal = float(config["target"]["T_eff_zodiacal"]) * u.K
     T_sol = 5778.0 * u.K  # of Sun; does not change!
@@ -320,7 +345,8 @@ def generate_zodiacal_spectrum(
     bb_2 = BlackBody(temperature=T_sol, scale=1.0 * u.W / (u.m**2 * u.micron * u.sr))
 
     # the BB term of the zodiacal background
-    # Ref. Eqn. 5.2 in Kelsall+ 2005, 'The DARWINsim science simulator', Sci-A/2005/297/Darwin/DMS
+    # Ref. Eqn. 5.2 in Kelsall+ 2005, 'The DARWINsim science simulator',
+    # Sci-A/2005/297/Darwin/DMS
     term_i_los = (
         bb_1(wavelength_um) + A_albedo * bb_2(wavelength_um) * (rad_sol / 1.5) ** 2
     )
@@ -340,7 +366,8 @@ def generate_zodiacal_spectrum(
         )
     )
 
-    # make FYI quantities in terms of photons, for debugging (note term_ii_los is just geometric)
+    # make FYI quantities in terms of photons, for debugging (note term_ii_los is just
+    # geometric)
     fyi_term_i_los = term_i_los * u.ph / ((const.h * const.c) / wavelength_um)
     fyi_term_i_los = fyi_term_i_los.to(u.ph / (u.micron * u.sr * u.second * u.m**2))
 
@@ -360,9 +387,6 @@ def generate_zodiacal_spectrum(
         {}
     )  # dict to contain the 2D arrays showing emission at each wavelength
     I_nu_2d_energy = (
-        {}
-    )  # dict to contain the 2D arrays showing emission at each wavelength
-    I_lambda_2d_photons = (
         {}
     )  # dict to contain the 2D arrays showing emission at each wavelength
 
@@ -393,14 +417,18 @@ def generate_zodiacal_spectrum(
             tau_opt * term_i_2d * term_ii_2d
         )  # for units W  / (micron sr m2)
         I_nu_2d_energy[str(wavel_this)] = (
-            I_lambda_2d_energy[str(wavel_this)] * (wavel_this) ** 2 / const.c
-        ).to(
-            u.MJy / u.sr
-        )  # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack on units here
-        # I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] * u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
+            I_lambda_2d_energy[str(wavel_this)]
+            * (wavel_this) ** 2
+            / const.c
+            # for units MJy/sr; note the plotted wavel_this is unitless, so have to tack
+            # on units here
+        ).to(u.MJy / u.sr)
+        # I_lambda_2d_photons[str(wavel_this)] = I_lambda_2d_energy[str(wavel_this)] *
+        # u.photon / (const.h * const.c / wavel_this).to # for units 1 / (micron s)
 
     # make a full spectrum of the emission along the line-of-sight
-    # note these line-of-sight units are still in terms of surface brightness: they include units of 'per steradian'
+    # note these line-of-sight units are still in terms of surface brightness: they
+    # include units of 'per steradian'
     I_lambda_los_array_energy = tau_opt * term_i_los * term_ii_los
 
     I_nu_los_array_energy = (I_lambda_los_array_energy * wavelength_um**2 / const.c).to(
@@ -419,14 +447,18 @@ def generate_zodiacal_spectrum(
         u.ph / (u.um * u.second * u.sr * u.m**2)
     )  # units ph / ( um * sec * sr * m**2 )
 
-    # now collect all the photons within (lambda_avg/B)**2 (a rough FOV) to find the total energy & photons along the line-of-sight
-    ## ## TODO: this is still kind of hackneyed; find better way of evaluating total number of photons
-    # fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) ** 2
+    # now collect all the photons within (lambda_avg/B)**2 (a rough FOV) to find the
+    # total energy & photons along the line-of-sight
+    # ## TODO: this is still kind of hackneyed; find better way of evaluating total
+    # number of photons
+    # fov_effective = ( (np.mean(wavelength_um) / (nulling_baseline * u.m)) * u.rad ) **
+    # 2
 
     # replicates concept in FD's code, using 'half FOV'
     # TODO: this is open to debate!
     hfov = (wavelength_um.to(u.m) / (2.0 * single_mirror_diameter)) * u.rad
-    threshold_ampl = 1e-2  # this amplitude of the Gaussian is used to define the boundary of the effective FOV
+    # this amplitude of the Gaussian is used to define the boundary of the effective FOV
+    threshold_ampl = 1e-2
     radius_fov_effective = (4.0 / np.pi) * hfov * np.sqrt(-np.log(threshold_ampl))
     fov_effective = np.pi * radius_fov_effective**2
 
@@ -441,15 +473,17 @@ def generate_zodiacal_spectrum(
 
     if plot:  # pragma: no cover
         plt.clf()
-        # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each for a different wavelength
-        fig, axes = plt.subplots(3, 1, figsize=(9, 15))
+        # Plot three 2D subplots of zodiacal emission as fcn of beta and lambda, each
+        # for a different wavelength
+        _, axes = plt.subplots(3, 1, figsize=(9, 15))
         for i, wl in enumerate(wavelengths_to_plot_2d):
             # Find the index in wavelength_um closest to wl
             idx = np.abs(wavelength_um / u.um - wl / u.um).argmin()
-            """
-            im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower', 
-                               extent=[np.min(lambda_rel_lon_grid), np.max(lambda_rel_lon_grid), np.min(beta_lat_grid), np.max(beta_lat_grid)], aspect='auto')
-            """
+            # im = axes[i].imshow(I_nu_2d_energy[str(wl)].value, origin='lower',
+            #                    extent=[np.min(lambda_rel_lon_grid),
+            # np.max(lambda_rel_lon_grid), np.min(beta_lat_grid),
+            # np.max(beta_lat_grid)], aspect='auto')
+            #
             # colorscale like in Kendall+ 2005
             im = axes[i].imshow(
                 I_nu_2d_energy[str(wl)].value,
@@ -495,11 +529,11 @@ def generate_zodiacal_spectrum(
             config["dirs"]["save_s2n_data_unique_dir"] + "/zodiacal_emission_2d.png"
         )
         plt.savefig(file_name)
-        logging.info(f"Wrote zodiacal emission 2D plot {file_name}")
+        logging.info("Wrote zodiacal emission 2D plot %s", file_name)
 
         # spectrum of zodiacal light along the line-of-sight
         plt.clf()
-        fig, ax1 = plt.subplots()
+        _, ax1 = plt.subplots()
 
         # Primary y-axis for luminosity_photons_star
         color1 = "tab:blue"
@@ -507,7 +541,7 @@ def generate_zodiacal_spectrum(
         ax1.set_ylabel(
             rf"$L_{{\lambda}}$ ({I_lambda_los_array_photons.unit})", color=color1
         )
-        line1 = ax1.plot(wavelength_um, I_lambda_los_array_photons, color=color1)
+        ax1.plot(wavelength_um, I_lambda_los_array_photons, color=color1)
         ax1.set_xscale("log")
         ax1.set_yscale("log")
         ax1.tick_params(axis="y", labelcolor=color1)
@@ -518,7 +552,7 @@ def generate_zodiacal_spectrum(
         ax2.set_ylabel(
             rf"$F(\lambda)$ ({I_lambda_los_array_energy.unit})", color=color2
         )
-        line2 = ax2.plot(wavelength_um, I_lambda_los_array_energy, color=color2)
+        ax2.plot(wavelength_um, I_lambda_los_array_energy, color=color2)
         ax2.set_xscale("log")
         ax2.set_yscale("log")
         ax2.tick_params(axis="y", labelcolor=color2)
@@ -532,7 +566,7 @@ def generate_zodiacal_spectrum(
             config["dirs"]["save_s2n_data_unique_dir"] + "/zodiacal_spectrum_los.png"
         )
         plt.savefig(file_name_plot)
-        logging.info(f"Wrote zodiacal emission spectrum plot {file_name_plot}")
+        logging.info("Wrote zodiacal emission spectrum plot %s", file_name_plot)
 
     # I_nu should be
     # ~5 um: ~0.1s of MJy/sr
@@ -565,13 +599,18 @@ def generate_exozodiacal_spectrum(
     #
     # where
     #
-    # Sigma_m = z * Sigma_m_0 * (r/r0)^(-alpha), where z is number of zodis and Sigma_m_0 normalizes the surface brightness
+    # Sigma_m = z * Sigma_m_0 * (r/r0)^(-alpha), where z is number of zodis and
+    # Sigma_m_0 normalizes the surface brightness
     # T(r) = 278.3K * Ls^(0.25) * r^-(0.5)
+
+    """Exozodiacal disk spectrum (Kennedy 2015 Eqn. 1: Sigma_m * BB(lambda, T(r)))
+    integrated over the disk; returns photon and energy luminosity per um.
+    """
 
     def T_temp(r):
         # r: radius in disk (units AU)
 
-        ## ## TODO: peg this to the stellar temp, if possible
+        # ## TODO: peg this to the stellar temp, if possible
         Ls = float(config["target"]["L_star"])
 
         T = 278.3 * u.K * ((Ls) ** 0.25) * ((r / u.au) ** -0.5)
@@ -584,7 +623,8 @@ def generate_exozodiacal_spectrum(
         # alpha: power law index
         # z: number of zodis
         # Sigma_m_0: normalization factor
-        #   Kennedy: 'is to be set at some r0 (in AU) such that the surface density is in units of zodis z (see Section 2.2.3).'
+        #   Kennedy: 'is to be set at some r0 (in AU) such that the surface density is
+        # in units of zodis z (see Section 2.2.3).'
 
         Sigma_m = z * Sigma_m_0 * (r / r0) ** (-alpha)
 
@@ -604,10 +644,12 @@ def generate_exozodiacal_spectrum(
             wavel_array
         )
 
-    # surface brightness as function of wavelength I(lambda): I_disk_lambda_r integrated over dA = r dr dtheta
+    # surface brightness as function of wavelength I(lambda): I_disk_lambda_r integrated
+    # over dA = r dr dtheta
     def I_disk_lambda(r_array, r0, alpha, z, Sigma_m_0, wavel_array):
 
-        # don't give r_array units, because it messes up the list comprehension & np.array below
+        # don't give r_array units, because it messes up the list comprehension &
+        # np.array below
         # r_array = r_array * u.AU
 
         # Integrate over r * I_disk_lambda_r()
@@ -615,9 +657,11 @@ def generate_exozodiacal_spectrum(
         # r: AU
         # I_disk_lambda_r(): (W / (micron sr m2))
         # r * I_disk_lambda_r(): AU * (W / (micron sr m2))
-        # r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
+        # r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0,
+        # np.array([3.3,3.7]))
         # test =  I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
-        # test2 = r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0, np.array([3.3,3.7]))
+        # test2 = r_array[0] * I_disk_lambda_r(1, r0, alpha, Ls, z, Sigma_m_0,
+        # np.array([3.3,3.7]))
 
         integrand = np.array(
             [
@@ -627,9 +671,11 @@ def generate_exozodiacal_spectrum(
                 for radius in r_array
             ]
         )  # this loses units in np.array() operation
-        # factor of pi steradians comes from integrating over dtheta (one hemisphere of the disk)
+        # factor of pi steradians comes from integrating over dtheta (one hemisphere of
+        # the disk)
 
-        # integrate over r in r_array using the trapezoidal rule (logarithmic spacing), to leave array dimensions (1, lambda)
+        # integrate over r in r_array using the trapezoidal rule (logarithmic spacing),
+        # to leave array dimensions (1, lambda)
         # tack on (W / (micron sr m2)) * AU^2
         # (W / (micron sr m2)) comes from integrand
         # AU^2 units come from rdr in units of AU
@@ -645,14 +691,17 @@ def generate_exozodiacal_spectrum(
 
         return I_lambda
 
-    # scale emission for distance from Earth (effectively doing I_disk_lambda, except that integral is over d_Omega = r dr dtheta / D**2)
+    # scale emission for distance from Earth (effectively doing I_disk_lambda, except
+    # that integral is over d_Omega = r dr dtheta / D**2)
     # def I_disk_lambda_Earth(I_disk_lambda_array, D):
     #
-    #    return I_disk_lambda_array * (1 / (D * u.pc))**2 * (u.pc / (206265. * u.AU))**2 * u.sr
+    #    return I_disk_lambda_array * (1 / (D * u.pc))**2 * (u.pc / (206265. * u.AU))**2
+    # * u.sr
 
-    ## ## TODO: read in the below params from config file
-    ## ## TODO: weave in the units from the beginning, rather than tacking them on at the end
-    ## ## TODO: pass fluxes through telescope aperture with the same function
+    # ## TODO: read in the below params from config file
+    # ## TODO: weave in the units from the beginning, rather than tacking them on at the
+    # end
+    # ## TODO: pass fluxes through telescope aperture with the same function
 
     # set up some basic params
     r_array = np.arange(0.034, 10, 0.1) * u.au
@@ -663,8 +712,6 @@ def generate_exozodiacal_spectrum(
     Sigma_m_0 = 7.12e-8
     Ls = float(config["target"]["L_star"])
     r0 = np.sqrt(Ls) * u.au  # see Kennedy 2015 ApJSS, sec. 2.2.3
-
-    T_array = T_temp(r=r_array)
 
     # units W / um
     luminosity_energy_disk_lambda = I_disk_lambda(
@@ -687,14 +734,14 @@ def generate_exozodiacal_spectrum(
 
     if plot:  # pragma: no cover
         plt.clf()
-        fig, ax1 = plt.subplots()
+        _, ax1 = plt.subplots()
 
         color1 = "tab:blue"
         ax1.set_xlabel(rf"$\lambda$ ({wavelength_um.unit})")
         ax1.set_ylabel(
             rf"$L_{{\lambda}}$ ({luminosity_photons_exozodi_disk.unit})", color=color1
         )
-        line1 = ax1.plot(wavelength_um, luminosity_photons_exozodi_disk, color=color1)
+        ax1.plot(wavelength_um, luminosity_photons_exozodi_disk, color=color1)
         # ax1.set_xscale('log')
         ax1.set_yscale("log")
         ax1.tick_params(axis="y", labelcolor=color1)
@@ -704,7 +751,7 @@ def generate_exozodiacal_spectrum(
         ax2.set_ylabel(
             rf"$F(\lambda)$ ({luminosity_energy_disk_lambda.unit})", color=color2
         )
-        line2 = ax2.plot(wavelength_um, luminosity_energy_disk_lambda, color=color2)
+        ax2.plot(wavelength_um, luminosity_energy_disk_lambda, color=color2)
         # ax2.set_xscale('log')
         ax2.set_yscale("log")
         ax2.tick_params(axis="y", labelcolor=color2)
@@ -714,7 +761,7 @@ def generate_exozodiacal_spectrum(
             config["dirs"]["save_s2n_data_unique_dir"] + "/exozodiacal_spectrum.png"
         )
         plt.savefig(file_name_plot)
-        logging.info(f"Wrote exozodiacal emission plot {file_name_plot}")
+        logging.info("Wrote exozodiacal emission plot %s", file_name_plot)
 
     return luminosity_photons_exozodi_disk, luminosity_energy_disk_lambda
 
@@ -723,7 +770,7 @@ def compute_collecting_area_m2(config: dict) -> float:
     """Geometric collecting area from aperture YAML and single-mirror diameter."""
 
     tel = config["telescope"]
-    with open(tel["aperture_array_config_file_name"]) as f:
+    with open(tel["aperture_array_config_file_name"], encoding="utf-8") as f:
         aperture_array = yaml.safe_load(f)
     n_apertures = len(aperture_array["apertures"])
     diameter_m = float(tel["single_mirror_diameter"])
@@ -751,7 +798,6 @@ def create_sample_data(
     config: configparser.ConfigParser,
     overwrite: bool = False,
     plot: bool = False,
-    read_sample_file: bool = False,
 ) -> None:
     """
     Create sample spectral data files for testing.
@@ -760,7 +806,6 @@ def create_sample_data(
         config: ConfigParser object
         overwrite: Whether to overwrite existing files
         plot: Whether to plot the data
-        read_sample_file: Whether to read the sample file that LIFEsim uses
 
     Returns:
         None (writes to file)
@@ -785,9 +830,12 @@ def create_sample_data(
         generate_exozodiacal_spectrum(config, wavelength_um, plot=plot)
     )  # unresolved
     # notes on zodiacal units:
-    # 1. the zodiacal background is resolved, so within the function we deal with the extra 1/sr in the units by considering a crude FOV
-    # 2. the output units here include 1/m**2, because the quantity is a surface brightness seen from Earth (i.e., there is no downstream distance correction that brings in 1/m**2)
-    luminosity_photons_zodiacal, luminosity_energy_zodiacal, luminosity_MJy_zodiacal = (
+    # 1. the zodiacal background is resolved, so within the function we deal with the
+    # extra 1/sr in the units by considering a crude FOV
+    # 2. the output units here include 1/m**2, because the quantity is a surface
+    # brightness seen from Earth (i.e., there is no downstream distance correction that
+    # brings in 1/m**2)
+    luminosity_photons_zodiacal, luminosity_energy_zodiacal, _ = (
         generate_zodiacal_spectrum(config, wavelength_um, plot=plot)
     )  # resolved
 
@@ -831,7 +879,7 @@ def create_sample_data(
         filepath = output_dir / filename
 
         if filepath.exists() and not overwrite:
-            logger.info(f"Skipping {filename} (already exists)")
+            logger.info("Skipping %s (already exists)", filename)
             continue
 
         # Create dataframe and write to CSV
@@ -843,7 +891,7 @@ def create_sample_data(
         )
 
         # add header with units
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write("# wavelength_unit=" + str(data["wavelength_um"].unit) + "\n")
             f.write(
                 "# luminosity_photons_unit="
@@ -852,17 +900,16 @@ def create_sample_data(
             )
         df.to_csv(filepath, mode="a", index=False)
 
-        logger.info(f"Created sample data: {filepath}")
-        r"""
-        if plot:
-            # individual plot
-            plt.plot(data['wavelength_um'], data['luminosity_photons'])
-            plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
-            plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
-            plt.title(data['description'])
-            file_name_plot = output_dir + data['plot_name']
-            plt.tight_layout()
-            plt.savefig(file_name_plot)
-            plt.close()
-            logger.info(f"Wrote plot {file_name_plot}")
-        """
+        logger.info("Created sample data: %s", filepath)
+        # if plot:
+        #     # individual plot
+        #     plt.plot(data['wavelength_um'], data['luminosity_photons'])
+        #     plt.xlabel(fr"$\lambda$ [{wavelength_um.unit}]")
+        #     plt.ylabel(fr"$L_photons(\lambda)$ [{luminosity_photons_planet.unit}]")
+        #     plt.title(data['description'])
+        #     file_name_plot = output_dir + data['plot_name']
+        #     plt.tight_layout()
+        #     plt.savefig(file_name_plot)
+        #     plt.close()
+        #     logger.info(f"Wrote plot {file_name_plot}")
+        #

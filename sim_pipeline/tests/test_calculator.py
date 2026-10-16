@@ -2,10 +2,11 @@
 Unit tests for S/N cube assembly from HDF5 pipeline outputs.
 """
 
+# pytest fixtures are injected by argument name
+# pylint: disable=redefined-outer-name
+
 import pickle
 import re
-import sys
-import types
 from unittest.mock import patch
 
 import h5py
@@ -14,10 +15,6 @@ import pytest
 from astropy import units as u
 from astropy.table import QTable
 
-# Mock ipdb before importing project modules (optional dev dependency)
-sys.modules["ipdb"] = types.ModuleType("ipdb")
-sys.modules["ipdb"].set_trace = lambda: None
-
 from modules.core.calculator.s2n_cube import (
     S2NCube,
     load_s2n_cube,
@@ -25,7 +22,12 @@ from modules.core.calculator.s2n_cube import (
     read_s2n_cube_hdf5,
     save_s2n_cube,
 )
-from modules.core.calculator.snr_from_hdf5 import calculate_s2n_post_rotation
+from modules.core.calculator.snr_from_hdf5 import (
+    build_s2n_cube_from_hdf5,
+    calculate_s2n_post_rotation,
+    read_hdf5_slots,
+)
+from modules.utils.helpers.keys import canonical_angle_deg, format_angle_qe_hdf5_name
 
 PLANET_COL = "astro_exoplanet_model_10pc_adu"
 CHOPPED_PLANET_COL = f"chopped_{PLANET_COL}"
@@ -123,7 +125,8 @@ def _expected_snr_lambda(
     instrum_read,
 ):
     """Mirror _compute_snr_lambda_for_slot SNR math (Dannert+ 2022 Eqn. 19-20)."""
-    del star_out4_by_angle  # not used in symmetric-noise term; kept for call-site clarity
+    # not used in symmetric-noise term; kept for call-site clarity
+    del star_out4_by_angle
 
     gain_val = float(gain)
     angles = sorted(planet_chopped_by_angle.keys())
@@ -169,6 +172,7 @@ def _expected_snr_lambda(
 
 @pytest.fixture
 def s2n_config(tmp_path):
+    """Config with the detector and plotting settings the S/N code reads."""
     return {
         "dirs": {"save_s2n_data_unique_dir": str(tmp_path / "out") + "/"},
         "detector": {"gain": "2.0", "quantum_efficiency": "0.7"},
@@ -183,6 +187,7 @@ def s2n_config(tmp_path):
 
 @pytest.fixture
 def patch_plotting():
+    """Patch out S/N plotting so tests write no figures."""
     with patch("modules.viz.snr.plt.savefig"), patch(
         "modules.viz.snr.plt.figure"
     ), patch("modules.viz.snr.plt.clf"), patch("modules.viz.snr.plt.stairs"), patch(
@@ -194,9 +199,8 @@ def patch_plotting():
 
 
 class TestCalculateS2nPostRotation:
-    def test_snr_matches_reference_implementation(
-        self, tmp_path, s2n_config, patch_plotting, capsys
-    ):
+    @pytest.mark.usefixtures("patch_plotting")
+    def test_snr_matches_reference_implementation(self, tmp_path, s2n_config, capsys):
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
 
@@ -229,7 +233,7 @@ class TestCalculateS2nPostRotation:
             instrum_read=np.array([0.3]),
         )
 
-        cube_test = calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
+        calculate_s2n_post_rotation(str(read_dir), config=s2n_config)
 
         captured = capsys.readouterr().out
         match = re.search(r"SNR_tot for DC dc_00\.000_qe_0\.70: ([0-9.]+)", captured)
@@ -260,10 +264,13 @@ class TestCalculateS2nPostRotation:
 
         assert pipeline_s2n_tot == pytest.approx(manual_s2n_tot)
 
+    @pytest.mark.usefixtures("patch_plotting")
     def test_symmetric_noise_uses_all_angles_not_last_only(
-        self, tmp_path, s2n_config, patch_plotting, capsys
+        self, tmp_path, s2n_config, capsys
     ):
-        """Regression: star shot noise should use angle-averaged sigma^2, not last file only."""
+        """Regression: star shot noise should use angle-averaged sigma^2, not last file
+        only.
+        """
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
 
@@ -316,11 +323,6 @@ class TestCalculateS2nPostRotation:
 
 class TestReadHdf5Slots:
     def test_angle_keys_use_meta_canonical_value(self, tmp_path):
-        from modules.core.calculator.snr_from_hdf5 import read_hdf5_slots
-        from modules.utils.helpers.keys import (
-            canonical_angle_deg,
-            format_angle_qe_hdf5_name,
-        )
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
@@ -340,11 +342,6 @@ class TestReadHdf5Slots:
         assert canonical != angle_linspace or angle_linspace == round(angle_linspace, 2)
 
     def test_read_hdf5_slots_filters_by_qe(self, tmp_path):
-        from modules.core.calculator.snr_from_hdf5 import (
-            build_s2n_cube_from_hdf5,
-            read_hdf5_slots,
-        )
-        from modules.utils.helpers.keys import format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()
@@ -364,11 +361,10 @@ class TestReadHdf5Slots:
         slots_060 = read_hdf5_slots(str(read_dir), qe=0.60)
         assert set(slots_060) == {"dc_00.000_qe_0.60"}
 
+    @pytest.mark.usefixtures("patch_plotting")
     def test_build_s2n_cube_uses_config_qe_not_other_angle_files(
-        self, tmp_path, s2n_config, patch_plotting
+        self, tmp_path, s2n_config
     ):
-        from modules.core.calculator.snr_from_hdf5 import build_s2n_cube_from_hdf5
-        from modules.utils.helpers.keys import format_angle_qe_hdf5_name
 
         read_dir = tmp_path / "hdf5"
         read_dir.mkdir()

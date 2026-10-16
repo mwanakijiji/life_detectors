@@ -1,9 +1,10 @@
-from typing import Dict, List
+"""InstrumentDepTerms: instrument-side state and the per-angle pipeline stages."""
 
 import logging
+from typing import Dict, List
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 
 from . import aperture, dispersion, effects, readouts, transmission
 from .aperture import (
@@ -18,23 +19,39 @@ logger = logging.getLogger(__name__)
 
 
 class InstrumentDepTerms:
-    # Provides the effects of the instrument (including astro flux passed through the telescope aperture).
+    # Provides the effects of the instrument (including astro flux passed through the
+    # telescope aperture).
     # Holds the pipeline state; each stage method delegates to a module-level function.
+
+    """Holds the instrument-side pipeline state (config, sources, output channels,
+    detector effects, backgrounds); each stage method delegates to a module-level
+    function so the stages can be tested and registered on their own.
+    """
 
     def __init__(self, config: Dict, sources_astroph: dict, sources_to_include: list):
         """
         Args:
             config: Configuration dictionary
-            sources: Dictionary of sources of flux; {'wavel': <Quantity um>, 'pre_screen_astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
-            sources_to_include: List of sources to actuallyinclude in the S/N calculation (and plots of incident fluxes)
+            sources: Dictionary of sources of flux; {'wavel': <Quantity um>,
+                'pre_screen_astro_flux_ph_sec_m2_um': <Quantity ph / (s um m2)>}
+            sources_to_include: List of sources to actuallyinclude in the S/N
+                calculation (and plots of incident fluxes)
         """
 
         self.config = config
-        self.sources_astroph = sources_astroph  # all sources of astrophysical flux, as are incident on the instrument
+        # all sources of astrophysical flux, as are incident on the instrument
+        self.sources_astroph = sources_astroph
         self.sources_to_include = sources_to_include
 
-        # initialize dict to carry propagated astrophysical terms (i.e., intensity levels on the detector, after instrument effects)
+        # initialize dict to carry propagated astrophysical terms (i.e., intensity
+        # levels on the detector, after instrument effects)
         self.prop_dict = {}
+
+        # set by the readout/extraction stages at each angle
+        self.readouts_file_name: str | None = None
+        self.extraction_method: str | None = None
+        self.extracted_spectra_adu: dict = {}
+        self.extracted_errors_adu: dict = {}
 
         # Optional detector systematics, applied in order to each readout's 2D frames
         self.detector_effects: List[DetectorEffect] = build_detector_effects(config)
@@ -62,11 +79,13 @@ class InstrumentDepTerms:
             ]
         }
 
-        # for each output channel, set the detection wavelength bins (same for all channels for now)
+        # for each output channel, set the detection wavelength bins (same for all
+        # channels for now)
         R = float(
             self.config["detector"]["spec_res"]
         )  # spectral resolution (lambda/del_lambda)
-        # bins are spaced geometrically in wavelength space, with recurrence relation lambda_i = lambda_{0} * (1 + 1/R)**i
+        # bins are spaced geometrically in wavelength space, with recurrence relation
+        # lambda_i = lambda_{0} * (1 + 1/R)**i
         lambda_min, lambda_max = (
             float(self.config["wavelength_range"]["min"]) * u.um,
             float(self.config["wavelength_range"]["max"]) * u.um,
@@ -86,16 +105,23 @@ class InstrumentDepTerms:
             output_channel.bin_widths = bin_widths
 
     def generate_instrument_transmission(self, *args, **kwargs):
+        """Transmission screens for each output; see
+        transmission.generate_instrument_transmission.
+        """
         return transmission.generate_instrument_transmission(
             self.config, *args, **kwargs
         )
 
     def pass_through_transmission_screens(self, *args, **kwargs):
+        """Apply the transmission screens to the sky scene; see
+        transmission.pass_through_transmission_screens.
+        """
         return transmission.pass_through_transmission_screens(
             self.config, self.sources_astroph, self.sources_to_include, *args, **kwargs
         )
 
     def pass_through_aperture(self, plot: bool = False):
+        """Stage: pass the screened sources through the telescope aperture."""
         aperture.pass_through_aperture(
             self.config,
             self.sources_astroph,
@@ -105,6 +131,7 @@ class InstrumentDepTerms:
         )
 
     def pass_from_aperture_to_detector(self, plot: bool = False):
+        """Stage: add instrument backgrounds to the post-aperture beam."""
         aperture.pass_from_aperture_to_detector(
             self.config,
             self.prop_dict,
@@ -114,6 +141,7 @@ class InstrumentDepTerms:
         )
 
     def disperse_astro_signals_on_detector(self, plot: bool = False):
+        """Stage: disperse the post-aperture signals onto each channel's detector."""
         dispersion.disperse_astro_signals_on_detector(
             self.config,
             self.prop_dict,
@@ -125,6 +153,7 @@ class InstrumentDepTerms:
         )
 
     def apply_detector_effects(self):
+        """Stage: expose each readout and apply the enabled detector effects."""
         effects.apply_detector_effects(
             self.output_channels,
             self.detector_effects,
@@ -135,6 +164,9 @@ class InstrumentDepTerms:
     def write_detector_readouts(
         self, file_name: str, header_cards: dict | None = None, cutout: bool = True
     ):
+        """Stage: write the readout frames to FITS (cutout
+        by default); returns the path.
+        """
         written = readouts.write_detector_readouts(
             self.output_channels,
             file_name,
@@ -148,6 +180,7 @@ class InstrumentDepTerms:
         return written
 
     def extract_spectra_from_readouts(self):
+        """Stage: extract spectra from the readout FITS with the configured method."""
         method = str(
             _config_get(self.config, "extraction", "method", "sharp_birchall")
         ).strip()
