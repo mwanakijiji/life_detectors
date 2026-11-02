@@ -8,7 +8,18 @@ from typing import Optional, Union
 
 import numpy as np
 
+from ..loader import config_getboolean
+
 logger = logging.getLogger(__name__)
+
+# [smoke_test]: keys of the form "section.key" override that key in each run's temp
+# config; plain keys are run-size limits (see SMOKE_TEST_LIMIT_DEFAULTS)
+SMOKE_TEST_SECTION = "smoke_test"
+SMOKE_TEST_LIMIT_DEFAULTS = {
+    "max_qe_values": None,
+    "max_planets": None,
+    "write_full_frame_example": True,
+}
 
 
 def get_sweep_range(obs: dict, prefix: str) -> list[float]:
@@ -72,6 +83,84 @@ def apply_output_root_override(config_path: str, output_root: Optional[str]) -> 
 
     logger.info("Using overridden output root: %s", normalized_root)
     return config_path
+
+
+def _smoke_test_items(config) -> dict:
+    """The [smoke_test] section as a plain dict (ConfigParser or load_config dict)."""
+    if isinstance(config, configparser.ConfigParser):
+        if not config.has_section(SMOKE_TEST_SECTION):
+            return {}
+        return dict(config.items(SMOKE_TEST_SECTION))
+    return dict(config.get(SMOKE_TEST_SECTION, {}) or {})
+
+
+def smoke_test_enabled(config, force: bool = False) -> bool:
+    """True if smoke-test mode is forced (e.g. --smoke) or [smoke_test] enabled."""
+    return bool(force) or config_getboolean(
+        config, SMOKE_TEST_SECTION, "enabled", default=False
+    )
+
+
+def smoke_test_limits(config, force: bool = False) -> dict:
+    """
+    Run-size limits for smoke-test mode: max_qe_values, max_planets (None = no
+    limit) and write_full_frame_example. No-op defaults when smoke mode is off.
+    """
+    limits = dict(SMOKE_TEST_LIMIT_DEFAULTS)
+    if not smoke_test_enabled(config, force):
+        return limits
+    items = _smoke_test_items(config)
+    for key in ("max_qe_values", "max_planets"):
+        if key in items and str(items[key]).strip():
+            limits[key] = int(float(items[key]))
+    if "write_full_frame_example" in items:
+        limits["write_full_frame_example"] = str(
+            items["write_full_frame_example"]
+        ).strip().lower() in ("true", "1", "yes")
+    return limits
+
+
+def apply_smoke_test_overrides(config_path: str, force: bool = False) -> list:
+    """
+    In smoke-test mode, apply every [smoke_test] "section.key = value" override to
+    the config file in place (as apply_output_root_override does).
+
+    Returns the applied (section, key, value) triples; empty if smoke mode is off.
+    """
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    if not smoke_test_enabled(config, force):
+        return []
+
+    applied = []
+    for dotted_key, value in _smoke_test_items(config).items():
+        if "." not in dotted_key:
+            continue  # a run-size limit, not an override
+        section, key = dotted_key.split(".", 1)
+        if not config.has_section(section):
+            config.add_section(section)
+        config.set(section, key, value)
+        applied.append((section, key, value))
+
+    # record that this run is a smoke test (e.g. when forced from the command line)
+    if not config.has_section(SMOKE_TEST_SECTION):
+        config.add_section(SMOKE_TEST_SECTION)
+    config.set(SMOKE_TEST_SECTION, "enabled", "True")
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        config.write(f)
+
+    if not applied:
+        logger.warning(
+            "*** SMOKE TEST MODE *** requested, but %s has no [smoke_test] overrides",
+            config_path,
+        )
+    logger.warning(
+        "*** SMOKE TEST MODE *** (not a science run) overrides applied to %s:\n%s",
+        config_path,
+        "\n".join(f"  [{s}] {k} = {v}" for s, k, v in applied) or "  (none)",
+    )
+    return applied
 
 
 def modify_config_file_sweep(

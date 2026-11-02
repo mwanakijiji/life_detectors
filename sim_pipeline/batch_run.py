@@ -13,7 +13,7 @@ from modules.utils import loader
 
 
 def parse_args():
-    """Parse command-line arguments (config paths, output root)."""
+    """Parse command-line arguments (config paths, output root, smoke test)."""
     parser = argparse.ArgumentParser(
         description="Run a LIFE detector parameter sweep with explicit config paths."
     )
@@ -37,6 +37,14 @@ def parse_args():
         default=None,
         help="Optional run-specific output root to keep simultaneous runs isolated.",
     )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "Smoke-test mode: a small, fast run using the [smoke_test] overrides in "
+            "the single-obs config (not a science run)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -52,6 +60,8 @@ def main():
     logger.info("========================================")
     logger.info("Life Detectors - Batch Processing")
     logger.info("Log file: %s", log_file)
+    if args.smoke:
+        logger.warning("*** SMOKE TEST MODE *** requested with --smoke")
 
     #########################################################
     # ## BEGIN USER INPUTS
@@ -68,42 +78,44 @@ def main():
     # ## END USER INPUTS
     #########################################################
 
-    # kludge for now
-    # laptop
-    dir_temp_hdf5_files = (
-        "/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/"
-        "temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_"
-        "Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/"
-    )
-    # node
-    # dir_temp_hdf5_files = (
-    #     "/home/eckhart/Documents/git.repos/life_detectors/hdf5_testing/"
-    #     "temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_"
-    #     "Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/"
-    # )
-    hdf5_files = glob.glob(os.path.join(dir_temp_hdf5_files, "*.hdf5"))
-    # Ask the user if they want to delete the files in this directory.
-    response = (
-        input(
-            "Found directory containing temp HDF5 files:\n    "
-            f"{dir_temp_hdf5_files}\nFound {len(hdf5_files)} HDF5 files in this "
-            "directory.\nDo you want to delete HDF5 files in this directory? [y/N]: "
+    # kludge for now (skipped in smoke-test mode, so a smoke run never blocks on input)
+    if not args.smoke:
+        # laptop
+        dir_temp_hdf5_files = (
+            "/Users/eckhartspalding/Documents/git.repos/life_detectors/hdf5_testing/"
+            "temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_"
+            "Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/"
         )
-        .strip()
-        .lower()
-    )
-    # response = "y"
-    if response in ("y", "yes"):
+        # node
+        # dir_temp_hdf5_files = (
+        #     "/home/eckhart/Documents/git.repos/life_detectors/hdf5_testing/"
+        #     "temp_s2n_sweep_planet_index_0000000_Nuniverse_1_Nstar_1_dist_10_Rp_1_Rs_1_"
+        #     "Ts_5778_L_1.0_z_3_eclip_lon_135_eclip_lat_45_Stype_G/"
+        # )
+        hdf5_files = glob.glob(os.path.join(dir_temp_hdf5_files, "*.hdf5"))
+        # Ask the user if they want to delete the files in this directory.
+        response = (
+            input(
+                "Found directory containing temp HDF5 files:\n    "
+                f"{dir_temp_hdf5_files}\nFound {len(hdf5_files)} HDF5 files in this "
+                "directory.\nDo you want to delete HDF5 files in this directory? "
+                "[y/N]: "
+            )
+            .strip()
+            .lower()
+        )
+        # response = "y"
+        if response in ("y", "yes"):
 
-        for file_path in hdf5_files:
-            try:
-                os.remove(file_path)
-                logger.info("Deleted: %s", file_path)
-            except OSError as ex:
-                logger.warning("Failed to delete %s: %s", file_path, ex)
-        logger.info("All temp HDF5 files deleted.")
-    else:
-        logger.info("Keeping temp HDF5 files.")
+            for file_path in hdf5_files:
+                try:
+                    os.remove(file_path)
+                    logger.info("Deleted: %s", file_path)
+                except OSError as ex:
+                    logger.warning("Failed to delete %s: %s", file_path, ex)
+            logger.info("All temp HDF5 files deleted.")
+        else:
+            logger.info("Keeping temp HDF5 files.")
 
     # parameter sweep over QE, dark current
     parameter_sweep(
@@ -111,6 +123,7 @@ def main():
         config_sweep_path=config_sweep_path,
         config_planet_population_path=config_planet_population_path,
         output_root=output_root,
+        smoke_test=args.smoke,
     )
 
     # this writes out HDF5 files with

@@ -62,6 +62,22 @@ def detector_geometry_config():
 
 
 @pytest.fixture
+def rectangular_geometry_config():
+    """Detector geometry for a 64 x 300 array, trace starting at (y, x) = (30, 20)."""
+    return {
+        "detector": {
+            "size_y": "64",
+            "size_x": "300",
+            "trace_start_pixel": "30, 20",
+            "pitch_pix": "25",
+            "pix_per_wavel_bin": "2.2",
+            "pix_spectral_width": "3",
+            "quantum_efficiency": "0.8",
+        }
+    }
+
+
+@pytest.fixture
 def noise_calc_config(instrum_base_config):
     """Config with read-noise, dark-current and gain values."""
     config = {
@@ -100,23 +116,22 @@ def _attach_detector_footprint(
 ):
     det = Detector(config=detector_geometry_config, num_wavel_bins=n_bins)
     law = DispersionLaw(detector_geometry_config)
-    det.set_footprint(law.make_footprint(det.side_length_pix, det.num_wavel_bins))
+    det.set_footprint(law.make_footprint(det.n_pix_y, det.n_pix_x, det.num_wavel_bins))
     channel.detector = det
     return det
 
 
 def _make_footprint_sparse(
-    law: DispersionLaw, side_length_pix: int, num_wavel_bins: int
+    law: DispersionLaw, n_pix_y: int, n_pix_x: int, num_wavel_bins: int
 ) -> scipy.sparse.csr_matrix:
     """Vectorized sparse equivalent of DispersionLaw.make_footprint, for cross-checks.
 
-    Returns a CSR matrix of shape (n_bins, n_pix * n_pix), each row a row-major
+    Returns a CSR matrix of shape (n_bins, n_pix_y * n_pix_x), each row a row-major
     (y, x) flattening of that bin's footprint.
     """
     # vectorized: compute all bin start/end columns at once (they're a linear
     # function of wavel_bin_num), then build row/col/data arrays for COO
     # construction in one shot — no per-bin Python-level array allocation.
-    side = side_length_pix
     bin_idx = np.arange(num_wavel_bins)
     x_start = law.starting_pixel[1] + bin_idx * law.pix_per_wavel_bin
     x_end = x_start + law.pix_per_wavel_bin
@@ -145,15 +160,15 @@ def _make_footprint_sparse(
     y1 = int(law.starting_pixel[0] + law.pix_spectral_width)
     ys = np.arange(y0, y1)
     rows = np.repeat(col_bin, ys.size)
-    cols = (ys[None, :] * side + col_x[:, None]).ravel()
+    cols = (ys[None, :] * n_pix_x + col_x[:, None]).ravel()
     data = np.repeat(col_val, ys.size)
     col_x_rep = np.repeat(col_x, ys.size)
 
     # drop zero-weight edges and anything off the detector
-    keep = (data != 0) & (col_x_rep >= 0) & (col_x_rep < side)
+    keep = (data != 0) & (col_x_rep >= 0) & (col_x_rep < n_pix_x)
     return scipy.sparse.coo_matrix(
         (data[keep], (rows[keep], cols[keep])),
-        shape=(num_wavel_bins, side * side),
+        shape=(num_wavel_bins, n_pix_y * n_pix_x),
     ).tocsr()
 
 
@@ -491,7 +506,8 @@ class TestDisperseAstroSignalsOnDetector:
         n_pix_per_bin = np.sum(footprint, axis=(1, 2)) * u.pix
 
         mock_det = MagicMock()
-        mock_det.side_length_pix = 5
+        mock_det.n_pix_y = 5
+        mock_det.n_pix_x = 5
         mock_det.num_wavel_bins = n_bins
         mock_det.footprint_cube = footprint
         mock_det.apply_qe.side_effect = lambda x: x * 0.8
@@ -538,23 +554,61 @@ class TestDisperseAstroSignalsOnDetector:
             expected_pixel.value,
         )
         assert mock_law.make_footprint.call_count == 4
+        mock_law.make_footprint.assert_called_with(5, 5, n_bins)
         assert mock_det.set_footprint.call_count == 4
 
 
 class TestDetector:
     def test_init_parses_detector_geometry(self, detector_geometry_config):
         det = Detector(config=detector_geometry_config, num_wavel_bins=17)
-        assert det.side_length_pix == 400
+        # a single "size" gives a square array
+        assert det.shape == (400, 400)
         assert det.pitch_pix == 25.0
         assert det.num_wavel_bins == 17
         assert det.quantum_efficiency == 0.8
+
+    def test_init_parses_rectangular_geometry(self, rectangular_geometry_config):
+        det = Detector(config=rectangular_geometry_config, num_wavel_bins=17)
+        assert (det.n_pix_y, det.n_pix_x) == (64, 300)
+        assert det.shape == (64, 300)
+
+    def test_missing_size_raises(self, detector_geometry_config):
+        config = {"detector": dict(detector_geometry_config["detector"])}
+        del config["detector"]["size"]
+        with pytest.raises(KeyError, match="size_y and size_x"):
+            Detector(config=config, num_wavel_bins=3)
+
+    def test_rectangular_expose_and_footprint(self, rectangular_geometry_config):
+        n_bins = 17
+        det = Detector(config=rectangular_geometry_config, num_wavel_bins=n_bins)
+        law = DispersionLaw(rectangular_geometry_config)
+        cube = law.make_footprint(det.n_pix_y, det.n_pix_x, n_bins)
+        det.set_footprint(cube)
+
+        assert cube.shape == (n_bins, 64, 300)
+        assert det.footprint_bbox() == (30, 33, 20, int(np.ceil(20 + n_bins * 2.2)))
+        signal = {
+            "star": {
+                "flux_astro_1d_interpolated_ph_sec_pixel": np.ones(n_bins)
+                * u.ph
+                / (u.s * u.pix)
+            }
+        }
+        frames = det.expose(signal, 1.0 * u.s)
+        assert frames.source_e["star"].shape == (64, 300)
+        assert frames.systematics_e.shape == (64, 300)
+
+    def test_set_footprint_rejects_wrong_grid(self, rectangular_geometry_config):
+        det = Detector(config=rectangular_geometry_config, num_wavel_bins=3)
+        with pytest.raises(ValueError, match="does not match"):
+            det.set_footprint(np.zeros((3, 300, 64)))
 
 
 class TestDispersionLaw:
     def test_make_footprint_stores_expected_cube(self, detector_geometry_config):
         law = DispersionLaw(detector_geometry_config)
         det = Detector(config=detector_geometry_config, num_wavel_bins=3)
-        cube = law.make_footprint(det.side_length_pix, det.num_wavel_bins)
+        cube = law.make_footprint(det.n_pix_y, det.n_pix_x, det.num_wavel_bins)
         det.set_footprint(cube)
 
         assert cube.shape == (3, 400, 400)
@@ -571,11 +625,47 @@ class TestDispersionLaw:
         assert np.allclose(cube[0, rows, 301], 1.0)
         assert np.allclose(cube[0, rows, 302], 0.2)
 
+    def test_trace_start_defaults_and_reads_config(
+        self, detector_geometry_config, rectangular_geometry_config
+    ):
+        assert DispersionLaw(detector_geometry_config).starting_pixel.tolist() == [
+            100.0,
+            300.0,
+        ]
+        assert DispersionLaw(rectangular_geometry_config).starting_pixel.tolist() == [
+            30.0,
+            20.0,
+        ]
+        # an explicit argument wins over the config
+        law = DispersionLaw(rectangular_geometry_config, starting_pixel=(5.0, 6.0))
+        assert law.starting_pixel.tolist() == [5.0, 6.0]
+
+    @pytest.mark.parametrize(
+        ("n_pix_y", "n_pix_x", "n_bins"),
+        [
+            (400, 400, 60),  # runs off the right edge: 300 + 60 * 2.2 = 432
+            (101, 400, 3),  # rows 100..102 do not fit in 101 rows
+        ],
+    )
+    def test_trace_off_detector_raises(
+        self, detector_geometry_config, n_pix_y, n_pix_x, n_bins
+    ):
+        law = DispersionLaw(detector_geometry_config)
+        with pytest.raises(ValueError, match="does not fit"):
+            law.make_footprint(n_pix_y, n_pix_x, n_bins)
+
+    def test_trace_touching_column_zero_raises(self, rectangular_geometry_config):
+        # the first bin's start edge is column ceil(x0) - 1, which is -1 for x0 = 0
+        law = DispersionLaw(rectangular_geometry_config, starting_pixel=(30.0, 0.0))
+        with pytest.raises(ValueError, match="does not fit"):
+            law.make_footprint(64, 300, 3)
+
     # pix_per_wavel_bin < 1 is excluded: bins inside a single pixel are mis-weighted
     # by both methods (differently)
     @pytest.mark.parametrize("pix_per_wavel_bin", ["2.2", "1.0", "1.3", "3.7"])
+    @pytest.mark.parametrize(("n_pix_y", "n_pix_x"), [(400, 400), (120, 400)])
     def test_sparse_footprint_matches_dense(
-        self, detector_geometry_config, pix_per_wavel_bin
+        self, detector_geometry_config, pix_per_wavel_bin, n_pix_y, n_pix_x
     ):
         config = {
             **detector_geometry_config,
@@ -585,22 +675,22 @@ class TestDispersionLaw:
             },
         }
         law = DispersionLaw(config)
-        side, n_bins = 400, 17
-        dense = law.make_footprint(side, n_bins)
-        sparse = _make_footprint_sparse(law, side, n_bins)
+        n_bins = 17
+        dense = law.make_footprint(n_pix_y, n_pix_x, n_bins)
+        sparse = _make_footprint_sparse(law, n_pix_y, n_pix_x, n_bins)
 
-        assert np.allclose(sparse.toarray().reshape(n_bins, side, side), dense)
+        assert np.allclose(sparse.toarray().reshape(n_bins, n_pix_y, n_pix_x), dense)
         assert u.allclose(
             np.asarray(sparse.sum(axis=1)).ravel() * u.pix,
             DispersionLaw.n_pix_per_bin(dense),
         )
         assert np.allclose(
-            np.asarray(sparse.sum(axis=0)).reshape(side, side),
+            np.asarray(sparse.sum(axis=0)).reshape(n_pix_y, n_pix_x),
             DispersionLaw.footprint_image(dense),
         )
 
         rng = np.random.default_rng(0)
-        image = rng.normal(size=(side, side))
+        image = rng.normal(size=(n_pix_y, n_pix_x))
         assert np.allclose(
             sparse @ image.ravel(),
             DispersionLaw.weighted_sum_per_bin(dense, image),

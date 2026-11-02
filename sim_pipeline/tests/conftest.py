@@ -13,6 +13,26 @@ from modules.core.instrumental.dispersion import DispersionLaw
 CHANNEL_NAMES = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
 
 
+def pytest_addoption(parser):
+    """--run-smoke opts in to the (slower) end-to-end smoke tests."""
+    parser.addoption(
+        "--run-smoke",
+        action="store_true",
+        default=False,
+        help="run tests marked 'smoke' (whole-pipeline smoke-test runs)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip 'smoke' tests unless --run-smoke is given."""
+    if config.getoption("--run-smoke"):
+        return
+    skip_smoke = pytest.mark.skip(reason="smoke test: run with --run-smoke")
+    for item in items:
+        if "smoke" in item.keywords:
+            item.add_marker(skip_smoke)
+
+
 @pytest.fixture
 def make_output_channels():
     """Factory for the four OutputChannels with real detectors and footprints."""
@@ -33,7 +53,7 @@ def make_output_channels():
         for name in CHANNEL_NAMES:
             det = Detector(config=config, num_wavel_bins=n_bins)
             law = DispersionLaw(config)
-            det.set_footprint(law.make_footprint(det.side_length_pix, n_bins))
+            det.set_footprint(law.make_footprint(det.n_pix_y, det.n_pix_x, n_bins))
             channels[name] = OutputChannel(
                 name=name,
                 detector=det,

@@ -16,8 +16,12 @@ from ...pipeline_registry import pipeline_stage
 from ...viz.aperture import plot_astro_ph_sec_pixel
 from ...viz.detector import plot_detector_footprint
 from .detector import Detector
+from .effects import _config_get
 
 logger = logging.getLogger(__name__)
+
+# lower-left corner (y, x) of the first wavelength-bin footprint, if not configured
+DEFAULT_TRACE_START_PIXEL = (100.0, 300.0)
 
 
 class DispersionLaw:
@@ -36,28 +40,55 @@ class DispersionLaw:
         self.config = config
         self.pix_per_wavel_bin = float(config["detector"]["pix_per_wavel_bin"])
         self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
-        # lower-left corner of the first wavelength-bin footprint (y, x)
-        self.starting_pixel = np.asarray(
-            starting_pixel if starting_pixel is not None else (100.0, 300.0),
-            dtype=float,
-        )
+        # lower-left corner of the first wavelength-bin footprint (y, x):
+        # argument, else [detector] trace_start_pixel, else the default
+        if starting_pixel is None:
+            configured = _config_get(config, "detector", "trace_start_pixel")
+            starting_pixel = (
+                [float(v) for v in str(configured).split(",")]
+                if configured is not None
+                else DEFAULT_TRACE_START_PIXEL
+            )
+        self.starting_pixel = np.asarray(starting_pixel, dtype=float)
+        if self.starting_pixel.shape != (2,):
+            raise ValueError(
+                f"trace_start_pixel must be 'y, x'; got {self.starting_pixel.tolist()}"
+            )
 
-    def make_footprint(self, side_length_pix: int, num_wavel_bins: int) -> np.ndarray:
+    def _check_trace_fits(
+        self, n_pix_y: int, n_pix_x: int, num_wavel_bins: int
+    ) -> None:
+        """Raise if the trace would fall (partly) off the detector."""
+        y0, x0 = self.starting_pixel
+        y1 = int(y0) + self.pix_spectral_width
+        # columns touched: ceil(x0) - 1 (start edge) .. floor(x_end) (end edge)
+        x_end = x0 + num_wavel_bins * self.pix_per_wavel_bin
+        first_col = int(np.ceil(x0)) - 1
+        last_col = int(np.floor(x_end))
+        if y0 < 0 or y1 > n_pix_y or first_col < 0 or last_col >= n_pix_x:
+            raise ValueError(
+                f"Spectral trace does not fit on the {n_pix_y} x {n_pix_x} detector: "
+                f"rows {int(y0)}..{y1 - 1}, columns {first_col}..{last_col} "
+                f"({num_wavel_bins} bins x {self.pix_per_wavel_bin} pix/bin from "
+                f"x = {x0}). Adjust [detector] trace_start_pixel, size_y/size_x, "
+                "spec_res or the wavelength range."
+            )
+
+    def make_footprint(
+        self, n_pix_y: int, n_pix_x: int, num_wavel_bins: int
+    ) -> np.ndarray:
         """Return the wavelength-bin footprint cube on the detector.
 
-        Shape is (n_bins, n_pix, n_pix). Values are 1 for fully covered pixels and
-        fractional coverage on edges.
+        Shape is (n_bins, n_pix_y, n_pix_x). Values are 1 for fully covered pixels
+        and fractional coverage on edges.
         """
+        self._check_trace_fits(n_pix_y, n_pix_x, num_wavel_bins)
 
-        footprint_cube = np.full(
-            (num_wavel_bins, side_length_pix, side_length_pix), 0.0, dtype=float
-        )
+        footprint_cube = np.full((num_wavel_bins, n_pix_y, n_pix_x), 0.0, dtype=float)
 
         for wavel_bin_num in range(num_wavel_bins):
             # assumes horizontal spectra
-            footprint_this = np.full(
-                (side_length_pix, side_length_pix), 0.0, dtype=float
-            )
+            footprint_this = np.full((n_pix_y, n_pix_x), 0.0, dtype=float)
             starting_pixel_this = self.starting_pixel + np.array(
                 [0.0, wavel_bin_num * self.pix_per_wavel_bin]
             )
@@ -101,7 +132,7 @@ class DispersionLaw:
 
     @staticmethod
     def footprint_image(footprint: np.ndarray) -> np.ndarray:
-        """Footprint summed over wavelength bins, as a 2D (n_pix, n_pix) image."""
+        """Footprint summed over wavelength bins, as a 2D (n_pix_y, n_pix_x) image."""
         return np.sum(footprint, axis=0)
 
     @staticmethod
@@ -137,7 +168,8 @@ def disperse_astro_signals_on_detector(
         logging.info("Dispersing signals on detector for %s", output_channel.name)
 
         footprint_cube = dispersion_law.make_footprint(
-            output_channel.detector.side_length_pix,
+            output_channel.detector.n_pix_y,
+            output_channel.detector.n_pix_x,
             output_channel.detector.num_wavel_bins,
         )
         output_channel.detector.set_footprint(footprint_cube)

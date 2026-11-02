@@ -51,6 +51,11 @@ testpaths = ["sim_pipeline/tests"]
 pythonpath = ["sim_pipeline"]
 python_files = ["test_*.py"]
 addopts = "--cov=batch_process --cov=modules --cov-report=html --cov-report=term-missing"
+# smoke tests run the whole pipeline end to end; skipped unless --run-smoke is given
+# (see sim_pipeline/tests/conftest.py)
+markers = [
+    "smoke: end-to-end smoke-test run of the pipeline (opt in with --run-smoke)",
+]
 
 [tool.coverage.run]
 # batch_process is only imported by batch-process tests; avoid noise on other runs
@@ -60,4 +65,4 @@ disable_warnings = ["module-not-imported"]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true 
+disallow_untyped_defs = true

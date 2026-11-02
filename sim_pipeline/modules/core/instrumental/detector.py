@@ -29,11 +29,28 @@ def _parse_dark_current_rates(dark_current_str: str) -> np.ndarray:
     return np.fromstring(dark_current_str, sep=",")
 
 
+def detector_shape_from_config(config: Dict) -> tuple[int, int]:
+    """
+    (n_pix_y, n_pix_x) from [detector] size_y and size_x; a single [detector] size
+    (older configs) gives a square array.
+    """
+    size_y = _config_get(config, "detector", "size_y")
+    size_x = _config_get(config, "detector", "size_x")
+    if size_y is not None and size_x is not None:
+        return int(size_y), int(size_x)
+    size = _config_get(config, "detector", "size")
+    if size is None:
+        raise KeyError(
+            "[detector] needs size_y and size_x (or size for a square array)"
+        )
+    return int(size), int(size)
+
+
 class Detector:
     """Sensor model: geometry, quantum efficiency, gain, read noise and dark current."""
 
     def __init__(self, config: Dict, num_wavel_bins: int):
-        self.side_length_pix = int(config["detector"]["size"])
+        self.n_pix_y, self.n_pix_x = detector_shape_from_config(config)
         self.pitch_pix = float(config["detector"]["pitch_pix"])
         self.num_wavel_bins = num_wavel_bins
         self.config = config
@@ -65,18 +82,28 @@ class Detector:
 
         self.footprint_cube: np.ndarray | None = None
 
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Pixel grid shape (n_pix_y, n_pix_x)."""
+        return self.n_pix_y, self.n_pix_x
+
     def set_footprint(self, footprint_cube: np.ndarray) -> None:
         """Attach an illumination footprint from a DispersionLaw."""
+        if footprint_cube.shape[1:] != self.shape:
+            raise ValueError(
+                f"Footprint grid {footprint_cube.shape[1:]} does not match the "
+                f"detector {self.shape}"
+            )
         self.footprint_cube = footprint_cube
 
     def footprint_image(self) -> np.ndarray:
-        """Footprint summed over wavelength bins, as a 2D (n_pix, n_pix) image."""
+        """Footprint summed over wavelength bins, as a 2D (n_pix_y, n_pix_x) image."""
         self._require_footprint()
         return np.sum(self.footprint_cube, axis=0)
 
     def bin_index_map(self) -> np.ndarray:
         """
-        (n_pix, n_pix) map of the wavelength bin each pixel belongs to, for box
+        (n_pix_y, n_pix_x) map of the wavelength bin each pixel belongs to, for box
         extraction.
 
         A pixel shared by two bins goes entirely to the bin covering most of it
@@ -121,7 +148,5 @@ class Detector:
             source_e[source_name] = np.tensordot(
                 e_pix_per_bin, self.footprint_cube, axes=(0, 0)
             )
-        systematics_e = np.zeros(
-            (self.side_length_pix, self.side_length_pix), dtype=float
-        )
+        systematics_e = np.zeros(self.shape, dtype=float)
         return DetectorFrames(source_e=source_e, systematics_e=systematics_e)

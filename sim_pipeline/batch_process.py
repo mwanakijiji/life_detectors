@@ -40,9 +40,12 @@ from modules.utils import loader, validator
 from modules.utils.helpers.config_ops import (
     _normalize_output_root,
     apply_output_root_override,
+    apply_smoke_test_overrides,
     get_sweep_range,
     modify_config_file_pl_system_params,
     modify_config_file_sweep,
+    smoke_test_enabled,
+    smoke_test_limits,
 )
 from modules.utils.helpers.formatting import ensure_plot_title_context
 from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
@@ -72,6 +75,7 @@ def run_single_calculation(
     system_params: Optional[dict] = None,
     lum_types: Optional[dict] = None,
     output_root: Optional[str] = None,
+    smoke_test: bool = False,
 ) -> bool:
     """
     Run a single calculation with specified parameters. (Single here means single QE
@@ -88,6 +92,8 @@ def run_single_calculation(
         plot: Whether to generate plots
         system_params: Optional[dict] = None: the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
+        smoke_test: force smoke-test mode (small, fast run; see [smoke_test] in the
+            config), even if [smoke_test] enabled = False
 
     Returns:
         output_path: Path of the output FITS file
@@ -105,6 +111,7 @@ def run_single_calculation(
     plot = loader.config_getboolean(
         base_config, "tasks", "print_fyi_plots", default=plot
     )
+    smoke_test = smoke_test_enabled(base_config, force=smoke_test)
 
     # Build a per-run token so parallel jobs do not clobber temp files.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -117,6 +124,10 @@ def run_single_calculation(
     temp_config_path_nint_qe = apply_output_root_override(
         temp_config_path_nint_qe, output_root
     )
+    # smoke-test mode: shrink the run via the [smoke_test] overrides (before the
+    # per-planet config, which is derived from this one)
+    if smoke_test:
+        apply_smoke_test_overrides(temp_config_path_nint_qe, force=True)
     # modify again, for a given planetary system
     if system_params is not None:
         temp_config_path = modify_config_file_pl_system_params(
@@ -147,6 +158,13 @@ def run_single_calculation(
     config = configparser.ConfigParser()
     config.read(temp_config_path)
     ensure_plot_title_context(config)
+
+    # in smoke-test mode the overridden temp config decides plotting and run size
+    run_limits = smoke_test_limits(config, force=smoke_test)
+    if smoke_test:
+        plot = loader.config_getboolean(
+            config, "tasks", "print_fyi_plots", default=plot
+        )
 
     # Make the overwriteable scratch FITS file unique per run.
     if config.has_section("saving") and config.has_option(
@@ -343,10 +361,10 @@ def run_single_calculation(
 
             # write the detector readouts to FITS (one HDU per output channel):
             # a cutout around the spectral trace at every angle, plus one full-frame
-            # example
+            # example (unless switched off, e.g. in smoke-test mode)
             save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
             header_cards = {"ANGLE": float(angle_deg), "QE": float(qe)}
-            if i_angle == 0:
+            if i_angle == 0 and run_limits["write_full_frame_example"]:
                 full_example_file_name = save_dir + format_qe_fits_full_example_name(qe)
                 logger.info(
                     "Writing full-frame example readouts to %s ...",
@@ -414,7 +432,11 @@ def run_single_calculation(
             "  extracted-spectra cubes: %s",
             qe,
             save_dir_abs,
-            format_qe_fits_full_example_name(qe),
+            (
+                format_qe_fits_full_example_name(qe)
+                if run_limits["write_full_frame_example"]
+                else "(not written)"
+            ),
             "readouts_angle_*_qe_" + f"{qe:04.2f}.fits",
             ", ".join(os.path.basename(f) for f in cube_file_names) or "none",
         )
@@ -444,6 +466,7 @@ def batch_qe_nint_process(
     system_params: Optional[dict] = None,
     lum_types: Optional[dict] = None,
     output_root: Optional[str] = None,
+    smoke_test: bool = False,
 ) -> List[Tuple[int, str, bool]]:
     """
     Run batch processing with multiple QE and n_int values.
@@ -458,6 +481,7 @@ def batch_qe_nint_process(
         plot: Whether to generate plots
         system_params: Optional dictionary of the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
+        smoke_test: force smoke-test mode for every run
 
     Returns:
         List of tuples (n_int, output_path, success)
@@ -505,6 +529,7 @@ def batch_qe_nint_process(
             system_params=system_params,
             lum_types=lum_types,
             output_root=output_root,
+            smoke_test=smoke_test,
         )
         time_1 = time.time()
         logging.info(
@@ -528,9 +553,13 @@ def parameter_sweep(
     config_sweep_path: str,
     config_planet_population_path: str,
     output_root: Optional[str] = None,
+    smoke_test: bool = False,
 ) -> None:
     """
     Run a QE/n_int parameter sweep for one system or a planet population.
+
+    smoke_test forces smoke-test mode ([smoke_test] in the single-obs config): every
+    run is shrunk by its overrides, and the QE values and planets are capped.
     """
     print("\nExample 3: Parameter sweep")
     print("-" * 40)
@@ -542,6 +571,13 @@ def parameter_sweep(
         config_file=config_planet_population_path
     )
     lum_types = None
+
+    smoke_test = smoke_test_enabled(config_single_obs, force=smoke_test)
+    run_limits = smoke_test_limits(config_single_obs, force=smoke_test)
+    if smoke_test:
+        logging.warning(
+            "*** SMOKE TEST MODE *** (not a science run); limits: %s", run_limits
+        )
 
     # delete preexisting HDF5 output files?
     # ## TODO: make this work; will need to enable deletion of HdF5 files in each output
@@ -617,6 +653,14 @@ def parameter_sweep(
         df_planet_population = merge_psg_spectra_to_planet_population(
             df_planet_population, config_planet_population
         )
+        if run_limits["max_planets"] is not None:
+            df_planet_population = df_planet_population.iloc[
+                : run_limits["max_planets"]
+            ]
+            logging.info(
+                "Smoke test: limited to the first %d planet(s)",
+                len(df_planet_population),
+            )
 
         plot = loader.config_getboolean(
             config_single_obs, "tasks", "print_fyi_plots", default=False
@@ -650,6 +694,9 @@ def parameter_sweep(
     obs = config_sweep["observation"]
 
     qe_values = get_sweep_range(obs, "qe")
+    if run_limits["max_qe_values"] is not None:
+        qe_values = qe_values[: run_limits["max_qe_values"]]
+        logging.info("Smoke test: limited to QE value(s) %s", qe_values)
 
     # get the astrophysical sources to include from the config file
     sources_to_include = [
@@ -684,6 +731,7 @@ def parameter_sweep(
             system_params=system_params,
             lum_types=lum_types,
             output_root=output_root,
+            smoke_test=smoke_test,
         )
         logging.info(
             "Parameter sweep completed: all calculations successful = %s", success_all
