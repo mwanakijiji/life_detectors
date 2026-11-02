@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
-from astropy.visualization import quantity_support
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +46,6 @@ def _normalize_output_root(output_root: str) -> str:
     """Return an absolute output directory with a trailing separator."""
     normalized = str(Path(output_root).expanduser().resolve())
     return normalized if normalized.endswith(os.sep) else normalized + os.sep
-
-
-def enable_plot_units():
-    """Let matplotlib label axes from astropy Quantity units."""
-    quantity_support()
 
 
 def apply_output_root_override(config_path: str, output_root: Optional[str]) -> str:

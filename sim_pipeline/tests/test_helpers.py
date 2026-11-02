@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import astropy.constants as const
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
@@ -56,8 +57,8 @@ from modules.utils.helpers.spectra import (
     generate_star_spectrum,
     generate_zodiacal_spectrum,
     merge_psg_spectra_to_planet_population,
-    plot_planet_population_sample,
 )
+from modules.viz.spectra import plot_planet_population_sample
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APERTURE_YAML = REPO_ROOT / "sim_pipeline/config/aperture_array_double_bracewell.yaml"
@@ -346,7 +347,7 @@ class TestMergePsgSpectra:
 
 
 class TestPlotPlanetPopulationSample:
-    @patch("modules.utils.helpers.spectra.plt.close")
+    @patch("modules.viz.spectra.plt.close")
     def test_saves_scatter_matrix_for_small_population(self, _mock_close, tmp_path):
         df = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
         out_path = tmp_path / "scatter.png"
@@ -355,6 +356,56 @@ class TestPlotPlanetPopulationSample:
 
         assert out_path.exists()
         assert out_path.stat().st_size > 0
+
+
+class TestSpectrumPlots:
+    """plot=True on the spectrum generators draws via modules.viz.spectra."""
+
+    @staticmethod
+    def _make_config(save_dir: str):
+        cfg = configparser.ConfigParser()
+        cfg.add_section("dirs")
+        cfg.set("dirs", "save_s2n_data_unique_dir", save_dir)
+        cfg.add_section("target")
+        for key, value in {
+            "rad_star": "1.0",
+            "T_star": "5778",
+            "planet_source": "BB",
+            "rad_planet": "1.0",
+            "pl_temp": "288",
+            "tau_opt_zodiacal": "4e-8",
+            "T_eff_zodiacal": "265.0",
+            "A_albedo": "0.22",
+            "lambda_rel_lon_los": "135",
+            "beta_lat_los": "45",
+            "z_exozodiacal": "1.0",
+            "L_star": "1.0",
+        }.items():
+            cfg.set("target", key, value)
+        cfg.add_section("telescope")
+        cfg.set("telescope", "single_mirror_diameter", "2.0")
+        return cfg
+
+    def test_plot_true_writes_figures_and_closes_them(self, tmp_path):
+        plt.close("all")
+        cfg = self._make_config(str(tmp_path))
+        wavelength_um = np.logspace(0.6, 1.3, 20) * u.um
+
+        generate_star_spectrum(cfg, wavelength_um, plot=True)
+        generate_planet_bb_spectrum(cfg, wavelength_um, plot=True)
+        generate_exozodiacal_spectrum(cfg, wavelength_um, plot=True)
+        generate_zodiacal_spectrum(cfg, wavelength_um, plot=True)
+
+        for name in [
+            "star_spectrum.png",
+            "planet_spectrum.png",
+            "exozodiacal_spectrum.png",
+            "zodiacal_emission_2d.png",
+            "zodiacal_spectrum_los.png",
+        ]:
+            path = tmp_path / name
+            assert path.exists() and path.stat().st_size > 0, name
+        assert plt.get_fignums() == []
 
 
 class TestApplyOutputRootOverride:

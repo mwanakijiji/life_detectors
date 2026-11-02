@@ -54,8 +54,8 @@ from modules.utils.helpers.spectra import (
     compute_collecting_area_m2,
     create_sample_data,
     merge_psg_spectra_to_planet_population,
-    plot_planet_population_sample,
 )
+from modules.viz.spectra import plot_planet_population_sample
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
