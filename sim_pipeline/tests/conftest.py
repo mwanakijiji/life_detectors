@@ -2,6 +2,9 @@
 sys.path via pyproject's pythonpath).
 """
 
+import logging
+import os
+
 import numpy as np
 import pytest
 from astropy import units as u
@@ -9,6 +12,7 @@ from astropy import units as u
 from modules.core.instrumental.channels import OutputChannel
 from modules.core.instrumental.detector import Detector
 from modules.core.instrumental.dispersion import DispersionLaw
+from modules.utils.loader import LOG_DIR_ENV_VAR
 
 CHANNEL_NAMES = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
 
@@ -31,6 +35,27 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "smoke" in item.keywords:
             item.add_marker(skip_smoke)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_log_dir(tmp_path_factory):
+    """Send default-location log files to a temp dir, never sim_pipeline/logs/."""
+    log_dir = tmp_path_factory.mktemp("logs")
+    previous = os.environ.get(LOG_DIR_ENV_VAR)
+    os.environ[LOG_DIR_ENV_VAR] = str(log_dir)
+    yield log_dir
+    if previous is None:
+        os.environ.pop(LOG_DIR_ENV_VAR, None)
+    else:
+        os.environ[LOG_DIR_ENV_VAR] = previous
+    # close file handlers that ensure_logging() attached during the session
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if isinstance(handler, logging.FileHandler) and str(
+            handler.baseFilename
+        ).startswith(str(log_dir)):
+            root.removeHandler(handler)
+            handler.close()
 
 
 @pytest.fixture

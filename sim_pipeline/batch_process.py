@@ -99,6 +99,9 @@ def run_single_calculation(
         output_path: Path of the output FITS file
     """
 
+    # write a log file even when not called via batch_run.py (no-op if one is set up)
+    loader.ensure_logging()
+
     # get config things sorted out
     base_config = configparser.ConfigParser()
     base_config.read(config_path)
@@ -561,6 +564,9 @@ def parameter_sweep(
     smoke_test forces smoke-test mode ([smoke_test] in the single-obs config): every
     run is shrunk by its overrides, and the QE values and planets are capped.
     """
+    # write a log file even when not called via batch_run.py (no-op if one is set up)
+    loader.ensure_logging()
+
     print("\nExample 3: Parameter sweep")
     print("-" * 40)
 

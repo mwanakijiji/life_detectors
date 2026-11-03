@@ -9,7 +9,14 @@ import re
 
 import pytest
 
-from modules.utils.loader import config_getboolean, load_config, setup_logging
+from modules.utils.loader import (
+    LOG_DIR_ENV_VAR,
+    config_getboolean,
+    ensure_logging,
+    load_config,
+    setup_logging,
+    writes_to_log_file,
+)
 
 
 class TestConfigGetBoolean:
@@ -142,3 +149,52 @@ class TestSetupLogging:
         log_dir = tmp_path / "new_logs"
         setup_logging(str(log_dir), tag="mkdir_test")
         assert log_dir.is_dir()
+
+
+class TestEnsureLogging:
+    @pytest.fixture(autouse=True)
+    def restore_root_logger(self, tmp_path, monkeypatch):
+        """Send logs to tmp_path; start without real file handlers; restore after."""
+        monkeypatch.setenv(LOG_DIR_ENV_VAR, str(tmp_path / "ensure_logs"))
+        root = logging.getLogger()
+        saved_handlers, saved_level = list(root.handlers), root.level
+        # drop file handlers left by earlier tests (e.g. ensure_logging calls)
+        root.handlers = [h for h in root.handlers if not writes_to_log_file(h)]
+        yield
+        for handler in root.handlers:
+            if handler not in saved_handlers:
+                root.removeHandler(handler)
+                handler.close()
+        root.handlers = saved_handlers
+        root.setLevel(saved_level)
+
+    def test_creates_log_file_in_default_dir(self, tmp_path):
+        log_path = ensure_logging(tag="ensure_test")
+
+        assert log_path is not None
+        assert os.path.dirname(log_path) == str(tmp_path / "ensure_logs")
+        logging.getLogger("some.module").info("ensure test message")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        with open(log_path, encoding="utf-8") as f:
+            assert "ensure test message" in f.read()
+
+    def test_noop_when_file_handler_present(self, tmp_path):
+        existing = logging.FileHandler(str(tmp_path / "existing.log"))
+        logging.getLogger().addHandler(existing)
+
+        assert ensure_logging() is None
+        assert not (tmp_path / "ensure_logs").exists()
+
+    def test_keeps_existing_handlers(self):
+        root = logging.getLogger()
+        before = list(root.handlers)
+
+        ensure_logging()
+
+        assert all(h in root.handlers for h in before)
+
+    def test_devnull_file_handler_does_not_count(self):
+        devnull = logging.FileHandler(os.devnull)
+        assert not writes_to_log_file(devnull)
+        devnull.close()

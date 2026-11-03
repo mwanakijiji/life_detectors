@@ -6,10 +6,17 @@ import configparser
 import logging
 import os
 import re
+from pathlib import Path
 
 import pytest
 
-from modules.utils.loader import load_config, setup_logging
+from modules.utils.loader import (
+    DEFAULT_LOG_DIR,
+    LOG_DIR_ENV_VAR,
+    default_log_dir,
+    load_config,
+    setup_logging,
+)
 from modules.utils.validator import ConfigValidator, validate_config
 
 
@@ -118,6 +125,9 @@ class TestSetupLogging:
         """Reset root logger handlers after each test to avoid cross-test pollution."""
         yield
         root = logging.getLogger()
+        for handler in root.handlers:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
         root.handlers = []
         root.setLevel(logging.WARNING)
 
@@ -146,11 +156,22 @@ class TestSetupLogging:
             content = f.read()
         assert "test message" in content
 
-    def test_uses_default_log_dir_when_no_arg(self):
-        """Uses 'logs' as default when log_dir not provided."""
+    def test_uses_default_log_dir_when_no_arg(self, tmp_path, monkeypatch):
+        """With no log_dir, the file goes to default_log_dir() (env override here)."""
+        monkeypatch.setenv(LOG_DIR_ENV_VAR, str(tmp_path / "default_logs"))
         result = setup_logging()
-        assert "logs" in result
+        assert Path(result).parent == tmp_path / "default_logs"
         assert result.endswith(".log")
+
+    def test_default_log_dir_is_sim_pipeline_logs(self, monkeypatch):
+        """Without the env override, the default is sim_pipeline/logs/ (absolute,
+        so independent of the working directory)."""
+        monkeypatch.delenv(LOG_DIR_ENV_VAR, raising=False)
+        assert default_log_dir() == DEFAULT_LOG_DIR
+        default = Path(DEFAULT_LOG_DIR)
+        assert default.is_absolute()
+        assert default.name == "logs"
+        assert default.parent.name == "sim_pipeline"
 
 
 class TestConfigValidator:
