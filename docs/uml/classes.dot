@@ -31,6 +31,7 @@ charset="utf-8"
 "sim_pipeline.modules.pipeline_registry.StageSpec" [color="black", fontcolor="black", label=<StageSpec>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.aperture.TelescopeThermalBackground" [color="black", fontcolor="black", label=<TelescopeThermalBackground>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.effects.TransferFunctionEffect" [color="black", fontcolor="black", label=<TransferFunctionEffect>, shape="record", style="solid"];
+"sim_pipeline.modules.core.instrumental.wavel_solution.WavelSolution" [color="black", fontcolor="black", label=<WavelSolution>, shape="record", style="solid"];
 "sim_pipeline.modules.core.instrumental.aperture.TelescopeThermalBackground" -> "sim_pipeline.modules.core.instrumental.aperture.InstrumentBackground" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.effects.AdditiveMapEffect" -> "sim_pipeline.modules.core.instrumental.effects.DetectorEffect" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.effects.AgingPixelsEffect" -> "sim_pipeline.modules.core.instrumental.effects.DetectorEffect" [arrowhead="empty", arrowtail="none"];
@@ -42,6 +43,8 @@ charset="utf-8"
 "sim_pipeline.modules.core.instrumental.effects.PersistenceEffect" -> "sim_pipeline.modules.core.instrumental.effects.DetectorEffect" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.effects.ReadPatternEffect" -> "sim_pipeline.modules.core.instrumental.effects.AdditiveMapEffect" [arrowhead="empty", arrowtail="none"];
 "sim_pipeline.modules.core.instrumental.effects.TransferFunctionEffect" -> "sim_pipeline.modules.core.instrumental.effects.DetectorEffect" [arrowhead="empty", arrowtail="none"];
+"sim_pipeline.modules.core.instrumental.dispersion.DispersionLaw" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="diamond", arrowtail="none", fontcolor="green", label="dispersion_law", style="solid"];
+"sim_pipeline.modules.core.instrumental.wavel_solution.WavelSolution" -> "sim_pipeline.modules.core.instrumental.pipeline.InstrumentDepTerms" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="wavel_solution", style="solid"];
 "sim_pipeline.modules.core.planet_spectrum_provider.PlanetSpectrumProvider" -> "sim_pipeline.modules.core.astrophysical.AstrophysicalSources" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="planet_spectrum_provider", style="solid"];
 "sim_pipeline.modules.core.planet_spectrum_provider.PopulationSpectrumGenerator" -> "sim_pipeline.modules.core.planet_spectrum_provider.PopulationSpectrumProvider" [arrowhead="odiamond", arrowtail="none", fontcolor="green", label="generator", style="solid"];
 }

@@ -203,3 +203,54 @@ def assemble_extracted_spectra_cubes(
             total.shape,
         )
     return written
+
+
+def read_extracted_cube(file_name: str) -> dict:
+    """
+    Read an ``extracted_cube_qe_*_dc_*.fits`` file back into arrays.
+
+    Returns a dict with:
+        total_adu            (n_bins, n_readouts_total, n_channels) ADU
+        components_adu       {component name: same shape, ADU}
+        error_adu            same shape, or None (no ERROR HDU)
+        channels             FITS channel names in axis-2 order (e.g. "CH1BR")
+        wavel_lo, wavel_cen, wavel_hi   (n_bins,) um
+        angle_deg, angle_index, readout_index   (n_readouts_total,)
+        gain (e-/ADU), t_frame_s, qe, dc (e-/pix/s), n_angles, n_readouts_per_angle,
+        extraction_method, file_name
+    """
+    with fits.open(file_name) as hdul:
+        header = hdul[0].header
+        n_comp = sum(1 for key in header if key.startswith("COMP"))
+        component_names = [header[f"COMP{i}"] for i in range(n_comp)]
+        n_chan = sum(1 for key in header if key.startswith("CHAN"))
+        channels = [header[f"CHAN{i}"] for i in range(n_chan)]
+        wavelength = hdul["WAVELENGTH"].data
+        readouts = hdul["READOUTS"].data
+        return {
+            "total_adu": np.asarray(hdul[0].data, dtype=float),
+            "components_adu": {
+                comp: np.asarray(hdul[comp.upper()].data, dtype=float)
+                for comp in component_names
+            },
+            "error_adu": (
+                np.asarray(hdul[ERROR_HDU_NAME].data, dtype=float)
+                if ERROR_HDU_NAME in hdul
+                else None
+            ),
+            "channels": channels,
+            "wavel_lo": np.asarray(wavelength["lower_edge"], dtype=float),
+            "wavel_cen": np.asarray(wavelength["center"], dtype=float),
+            "wavel_hi": np.asarray(wavelength["upper_edge"], dtype=float),
+            "angle_deg": np.asarray(readouts["angle_deg"], dtype=float),
+            "angle_index": np.asarray(readouts["angle_index"], dtype=int),
+            "readout_index": np.asarray(readouts["readout_index"], dtype=int),
+            "gain": float(header["GAIN"]),
+            "t_frame_s": float(header["TFRAME"]),
+            "qe": float(header["QE"]),
+            "dc": float(header["DC"]),
+            "n_angles": int(header["NANGLES"]),
+            "n_readouts_per_angle": int(header["NREADANG"]),
+            "extraction_method": str(header.get("EXTRACT", "unknown")),
+            "file_name": str(file_name),
+        }

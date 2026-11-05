@@ -15,6 +15,12 @@ import pandas as pd
 from astropy.io import fits
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.helpers.output_dirs import (
+    FYI,
+    INTERMEDIATE,
+    output_dir,
+    resolve_in_run_dir,
+)
 from ...utils.types import ConfigLike
 from ...viz.aperture import plot_astro_ph_sec_pixel
 from ...viz.detector import plot_detector_footprint
@@ -175,7 +181,9 @@ class DispersionLaw:
             bin_edges: wavelength-bin edges (n_bins + 1,); default: from
                 [detector] spec_res and [wavelength_range] (same as the channels)
             file_name: output path; default: [extraction]
-                file_name_wavel_solution_write
+                file_name_wavel_solution_write. A bare file name (no directory) is
+                written to this run's intermediate/ directory; a full path is used
+                as given.
 
         HDUs:
             PRIMARY    header only: trace geometry, spectral resolution, ranges
@@ -200,7 +208,7 @@ class DispersionLaw:
                 "wavelength solution not written"
             )
             return None
-        file_name = str(file_name).strip()
+        file_name = resolve_in_run_dir(config, str(file_name), INTERMEDIATE)
 
         if bin_edges is None:
             bin_edges = wavel_bin_edges_from_config(config)
@@ -356,8 +364,7 @@ def define_dispersion_on_detectors(
             plot_detector_footprint(
                 DispersionLaw.footprint_image(footprint_cube),
                 config,
-                str(config["dirs"]["save_s2n_data_unique_dir"])
-                + f"footprint_bool_{output_channel.name}.png",
+                output_dir(config, FYI) + f"footprint_bool_{output_channel.name}.png",
             )
 
     return dispersion_law
@@ -453,8 +460,6 @@ def disperse_astro_signals(
                 "flux_astro_1d_interpolated_ph_sec_pixel": per_pixel,
                 "n_pix_per_wavel_bin": n_pix_per_wavel_bin.decompose(),
             }
-    import ipdb
-    ipdb.set_trace()
 
     if plot:  # pragma: no cover
 
@@ -514,9 +519,12 @@ def disperse_astro_signals(
                 df_signals[f"{source_name}_ph_sec_pixel"] = y_vals
                 df_signals["n_pix_per_wavel_bin"] = n_pix_vals
 
+            # per-angle text table (intermediate), per-angle plot (FYI)
+            angle_deg = output_channel.angle_deg
+            angle_tag = f"_angle_{angle_deg:06.2f}" if angle_deg is not None else ""
             file_name_csv = (
-                str(config["dirs"]["save_s2n_data_unique_dir"])
-                + f"astro_ph_sec_pixel_{output_channel.name}.csv"
+                output_dir(config, INTERMEDIATE)
+                + f"astro_ph_sec_pixel_{output_channel.name}{angle_tag}.csv"
             )
             df_signals["cumulative_ph_sec_pixel"] = cumulative_signal
             df_signals["cumulative_signal_ph_pix_10min"] = 600.0 * cumulative_signal
@@ -529,8 +537,8 @@ def disperse_astro_signals(
             )
 
             file_name_plot = (
-                str(config["dirs"]["save_s2n_data_unique_dir"])
-                + f"astro_ph_sec_pixel_{output_channel.name}.pdf"
+                output_dir(config, FYI)
+                + f"astro_ph_sec_pixel_{output_channel.name}{angle_tag}.pdf"
             )
             plot_astro_ph_sec_pixel(
                 output_channel.name,
@@ -542,4 +550,3 @@ def disperse_astro_signals(
                 config,
                 file_name_plot,
             )
-        ipdb.set_trace()

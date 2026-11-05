@@ -7,6 +7,7 @@ import astropy.units as u
 import numpy as np
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.helpers.output_dirs import FYI, output_dir
 from ...utils.helpers.spectra import compute_collecting_area_m2
 from ...utils.types import ConfigLike
 from ...viz.aperture import (
@@ -100,7 +101,7 @@ def pass_through_aperture(
 
     # overplot all the sources
     if plot:  # pragma: no cover
-        save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
+        save_dir = output_dir(config, FYI)
 
         def _flux_by_source_for_cube(
             cube_key: str,
@@ -181,7 +182,7 @@ def pass_from_aperture_to_detector(
 
     With plot=True, writes one FYI figure per angle of everything entering the
     detector stage (sources + backgrounds, per output):
-    ``beam_to_detector_angle_<angle>.png`` in save_s2n_data_unique_dir.
+    ``beam_to_detector_angle_<angle>.png`` in the run's fyi_plots/ directory.
     """
     if not prop_dict:
         logging.warning(
@@ -221,8 +222,7 @@ def pass_from_aperture_to_detector(
             _sky_integrated_spectra_by_output(prop_dict, output_names),
             background_names=[bg.name for bg in instrument_backgrounds],
             config=config,
-            out_path=str(config["dirs"]["save_s2n_data_unique_dir"])
-            + f"beam_to_detector{angle_tag}.png",
+            out_path=output_dir(config, FYI) + f"beam_to_detector{angle_tag}.png",
             angle_deg=angle_deg,
         )
 

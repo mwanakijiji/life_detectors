@@ -8,10 +8,11 @@ that define all parameters for noise calculations.
 import configparser
 import logging
 import os
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -182,3 +183,30 @@ def ensure_logging(tag: Optional[str] = None) -> Optional[str]:
         root.setLevel(logging.INFO)
     logger.info("Log file: %s", log_file)
     return log_file
+
+
+def copy_log_files_to(target_dir: str) -> List[str]:
+    """
+    Copy every log file the root logger is writing (flushed first) into target_dir;
+    the originals keep being written. Returns the copies' paths.
+    """
+    if not target_dir:
+        return []
+    root = logging.getLogger()
+    copies = []
+    for handler in root.handlers:
+        if not writes_to_log_file(handler):
+            continue
+        handler.flush()
+        src = os.path.abspath(handler.baseFilename)
+        if not os.path.exists(src):
+            continue
+        os.makedirs(target_dir, exist_ok=True)
+        dst = os.path.join(target_dir, os.path.basename(src))
+        if os.path.abspath(dst) == src:
+            continue
+        logger.info("Copying log file %s to %s", src, dst)
+        handler.flush()
+        shutil.copy2(src, dst)
+        copies.append(dst)
+    return copies

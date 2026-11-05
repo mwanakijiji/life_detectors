@@ -9,6 +9,7 @@ from astropy.io import fits
 from scipy import ndimage
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.helpers.output_dirs import FYI, INTERMEDIATE, output_dir
 from ...utils.types import ConfigLike
 from ...viz.transmission import (
     plot_flux_through_screens,
@@ -91,7 +92,8 @@ def generate_instrument_transmission(
     # transmission is N for N identical apertures.
     # plot (bool): If True, write the responses for this angle to
     # transmission_instrument_response_angle_<angle>.fits (one HDU per output plus the
-    # y and x sky coordinates) and differential_dark.fits.
+    # y and x sky coordinates) and differential_dark_angle_<angle>.fits, in the run's
+    # intermediate/ directory.
     # angle_deg (float): Rotation angle of the transmission screens in degrees.
 
     OUTPUT:
@@ -403,8 +405,8 @@ def generate_instrument_transmission(
 
     if plot:
         # save all responses for this angle to one FITS file (one HDU per output,
-        # plus the y and x sky coordinates)
-        save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
+        # plus the y and x sky coordinates), in the run's intermediate/ directory
+        save_dir = output_dir(config, INTERMEDIATE)
         header_cards = {
             "ANGLE": (float(angle_deg), "Screen rotation angle [deg]"),
             "WAVEL_M": (float(wavel_m), "Wavelength of the responses [m]"),
@@ -431,17 +433,15 @@ def generate_instrument_transmission(
             ", ".join(name for name, _, _ in TRANSMISSION_CUBE_SLICES),
             file_name_fits,
         )
-        # save the differential dark
+        # save the differential dark (one file per angle, so angles do not overwrite
+        # each other)
         differential_dark = (
             output_all_responses["output_3_dark"]
             - output_all_responses["output_4_dark"]
         )
-        fits.writeto(
-            save_dir + "differential_dark.fits",
-            differential_dark,
-            overwrite=True,
-        )
-        logging.info("Saved differential dark to %sdifferential_dark.fits", save_dir)
+        file_name_diff = save_dir + f"differential_dark_angle_{float(angle_deg):06.2f}.fits"
+        fits.writeto(file_name_diff, differential_dark, overwrite=True)
+        logging.info("Saved differential dark to %s", file_name_diff)
 
     return transmission_instrument_response_cube
 
@@ -469,7 +469,7 @@ def pass_through_transmission_screens(
             screen; for each key (astro source), value (Quantity array) has shape
             (n_wavel, n_pix, n_pix)
         transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
-        plot (bool): whether to plot the scene
+        plot (bool): whether to plot the scene (FYI plots go to fyi_plots/)
 
     Returns the four transmission-screen slices, shape (4, n_pix, n_pix).
     """
@@ -556,8 +556,9 @@ def pass_through_transmission_screens(
         #     ipdb.set_trace()
         #
         if plot:  # pragma: no cover
+            fyi_dir = output_dir(config, FYI)
             file_name_plot = (
-                str(config["dirs"]["save_s2n_data_unique_dir"])
+                fyi_dir
                 + f"flux_of_{source_name}_passed_through_transmission_screens"
                 + f"_angle_{fyi_angle:06.2f}.png"
             )
@@ -582,7 +583,7 @@ def pass_through_transmission_screens(
                     transmission_screen_order.index(transmission_screen_name), :, :
                 ]
                 file_name_plot = (
-                    str(config["dirs"]["save_s2n_data_unique_dir"])
+                    fyi_dir
                     + f"source_transmission_map_triptych_{source_name}"
                     + f"_angle_{fyi_angle:06.2f}_output_{transmission_screen_name}.png"
                 )
@@ -605,8 +606,7 @@ def pass_through_transmission_screens(
             for source_name in sources_to_include
         }
         file_name_plot = (
-            str(config["dirs"]["save_s2n_data_unique_dir"])
-            + "photoelectrons_all_sources_pre_aperture.png"
+            output_dir(config, FYI) + "photoelectrons_all_sources_pre_aperture.png"
         )
         plot_pre_aperture_all_sources(flux_by_source, config, file_name_plot)
 

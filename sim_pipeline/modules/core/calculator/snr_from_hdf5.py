@@ -26,6 +26,7 @@ from ...utils.helpers.keys import (
     parse_dc_qe_group,
     resolve_float_key,
 )
+from ...utils.helpers.output_dirs import SNR, output_dir
 from ...utils.loader import config_getboolean
 from ...utils.types import ConfigLike
 from ...viz.snr import plot_snr_vs_wavelength
@@ -301,7 +302,9 @@ def calculate_s2n_post_rotation(
     Args:
         read_dir: dir containing the HDF5 files
         config: configuration dictionary
-        save_cube_path: optional path stem or full path for saved cube (.hdf5 / .pkl)
+        save_cube_path_stem: optional directory for the saved cube (.hdf5 / .pkl);
+            S/N plots (and, by convention, the cube) belong in this run's
+            products_snr/ directory (``output_dir(config, "snr")``)
 
     Returns:
         S2NCube with axes (wavelength, dark_current, qe)
@@ -319,7 +322,7 @@ def calculate_s2n_post_rotation(
 
             if plot:  # pragma: no cover
                 file_name_plot = (
-                    str(config["dirs"]["save_s2n_data_unique_dir"])
+                    output_dir(config, SNR)
                     + f"SNR_vs_wavelength_{dc_qe_str}"
                     + f"_Nang_{cube.n_angles}_Nintpa_{cube.n_int_per_angle}"
                     + f"_Ninttot_{cube.n_int_total}.png"

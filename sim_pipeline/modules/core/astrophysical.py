@@ -21,6 +21,7 @@ from ..core.planet_spectrum_provider import PlanetSpectrumProvider
 from ..data.spectra import load_spectrum_from_file
 from ..pipeline_registry import pipeline_stage
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
+from ..utils.helpers.output_dirs import FYI, INTERMEDIATE, output_dir
 from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
 
 logger = logging.getLogger(__name__)
@@ -506,8 +507,7 @@ class AstrophysicalSources:
 
         if plot:  # pragma: no cover
             file_name_plot = (
-                str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                + f"incident_{source_name}.png"
+                output_dir(self.config, FYI) + f"incident_{source_name}.png"
             )
             plot_incident_flux(
                 incident_dict["wavel"],
@@ -534,8 +534,9 @@ class AstrophysicalSources:
 
         INPUTS:
             incident_dict: dictionary of incident flux for each source
-            plot: whether to plot the on-sky scene (and write it to
-                scene_no_screen.fits: the total plus one HDU per placed source)
+            plot: whether to plot the on-sky scene (fyi_plots/scene_no_screen_fyi.png)
+                and write it to intermediate/scene_no_screen.fits (the total plus one
+                HDU per placed source)
 
         OUTPUTS:
             dict_source_layered_scene: dictionary of the on-sky scene for each source
@@ -666,17 +667,16 @@ class AstrophysicalSources:
                 "On-sky scene is empty; scene_no_screen FYI plot and FITS not written"
             )
         elif plot:  # pragma: no cover
-            save_dir = str(self.config["dirs"]["save_s2n_data_unique_dir"])
             plot_onsky_scene_fyi(
                 canvas_3D_dict,
                 source_collapsed_scene_no_screen,
-                save_dir + "/scene_no_screen_fyi.png",
+                output_dir(self.config, FYI) + "scene_no_screen_fyi.png",
             )
 
             # save the scene to FITS: total + one HDU per source in the scene (all
             # sources share the incident wavelength grid)
             file_name_fits = write_onsky_scene_fits(
-                save_dir + "scene_no_screen.fits",
+                output_dir(self.config, INTERMEDIATE) + "scene_no_screen.fits",
                 canvas_3D_dict,
                 source_collapsed_scene_no_screen,
                 incident_dict[next(iter(canvas_3D_dict))]["wavel"],

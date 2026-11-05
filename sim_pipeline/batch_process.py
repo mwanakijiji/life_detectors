@@ -5,10 +5,20 @@ Batch processing script for Life Detectors package.
 This script allows you to run multiple calculations with different n_int values
 and save the results as FITS files with different names.
 
+Every run writes into a fresh output tree (modules/utils/helpers/output_dirs.py):
+
+    <[dirs] save_s2n_data_unique_dir>/run_<YYYYMMDDHHMMSS>/[<planet folder>/]
+        fyi_plots/                 {fyi}       FYI plots (only if plotting)
+        intermediate/              {int}       intermediate FITS, HDF5, text files
+        products_counts_vs_time/   {counts}    extracted cubes + 2D counts plots
+        products_snr/              {snr}       S/N cubes and plots
+
+When the job is finished, a copy of the log file is placed in the run_<...>/ root.
+
 Comment convention at each call below:
     # ( what the call does / what it returns or modifies )
     # FYI out: files, plots and log lines it writes, for checking that step
-    #          ({save_dir} = [dirs] save_s2n_data_unique_dir of the temp config;
+    #          ({fyi}, {int}, {counts}, {snr} = the run's subdirectories above;
     #          "plot only" = written only if [tasks] print_fyi_plots / plot=True)
 """
 
@@ -60,15 +70,41 @@ from modules.utils.helpers.keys import (
     format_angle_qe_fits_readouts_name,
     format_qe_fits_full_example_name,
 )
+from modules.utils.helpers.output_dirs import (
+    COUNTS_TIME,
+    FYI,
+    INTERMEDIATE,
+    OUTPUT_SUBDIRS,
+    assert_no_previous_outputs,
+    make_run_root,
+    output_dir,
+)
 from modules.utils.helpers.spectra import (
     compute_collecting_area_m2,
     create_sample_data,
     merge_psg_spectra_to_planet_population,
 )
 from modules.viz.spectra import plot_planet_population_sample
+from modules.viz.time_series import plot_counts_vs_time_for_cubes
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
+
+
+def _new_run_root_if_generating(
+    config: configparser.ConfigParser | dict, output_root: Optional[str]
+) -> Optional[str]:
+    """
+    Return the output root to use for a run: a fresh run_<YYYYMMDDHHMMSS>/ tree
+    under ``output_root`` (or, if None, under [dirs] save_s2n_data_unique_dir) when
+    simulations are generated; otherwise ``output_root`` unchanged (an S/N-only run
+    reads an existing run's tree, so its root must be given in the config or as
+    output_root).
+    """
+    if not loader.config_getboolean(config, "tasks", "generate_sims", default=False):
+        return output_root
+    base = output_root or str(config["dirs"]["save_s2n_data_unique_dir"])
+    return make_run_root(base)
 
 
 def run_single_calculation(
@@ -99,6 +135,10 @@ def run_single_calculation(
         plot: Whether to generate plots
         system_params: Optional[dict] = None: the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
+        output_root: this run's output root (a run_<YYYYMMDDHHMMSS>/ tree made by
+            batch_qe_nint_process / parameter_sweep); if None and simulations are
+            generated, a fresh one is made under [dirs] save_s2n_data_unique_dir
+            (and a copy of the log is put in it when this calculation finishes)
         smoke_test: force smoke-test mode (small, fast run; see [smoke_test] in the
             config), even if [smoke_test] enabled = False
 
@@ -128,6 +168,14 @@ def run_single_calculation(
     # ( True if --smoke was passed or [smoke_test] enabled = True; nothing written )
     smoke_test = smoke_test_enabled(base_config, force=smoke_test)
 
+    # a fresh output tree for this run, unless the caller made one already
+    made_run_root = False
+    if output_root is None:
+        # ( makes <save dir>/run_<YYYYMMDDHHMMSS>/ when generating simulations )
+        # FYI out: log "Created new run output directory: ..."
+        output_root = _new_run_root_if_generating(base_config, output_root)
+        made_run_root = output_root is not None
+
     # Build a per-run token so parallel jobs do not clobber temp files.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"{timestamp}_pid{os.getpid()}_{uuid.uuid4().hex[:8]}"
@@ -156,8 +204,9 @@ def run_single_calculation(
     # modify again, for a given planetary system
     if system_params is not None:
         # ( writes a further temp config with this planet's [target] parameters (Rp,
-        #   Ts, Ds, Stype, PSG spectrum file, ...); returns its path )
-        # FYI out: {save_dir}<planet/system string>_<run_id>.ini;
+        #   Ts, Ds, Stype, PSG spectrum file, ...); returns its path; the planet's
+        #   outputs go to a per-planet folder under the run root )
+        # FYI out: <run root><planet/system string>_<run_id>.ini;
         #          log lines "NASA PSG spectrum file name: ..." and
         #          "Created temporary config file for one planetary system: ..."
         temp_config_path = modify_config_file_pl_system_params(
@@ -220,6 +269,18 @@ def run_single_calculation(
 
         logger.info("Generating simulations.")
 
+        # never write into a tree that already holds this QE's outputs
+        # ( raises FileExistsError if {int}, {counts}, {snr} or {fyi} already hold
+        #   files tagged qe_<qe>; nothing written )
+        assert_no_previous_outputs(config, qe)
+        run_root = str(config["dirs"]["save_s2n_data_unique_dir"])
+        logger.info(
+            "Outputs for QE %.2f go under %s (%s)",
+            qe,
+            run_root,
+            ", ".join(f"{d}/" for d in OUTPUT_SUBDIRS.values()),
+        )
+
         # S/N results will be written to this file
         # Insert QE and n_int into the filename before .fits
         fname_base = temp_config_path.replace(".ini", "")
@@ -259,10 +320,10 @@ def run_single_calculation(
         # ( generates star BB, planet BB, exozodi and zodi spectra on a 0.1-25 um grid,
         #   writes them as text tables, and points [astrophysical_sources_library] in
         #   config at them (config modified in place) )
-        # FYI out: {save_dir}star_spectrum.txt, exoplanet_bb_spectrum.txt,
+        # FYI out: {int}star_spectrum.txt, exoplanet_bb_spectrum.txt,
         #          exozodiacal_spectrum.txt, zodiacal_spectrum.txt;
         #          log line "Created sample data: ..." per file;
-        #          plot only: {save_dir}/star_spectrum.png, planet_spectrum.png,
+        #          plot only: {fyi}star_spectrum.png, planet_spectrum.png,
         #          exozodiacal_spectrum.png, zodiacal_spectrum_los.png,
         #          zodiacal_emission_2d.png
         create_sample_data(config, overwrite=overwrite, plot=plot)
@@ -327,7 +388,7 @@ def run_single_calculation(
                 # ( returns {"wavel", "pre_screen_astro_flux_ph_sec_m2_um"} for this
                 #   source, i.e. flux incident at the telescope, ph/s/m^2/um )
                 # FYI out: WARNING "Spectrum not available for ..." if unknown;
-                #          plot only: {save_dir}incident_<source_name>.png
+                #          plot only: {fyi}incident_<source_name>.png
                 sources_astroph[source_name] = (
                     astrophysical_sources.calculate_received_astro_fluxes(
                         source_name=source_name, plot=plot, system_params=system_params
@@ -341,8 +402,8 @@ def run_single_calculation(
         #   exoplanet_model_10pc, exozodiacal and zodiacal have scene models )
         # FYI out: log "Constructing scene. <source> flux units are consistent: ...";
         #          WARNING "No on-sky scene model for source ..." for any other source;
-        #          plot only: {save_dir}/scene_no_screen_fyi.png and
-        #          {save_dir}scene_no_screen.fits (PRIMARY = sum of all sources, one
+        #          plot only: {fyi}scene_no_screen_fyi.png and
+        #          {int}scene_no_screen.fits (PRIMARY = sum of all sources, one
         #          HDU per source named e.g. STAR, ZODIACAL, then YY_ARCSEC,
         #          XX_ARCSEC, WAVEL_UM); log "Saved on-sky scene (total + ...) to ..."
         astro_scene_perfect_no_screen = astrophysical_sources.arrange_onsky_scene(
@@ -371,12 +432,13 @@ def run_single_calculation(
         # ( builds the DispersionLaw (instrument_dep_terms.dispersion_law), and per
         #   channel creates the Detector and sets its wavelength-bin trace footprint
         #   ([detector] trace_start_pixel, pix_per_wavel_bin, pix_spectral_width) )
-        # FYI out: [extraction] file_name_wavel_solution_write (wavelength solution:
-        #          HDUs BINS, WAVEL_COL, WAVEL_MAP) and log "Wrote wavelength solution
-        #          ..." (or "... not written" if the key is unset);
+        # FYI out: {int}<[extraction] file_name_wavel_solution_write> (wavelength
+        #          solution: HDUs BINS, WAVEL_COL, WAVEL_MAP; a full path in the config
+        #          is used as given) and log "Wrote wavelength solution ..." (or
+        #          "... not written" if the key is unset);
         #          log "Defining dispersion on detector for <channel>",
         #          "Wavelength bin <i> dispersion footprint is ... pixels";
-        #          plot only, per channel: {save_dir}footprint_bool_<channel>.png
+        #          plot only, per channel: {fyi}footprint_bool_<channel>.png
         instrument_dep_terms.define_dispersion(plot=plot)
 
         # make 1 full rotation
@@ -414,11 +476,11 @@ def run_single_calculation(
             # FYI out: log "Normalized transmission instrument response ...",
             #          "Star is manually being nulled to ... on output_3/4_dark";
             #          plot only:
-            #          {save_dir}transmission_instrument_response_angle_<angle>.fits
+            #          {int}transmission_instrument_response_angle_<angle>.fits
             #          (HDUs OUTPUT_1_BRIGHT, OUTPUT_2_BRIGHT, OUTPUT_3_DARK,
             #          OUTPUT_4_DARK, YY_ARCSEC, XX_ARCSEC, each with QUANTITY and
             #          BUNIT; PRIMARY header ANGLE, WAVEL_M, NORMALIZ, STARMASK) and
-            #          {save_dir}differential_dark.fits (output 3 - output 4);
+            #          {int}differential_dark_angle_<angle>.fits (output 3 - 4);
             #          log "Saved transmission instrument responses for angle ..."
             transmission_screens = (
                 instrument_dep_terms.generate_instrument_transmission(
@@ -436,11 +498,11 @@ def run_single_calculation(
             #   (summed over the sky) )
             # FYI out: log "Flux of <source> passed through transmission screen <out>";
             #          plot only, per source:
-            #          {save_dir}flux_of_<source>_passed_through_transmission_screens
+            #          {fyi}flux_of_<source>_passed_through_transmission_screens
             #          _angle_<angle>.png and
-            #          {save_dir}source_transmission_map_triptych_<source>_angle_<angle>
+            #          {fyi}source_transmission_map_triptych_<source>_angle_<angle>
             #          _output_<out>.png (x4, wavelength slice 15); plus
-            #          {save_dir}photoelectrons_all_sources_pre_aperture.png
+            #          {fyi}photoelectrons_all_sources_pre_aperture.png
             instrument_dep_terms.pass_through_transmission_screens(
                 fyi_angle = angle_deg,
                 source_dict_pre_screen = astro_scene_perfect_no_screen,
@@ -458,9 +520,9 @@ def run_single_calculation(
             #   area x post-screen cube, per output (ph/s/m^2/um -> ph/s/um) )
             # FYI out: log "Passed astrophysical flux through telescope aperture...";
             #          plot only, per output:
-            #          {save_dir}flux_all_sources_post_screen_pre_aperture_<out>.png,
-            #          {save_dir}flux_all_sources_post_screen_post_aperture_<out>.png,
-            #          {save_dir}poster_post_aperture_flux_<out>.pdf
+            #          {fyi}flux_all_sources_post_screen_pre_aperture_<out>.png,
+            #          {fyi}flux_all_sources_post_screen_post_aperture_<out>.png,
+            #          {fyi}poster_post_aperture_flux_<out>.pdf
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
             # Pass from aperture to detector
@@ -470,7 +532,7 @@ def run_single_calculation(
             #   now) )
             # FYI out: log "Added instrument background '<name>' into post-aperture
             #          beam"; WARNING if prop_dict is empty;
-            #          plot only: {save_dir}beam_to_detector_angle_<angle>.png (one
+            #          plot only: {fyi}beam_to_detector_angle_<angle>.png (one
             #          panel per output: sky-summed ph/s/um of each source (solid),
             #          each instrument background (dashed) and the total, plus the
             #          band-integrated background fraction of the total)
@@ -491,8 +553,9 @@ def run_single_calculation(
             # FYI out: log "Dispersing signals on detector for <channel>",
             #          "Number of frames at this angle position: ...";
             #          plot only, per channel:
-            #          {save_dir}astro_ph_sec_pixel_<channel>.csv (ph/s/pix per source
-            #          + cumulative) and {save_dir}astro_ph_sec_pixel_<channel>.pdf
+            #          {int}astro_ph_sec_pixel_<channel>_angle_<angle>.csv (ph/s/pix
+            #          per source + cumulative) and
+            #          {fyi}astro_ph_sec_pixel_<channel>_angle_<angle>.pdf
             instrument_dep_terms.disperse_astro_signals(plot=plot)
 
             # expose 2D detector frames per readout and apply detector effects
@@ -509,7 +572,7 @@ def run_single_calculation(
             # write the detector readouts to FITS (one HDU per output channel):
             # a cutout around the spectral trace at every angle, plus one full-frame
             # example (unless switched off, e.g. in smoke-test mode)
-            save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
+            save_dir = output_dir(config, INTERMEDIATE)
             header_cards = {"ANGLE": float(angle_deg), "QE": float(qe)}
             if i_angle == 0 and run_limits["write_full_frame_example"]:
                 full_example_file_name = save_dir + format_qe_fits_full_example_name(qe)
@@ -520,7 +583,7 @@ def run_single_calculation(
                 # ( writes the full detector frames (first angle only); HDUs CH1BR,
                 #   CH2BR, CH3DK, CH4DK, each (n_components, n_readouts, ny, nx) in
                 #   ADU; header COMP0.., GAIN, TFRAME, ANGLE, QE )
-                # FYI out: {save_dir}readouts_full_example_qe_<qe>.fits;
+                # FYI out: {int}readouts_full_example_qe_<qe>.fits;
                 #          log "Wrote detector readouts to ..." (+ size, below)
                 instrument_dep_terms.write_detector_readouts(
                     full_example_file_name, header_cards=header_cards, cutout=False
@@ -539,7 +602,7 @@ def run_single_calculation(
                     os.path.abspath(full_example_file_name),
                     size_str,
                 )
-            ipdb.set_trace()
+
             readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
                 angle_deg, qe
             )
@@ -549,36 +612,45 @@ def run_single_calculation(
             # ( same as above, but only the trace's bounding box plus [detector]
             #   buffer_footprint (header Y0, X0, BUFFY, BUFFX, FULLNY, FULLNX);
             #   remembered as the file the extraction reads )
-            # FYI out: {save_dir}readouts_angle_<angle>_qe_<qe>.fits;
+            # FYI out: {int}readouts_angle_<angle>_qe_<qe>.fits;
             #          log "Wrote detector readouts to ..."
             instrument_dep_terms.write_detector_readouts(
                 readouts_file_name, header_cards=header_cards, cutout=True
             )
 
-            ipdb.set_trace()
-
             # extract counts vs. wavelength from the readouts ([extraction] method:
-            # Sharp & Birchall or box sum)
+            # Sharp & Birchall or box sum), and put them on the wavelength solution
             logger.info("Extracting spectra from detector readouts ...")
             # ( reads the cutout FITS back and extracts, per channel and component,
             #   spectra of shape (n_dc, n_readouts, n_bins) in ADU, one slice per
             #   [detector] dark-current value; sets extracted_spectra_adu, and (S&B
-            #   only) extracted_errors_adu = {"error", "vark"} )
+            #   only) extracted_errors_adu = {"error", "vark"};
+            #   then reads the wavelength solution (first angle only; [extraction]
+            #   file_name_wavel_solution_read, else file_name_wavel_solution_write)
+            #   and sets extracted_spectra_wavel[channel] = {"wavel", "wavel_lo",
+            #   "wavel_hi", "width", "spectra_adu", "spectra_adu_per_um", "error_adu",
+            #   "error_adu_per_um"} )
             # FYI out: log "Extracted spectra (<method>) from detector readouts in ...";
             #          WARNING that S&B variances are modelled from noiseless frames;
             #          WARNING if several read-noise values; WARNING "Sharp & Birchall
-            #          solve failed in column ..." on singular columns
-            instrument_dep_terms.extract_spectra_from_readouts()
-
-            ipdb.set_trace()
+            #          solve failed in column ..." on singular columns;
+            #          log "Read wavelength solution (<n> bins, ...) from ..." (or
+            #          WARNING "Wavelength solution file ... not found" -> channel
+            #          bins used);
+            #          plot only: {fyi}extracted_spectra_angle_<angle>.png (one
+            #          panel per channel: each component + total vs. wavelength, first
+            #          readout and DC value, 1-sigma band for S&B)
+            instrument_dep_terms.extract_spectra_from_readouts(plot=plot)
 
             # write condensed information at this transmission screen angle (to avoid
             # mem leak)
             # ( writes the extracted spectra for this angle: group __extracted_qe_<qe>
-            #   with dc_rates, bin geometry (npix, center, width, edges),
-            #   <channel>/<component> (n_dc, n_read, n_bins), __error_total,
-            #   __vark_total )
-            # FYI out: {save_dir}angle_<angle>_qe_<qe>.hdf5;
+            #   with dc_rates, bin geometry (npix, center, width, edges), the
+            #   wavelength solution used (x_start_pix, x_end_pix, wavel_per_column;
+            #   attr wavel_solution_file), <channel>/<component> (n_dc, n_read,
+            #   n_bins) in ADU, __error_total, __vark_total, and the same in electrons
+            #   under <channel>/__electrons/ )
+            # FYI out: {int}angle_<angle>_qe_<qe>.hdf5;
             #          log "Recorded angle ...: extracted spectra in <file>:<group>"
             record_info_at_angle_and_qe(
                 angle_deg=angle_deg,
@@ -589,42 +661,58 @@ def run_single_calculation(
                 extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
                 extracted_errors_adu=instrument_dep_terms.extracted_errors_adu,
                 extraction_method=instrument_dep_terms.extraction_method,
+                wavel_solution=instrument_dep_terms.wavel_solution,
             )
-
-            ipdb.set_trace()
 
         # cubes of extracted spectra (wavelength, readout, channel), one file per (QE,
         # DC)
         logger.info("Assembling extracted-spectra cubes ...")
-        # ( reads every angle_*_qe_<qe>.hdf5 (one at a time, sorted by angle) and
-        #   stacks them; returns the written paths )
-        # FYI out: {save_dir}extracted_cube_qe_<qe>_dc_<dc>.fits per DC value:
+        # ( reads every {int}angle_*_qe_<qe>.hdf5 of this run (one at a time, sorted by
+        #   angle) and stacks them; returns the written paths )
+        # FYI out: {counts}extracted_cube_qe_<qe>_dc_<dc>.fits per DC value:
         #          PRIMARY total (n_bins, n_readouts_total, 4) ADU, one HDU per
         #          component, DARK_CURRENT, ERROR, WAVELENGTH and READOUTS tables;
         #          log "Wrote extracted-spectra cube ..., shape ..." per file;
         #          WARNING "No angle HDF5 files for QE ..." if none found
         cube_file_names = assemble_extracted_spectra_cubes(
-            read_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
+            read_dir=output_dir(config, INTERMEDIATE),
             qe=qe,
-            save_dir=str(config["dirs"]["save_s2n_data_unique_dir"]),
+            save_dir=output_dir(config, COUNTS_TIME),
         )
 
-        ipdb.set_trace()
+        # 2D plots of counts (e-) vs. wavelength and frame/time/angle, per channel and
+        # for the chopped signal (a final data product, next to the cubes)
+        if plot:
+            x_axis = config.get("plotting", "counts_vs_time_x_axis", fallback="frame")
+            logger.info("Plotting counts vs. wavelength and %s ...", x_axis)
+            # ( for each cube: total counts; for the first cube also each component;
+            #   5 panels each: CH1BR, CH2BR, CH3DK, CH4DK, chopped CH3DK - CH4DK;
+            #   e- = ADU x gain; x axis from [plotting] counts_vs_time_x_axis =
+            #   frame (default), time or angle )
+            # FYI out: {counts}counts_vs_<x_axis>_qe_<qe>_dc_<dc>_total.png per DC,
+            #          and ..._<component>.png per component (first DC only);
+            #          log "Saved counts-vs-<x_axis> plot (...) to ..."
+            plot_counts_vs_time_for_cubes(
+                cube_file_names, x_axis=x_axis, config=config
+            )
 
-        save_dir_abs = os.path.abspath(str(config["dirs"]["save_s2n_data_unique_dir"]))
         logger.info(
-            "Detector outputs for QE %.2f in %s:\n"
-            "  full-frame example readouts: %s\n"
-            "  readout cutouts (one per angle): %s\n"
-            "  extracted-spectra cubes: %s",
+            "Detector outputs for QE %.2f under %s:\n"
+            "  intermediate (readouts, angle HDF5, ...): %s\n"
+            "    full-frame example readouts: %s\n"
+            "    readout cutouts (one per angle): %s\n"
+            "  counts-vs-time products (cubes, 2D plots): %s\n"
+            "    extracted-spectra cubes: %s",
             qe,
-            save_dir_abs,
+            os.path.abspath(run_root),
+            output_dir(config, INTERMEDIATE),
             (
                 format_qe_fits_full_example_name(qe)
                 if run_limits["write_full_frame_example"]
                 else "(not written)"
             ),
             "readouts_angle_*_qe_" + f"{qe:04.2f}.fits",
+            output_dir(config, COUNTS_TIME),
             ", ".join(os.path.basename(f) for f in cube_file_names) or "none",
         )
 
@@ -633,12 +721,19 @@ def run_single_calculation(
 
     if calculate_s2n:
         # S/N reads the chopped (output 3 - output 4) tables, which are removed for now
+        # (when rebuilt: read {int}, write to {snr} via output_dir(config, "snr"))
         logger.warning(
             "[tasks] calculate_s2n_post_rotation is enabled, but S/N is disabled while "
             "chopping is removed; skipping calculate_s2n_post_rotation"
         )
     else:
         logger.info("Not calculating S/N from HDF5 files.")
+
+    if made_run_root:
+        # the job is finished: put a copy of the log in this run's tree
+        # ( copies the root logger's log file(s); the originals stay in place )
+        # FYI out: <run root>detectorsim_<timestamp>_<tag>.log
+        loader.copy_log_files_to(output_root)
 
     return True
 
@@ -668,13 +763,23 @@ def batch_qe_nint_process(
         plot: Whether to generate plots
         system_params: Optional dictionary of the planetary system parameters
         lum_types: Optional dictionary mapping the luminosities to the stellar types
+        output_root: this run's output root; if None and simulations are generated,
+            one fresh run_<YYYYMMDDHHMMSS>/ tree is made here and shared by all QEs
+            (and a copy of the log is put in it when the batch finishes)
         smoke_test: force smoke-test mode for every run
 
     Returns:
         True if run_single_calculation succeeded for every QE value
     """
-    # Create output directory if it doesn't exist
-    # Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # one fresh output tree shared by every QE value of this batch
+    made_run_root = False
+    if output_root is None:
+        base_config = configparser.ConfigParser()
+        base_config.read(base_config_path)
+        # ( makes <save dir>/run_<YYYYMMDDHHMMSS>/ when generating simulations )
+        # FYI out: log "Created new run output directory: ..."
+        output_root = _new_run_root_if_generating(base_config, output_root)
+        made_run_root = output_root is not None
 
     # initialize for checking if all calculations for the QE, n_int run were successful
     success_all = True
@@ -736,6 +841,11 @@ def batch_qe_nint_process(
             success
         )  # was this calculation successful too?
 
+    if made_run_root:
+        # the batch is finished: put a copy of the log in this run's tree
+        # FYI out: <run root>detectorsim_<timestamp>_<tag>.log
+        loader.copy_log_files_to(output_root)
+
     return success_all
 
 
@@ -748,6 +858,10 @@ def parameter_sweep(
 ) -> None:
     """
     Run a QE/n_int parameter sweep for one system or a planet population.
+
+    All outputs of the sweep go into one fresh run_<YYYYMMDDHHMMSS>/ tree under
+    output_root (or [dirs] save_s2n_data_unique_dir), with a per-planet folder for
+    planet populations; a copy of the log is put in that tree when the sweep is done.
 
     smoke_test forces smoke-test mode ([smoke_test] in the single-obs config): every
     run is shrunk by its overrides, and the QE values and planets are capped.
@@ -779,41 +893,20 @@ def parameter_sweep(
             "*** SMOKE TEST MODE *** (not a science run); limits: %s", run_limits
         )
 
-    # delete preexisting HDF5 output files?
-    # ## TODO: make this work; will need to enable deletion of HdF5 files in each output
-    # dir determined by the temp config file
-    #     generate_sims = loader.config_getboolean(config_single_obs, "tasks",
-    # "generate_sims")
-    #     if generate_sims:
-    #         save_dir = Path(config['dirs']['save_s2n_data_unique_dir'])
-    #         existing_hdf5 = sorted(save_dir.glob("angle_*.hdf5"))
-    #         if existing_hdf5:
-    #             print(f"
-    # Found {len(existing_hdf5)} HDF5 file(s) in {save_dir}:")
-    #             for p in existing_hdf5[:5]:
-    #                 print(f"  - {p.name}")
-    #             if len(existing_hdf5) > 5:
-    #                 print(f"  ... and {len(existing_hdf5) - 5} more")
-    #             try:
-    #                 raw = input("Delete existing angle_*.hdf5 files before running?
-    # (y/N): ")
-    #             except EOFError:
-    #                 raw = "n"
-    #             if str(raw).strip().lower() in {"y", "yes"}:
-    #                 for p in existing_hdf5:
-    #                     p.unlink()
-    #                 logger.info(f"Deleted {len(existing_hdf5)} HDF5 file(s) from
-    # {save_dir}")
-    #             else:
-    #                 logger.info("Keeping existing HDF5 files")
-    #
-
     if output_root:
         # ( absolute path with trailing separator; for the log line only )
         logging.info(
             "Top-level batch output root override: %s",
             _normalize_output_root(output_root),
         )
+
+    # one fresh output tree for the whole sweep (so no previous run's files mix in)
+    # ( makes <output root or save dir>/run_<YYYYMMDDHHMMSS>/ when generating
+    #   simulations )
+    # FYI out: log "Created new run output directory: ..."
+    given_output_root = output_root
+    output_root = _new_run_root_if_generating(config_single_obs, output_root)
+    made_run_root = output_root is not None and output_root != given_output_root
 
     aperture_array_config_path = config_single_obs["telescope"][
         "aperture_array_config_file_name"
@@ -874,12 +967,28 @@ def parameter_sweep(
         )
         if plot:
             cols_to_plot = ["Rp", "Porb", "Mp", "z", "Tp", "ap"]
-            fyi_plot_path = config_planet_population["file_name_planet_population"][
-                "fyi_plot_name"
-            ]
+            fyi_plot_name = os.path.basename(
+                str(
+                    config_planet_population["file_name_planet_population"][
+                        "fyi_plot_name"
+                    ]
+                )
+            )
+            # the population plot goes in the run's fyi_plots/ (file name from the
+            # population config)
+            fyi_plot_path = (
+                output_dir({"dirs": {"save_s2n_data_unique_dir": output_root}}, FYI)
+                + fyi_plot_name
+                if output_root
+                else str(
+                    config_planet_population["file_name_planet_population"][
+                        "fyi_plot_name"
+                    ]
+                )
+            )
             # ( scatter-matrix plot of the population columns above (random sample
             #   of up to 10000 planets) )
-            # FYI out: plot at [file_name_planet_population] fyi_plot_name
+            # FYI out: {fyi}<[file_name_planet_population] fyi_plot_name>
             plot_planet_population_sample(
                 df_planet_population, cols_to_plot, fyi_plot_path
             )
@@ -952,3 +1061,10 @@ def parameter_sweep(
         logging.info(
             "Parameter sweep completed: all calculations successful = %s", success_all
         )
+
+    if made_run_root:
+        # the sweep is finished: put a copy of the log in this run's tree
+        # ( copies the root logger's log file(s); the originals stay in
+        #   sim_pipeline/logs/ )
+        # FYI out: <run root>detectorsim_<timestamp>_<tag>.log
+        loader.copy_log_files_to(output_root)

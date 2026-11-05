@@ -1,12 +1,15 @@
 """InstrumentDepTerms: instrument-side state and the per-angle pipeline stages."""
 
 import logging
+import os
 from typing import Dict, List
 
 import astropy.units as u
 import numpy as np
 
+from ...utils.helpers.output_dirs import FYI, output_dir
 from ...utils.types import ConfigLike
+from ...viz.extraction import plot_extracted_spectra
 from . import aperture, dispersion, effects, readouts, transmission
 from .aperture import (
     BACKGROUND_REGISTRY,
@@ -15,6 +18,12 @@ from .aperture import (
 )
 from .channels import OutputChannel
 from .effects import DetectorEffect, _config_get, build_detector_effects
+from .wavel_solution import (
+    WavelSolution,
+    apply_wavel_solution,
+    read_wavel_solution,
+    wavel_solution_file_from_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +67,13 @@ class InstrumentDepTerms:
         self.extraction_method: str | None = None
         self.extracted_spectra_adu: dict = {}
         self.extracted_errors_adu: dict = {}
+        # extracted spectra on the wavelength solution (see apply_wavel_solution)
+        self.extracted_spectra_wavel: dict = {}
 
         # set once (before the angle loop) by define_dispersion
         self.dispersion_law: dispersion.DispersionLaw | None = None
+        # read on the first extraction, then reused at every angle
+        self.wavel_solution: WavelSolution | None = None
 
         # Optional detector systematics, applied in order to each readout's 2D frames
         self.detector_effects: List[DetectorEffect] = build_detector_effects(config)
@@ -215,20 +228,85 @@ class InstrumentDepTerms:
             self.readouts_file_name = written
         return written
 
-    def extract_spectra_from_readouts(self) -> None:
-        """Stage: extract spectra from the readout FITS with the configured method."""
+    def load_wavel_solution(self) -> WavelSolution:
+        """
+        Read the wavelength solution once ([extraction] file_name_wavel_solution_read,
+        else file_name_wavel_solution_write) and cache it on self.wavel_solution.
+
+        Falls back (with a warning) to the channels' own bin edges if no file is
+        configured or the file does not exist; the bins' detector x positions and the
+        per-column wavelengths then come from the dispersion law, if
+        define_dispersion has run.
+        """
+        if self.wavel_solution is not None:
+            return self.wavel_solution
+
+        file_name = wavel_solution_file_from_config(self.config)
+        ref_channel = next(iter(self.output_channels.values()))
+        if file_name is not None and os.path.exists(file_name):
+            solution = read_wavel_solution(file_name)
+            if ref_channel.bin_centers is not None and (
+                len(ref_channel.bin_centers) != solution.n_bins
+                or not u.allclose(ref_channel.bin_centers, solution.wavel_cen)
+            ):
+                logger.warning(
+                    "Wavelength solution %s (%d bins) differs from the channels' "
+                    "wavelength bins (%d); using the file",
+                    file_name,
+                    solution.n_bins,
+                    len(ref_channel.bin_centers),
+                )
+        else:
+            logger.warning(
+                "Wavelength solution file %s not found; using the channels' "
+                "wavelength bins instead",
+                file_name if file_name is not None else "(not configured)",
+            )
+            x_edges = None
+            wavel_col = None
+            if self.dispersion_law is not None:
+                law = self.dispersion_law
+                x_edges = law.starting_pixel[1] + law.pix_per_wavel_bin * np.arange(
+                    len(ref_channel.bin_edges)
+                )
+                if ref_channel.detector is not None:
+                    # wavelength at each detector column centre (x = k + 0.5)
+                    column_centers = np.arange(ref_channel.detector.n_pix_x) + 0.5
+                    wavel_col = (
+                        law.wavel_at_x(column_centers, ref_channel.bin_edges) * u.um
+                    )
+            solution = WavelSolution.from_bin_edges(
+                ref_channel.bin_edges,
+                source="channel bin edges",
+                x_edges=x_edges,
+                wavel_col=wavel_col,
+            )
+        self.wavel_solution = solution
+        return solution
+
+    def extract_spectra_from_readouts(self, plot: bool = False) -> None:
+        """
+        Stage: extract spectra from the readout FITS with the configured method, then
+        put them on the wavelength solution (self.extracted_spectra_wavel; see
+        wavel_solution.apply_wavel_solution).
+
+        With plot=True, writes fyi_plots/extracted_spectra_angle_<angle>.png (one
+        panel per channel; first readout and first dark-current value; wavelength on
+        the bottom axis, detector pixel column on the top axis).
+        """
         method = str(
             _config_get(self.config, "extraction", "method", "sharp_birchall")
         ).strip()
         ref_detector = next(iter(self.output_channels.values())).detector
+        dc_rates = ref_detector.dark_current_rate_e_pix_sec.to_value(
+            u.electron / (u.pix * u.second)
+        )
         self.extracted_spectra_adu = readouts.extract_spectra_from_readouts(
             self.output_channels,
             self.readouts_file_name,
             method=method,
             t_frame=float(self.config["observation"]["t_int_frame"]) * u.second,
-            dc_rates=ref_detector.dark_current_rate_e_pix_sec.to_value(
-                u.electron / (u.pix * u.second)
-            ),
+            dc_rates=dc_rates,
         )
         self.extraction_method = method
         self.extracted_errors_adu = {
@@ -239,3 +317,22 @@ class InstrumentDepTerms:
             for name, ch in self.output_channels.items()
             if ch.extracted_error_adu is not None
         }
+
+        # attach the wavelength solution to the extracted spectra
+        self.extracted_spectra_wavel = apply_wavel_solution(
+            self.extracted_spectra_adu,
+            self.load_wavel_solution(),
+            self.extracted_errors_adu,
+        )
+
+        if plot:  # pragma: no cover
+            angle_deg = next(iter(self.output_channels.values())).angle_deg
+            angle_tag = f"_angle_{angle_deg:06.2f}" if angle_deg is not None else ""
+            plot_extracted_spectra(
+                self.extracted_spectra_wavel,
+                self.config,
+                output_dir(self.config, FYI) + f"extracted_spectra{angle_tag}.png",
+                dc_rates=dc_rates,
+                angle_deg=angle_deg,
+                extraction_method=method,
+            )

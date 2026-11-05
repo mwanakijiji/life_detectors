@@ -18,6 +18,11 @@ from modules.utils.helpers.config_ops import (
     smoke_test_enabled,
     smoke_test_limits,
 )
+from modules.utils.helpers.output_dirs import (
+    COUNTS_TIME,
+    INTERMEDIATE,
+    OUTPUT_SUBDIRS,
+)
 
 MAIN_CONFIG = Path(__file__).resolve().parents[1] / "config" / "main_config.ini"
 
@@ -131,6 +136,7 @@ def test_smoke_run_writes_small_cubes_quickly(tmp_path):
     config_path = tmp_path / "main_config.ini"
     with open(config_path, "w", encoding="utf-8") as f:
         cfg.write(f)
+    # output_root given: it is used as this run's root (no extra run_<...>/ level)
     out_dir = tmp_path / "out"
 
     t_start = time.monotonic()
@@ -146,12 +152,17 @@ def test_smoke_run_writes_small_cubes_quickly(tmp_path):
     elapsed_s = time.monotonic() - t_start
 
     assert ok
-    cubes = sorted(out_dir.glob("extracted_cube_qe_*_dc_*.fits"))
+    products = out_dir / OUTPUT_SUBDIRS[COUNTS_TIME]
+    intermediate = out_dir / OUTPUT_SUBDIRS[INTERMEDIATE]
+    cubes = sorted(products.glob("extracted_cube_qe_*_dc_*.fits"))
     assert len(cubes) == 1  # one DC value in smoke mode
-    # 4-18 um at R=20 -> 30 bins; 2 angles x 2 readouts; 4 channels
+    # nothing is written loose in the run root
+    assert not [p for p in out_dir.iterdir() if p.is_file() and p.suffix != ".ini"]
+    n_angles = int(cfg["smoke_test"]["observation.N_angles"])
+    n_read = int(cfg["smoke_test"]["observation.N_int_per_angle"])
     expected_bins = int(np.floor(np.log(18.0 / 4.0) / np.log(1.0 + 1.0 / 20.0)))
     with fits.open(cubes[0]) as hdul:
-        assert hdul[0].data.shape == (expected_bins, 4, 4)
-    assert not list(out_dir.glob("readouts_full_example_*.fits"))
-    assert len(list(out_dir.glob("readouts_angle_*.fits"))) == 2
+        assert hdul[0].data.shape == (expected_bins, n_angles * n_read, 4)
+    assert not list(intermediate.glob("readouts_full_example_*.fits"))
+    assert len(list(intermediate.glob("readouts_angle_*.fits"))) == n_angles
     assert elapsed_s < 120, f"smoke run took {elapsed_s:.0f} s"

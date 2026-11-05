@@ -34,7 +34,7 @@ from modules.utils.helpers.formatting import (
     format_astro_source_label,
     format_plot_title,
 )
-from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
+from modules.utils.helpers.hdf5_io import ELECTRONS_KEY, record_info_at_angle_and_qe
 from modules.utils.helpers.keys import (
     canonical_angle_deg,
     canonical_dc_rate,
@@ -359,7 +359,8 @@ class TestPlotPlanetPopulationSample:
 
 
 class TestSpectrumPlots:
-    """plot=True on the spectrum generators draws via modules.viz.spectra."""
+    """plot=True on the spectrum generators draws via modules.viz.spectra, into the
+    run's fyi_plots/ directory."""
 
     @staticmethod
     def _make_config(save_dir: str):
@@ -403,8 +404,9 @@ class TestSpectrumPlots:
             "zodiacal_emission_2d.png",
             "zodiacal_spectrum_los.png",
         ]:
-            path = tmp_path / name
+            path = tmp_path / "fyi_plots" / name
             assert path.exists() and path.stat().st_size > 0, name
+            assert not (tmp_path / name).exists(), f"{name} written outside fyi_plots"
         assert plt.get_fignums() == []
 
 
@@ -518,13 +520,45 @@ class TestRecordInfoAtAngleAndQe:
             assert np.allclose(group["center"][()], ref.bin_centers.value)
             assert np.allclose(group["width"][()], ref.bin_widths.value)
             assert np.allclose(group["edges"][()], ref.bin_edges.value)
-            assert set(group.keys()) >= set(extracted)
-            # no errors passed -> no __ datasets
-            assert set(group["output_3_dark"].keys()) == {"star", "instrum_systematics"}
+            # channels are the only subgroups of the extracted group
+            subgroups = {k for k in group if isinstance(group[k], h5py.Group)}
+            assert subgroups == set(extracted)
+            # no errors passed -> no __error/__vark datasets; electrons subgroup only
+            assert set(group["output_3_dark"].keys()) == {
+                "star",
+                "instrum_systematics",
+                ELECTRONS_KEY,
+            }
             assert np.allclose(
                 group["output_3_dark"]["star"][()],
                 extracted["output_3_dark"]["star"].value,
             )
+
+    def test_writes_electrons_per_frame(self, tmp_path, make_output_channels):
+        save_dir = str(tmp_path) + "/"
+        output_channels = make_output_channels(n_bins=3, gain=2.5)
+        extracted = self._extracted(n_readouts=2, n_bins=3)
+
+        record_info_at_angle_and_qe(
+            angle_deg=45.0,
+            qe=0.7,
+            output_channels=output_channels,
+            save_dir=save_dir,
+            t_frame=10.0 * u.s,
+            extracted_spectra_adu=extracted,
+        )
+
+        with h5py.File(tmp_path / "angle_045.00_qe_0.70.hdf5", "r") as handle:
+            for ch_name in self.NAMES:
+                e_group = handle["__extracted_qe_0.70"][ch_name][ELECTRONS_KEY]
+                assert e_group.attrs["gain_e_per_adu"] == 2.5
+                assert set(e_group.keys()) == {"star", "instrum_systematics"}
+                for comp in ("star", "instrum_systematics"):
+                    assert e_group[comp].attrs["unit"] == "electron"
+                    assert e_group[comp].shape == (1, 2, 3)
+                    np.testing.assert_allclose(
+                        e_group[comp][()], extracted[ch_name][comp].value * 2.5
+                    )
 
     def test_writes_errors_and_dc_axis(self, tmp_path, make_output_channels):
         save_dir = str(tmp_path) + "/"
@@ -562,6 +596,12 @@ class TestRecordInfoAtAngleAndQe:
             assert np.allclose(ch["__error_total"][()], 1.5)
             assert np.allclose(ch["__vark_total"][()], 2.0)
             assert ch["__error_total"].attrs["unit"] == "adu"
+            # same errors in electrons (make_output_channels default gain = 2.0)
+            e_group = ch[ELECTRONS_KEY]
+            assert np.allclose(e_group["__error_total"][()], 1.5 * 2.0)
+            assert np.allclose(e_group["__vark_total"][()], 2.0 * 2.0**2)
+            assert e_group["__error_total"].attrs["unit"] == "electron"
+            assert e_group["__vark_total"].attrs["unit"] == "electron2"
 
     def test_rejects_wrong_number_of_dc_slices(self, tmp_path, make_output_channels):
         with pytest.raises(ValueError, match="DC slices"):
@@ -863,7 +903,8 @@ class TestCreateSampleData:
 
         create_sample_data(cfg, overwrite=True, plot=False)
 
-        out_dir = (tmp_path / "data").resolve()
+        # sample spectra are intermediate text files of this run
+        out_dir = (tmp_path / "data" / "intermediate").resolve()
         expected_files = [
             "star_spectrum.txt",
             "exoplanet_bb_spectrum.txt",

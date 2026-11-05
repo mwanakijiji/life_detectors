@@ -16,6 +16,7 @@ from astropy.modeling.physical_models import BlackBody
 
 from ...viz.spectra import plot_luminosity_and_flux, plot_zodiacal_emission_2d
 from ..types import ConfigLike
+from .output_dirs import FYI, INTERMEDIATE, output_dir
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def generate_star_spectrum(
 
     # host star radius
     """Blackbody stellar spectrum (photon and energy luminosity per um) from the
-    config's T_star and rad_star; optionally plot it.
+    config's T_star and rad_star; optionally plot it (fyi_plots/star_spectrum.png).
     """
     rad_star = float(config["target"]["rad_star"]) * 69.6340 * 1e9 * u.cm
 
@@ -91,7 +92,7 @@ def generate_star_spectrum(
             luminosity_photons_star,
             flux_star,
             "Star spectrum (no distance correction)",
-            config["dirs"]["save_s2n_data_unique_dir"] + "/star_spectrum.png",
+            output_dir(config, FYI) + "star_spectrum.png",
             log_x=True,
         )
 
@@ -109,7 +110,7 @@ def generate_planet_bb_spectrum(
     wavelength_um: wavelength array in microns
     rad_planet: planet radius (float input, in Earth radii)
     temp_bb_planet: planet temperature (float input, in K)
-    plot: whether to plot the result
+    plot: whether to plot the result (fyi_plots/planet_spectrum.png)
 
     OUTPUTS:
     luminosity_photons_planet: planet luminosity in photons/s/um
@@ -218,7 +219,7 @@ def generate_planet_bb_spectrum(
             luminosity_photons_planet,
             flux_planet,
             "Planet spectrum (no distance correction)",
-            config["dirs"]["save_s2n_data_unique_dir"] + "/planet_spectrum.png",
+            output_dir(config, FYI) + "planet_spectrum.png",
             log_x=False,
             xlim=(4.0, 18.5),
         )
@@ -245,7 +246,8 @@ def generate_zodiacal_spectrum(
 
     # set some parameters
     """Zodiacal background spectrum (Dannert+ 2022 sec. 2.2.3) per m^2 of collecting
-    area: returns photon, energy and MJy/sr luminosities; optionally plot them.
+    area: returns photon, energy and MJy/sr luminosities; optionally plot them
+    (fyi_plots/zodiacal_emission_2d.png, zodiacal_spectrum_los.png).
     """
     tau_opt = float(config["target"]["tau_opt_zodiacal"])
     T_eff_zodiacal = float(config["target"]["T_eff_zodiacal"]) * u.K
@@ -399,7 +401,7 @@ def generate_zodiacal_spectrum(
     I_lambda_los_array_energy = I_lambda_los_array_energy.to(u.W / (u.um * u.m**2))
 
     if plot:  # pragma: no cover
-        save_dir = config["dirs"]["save_s2n_data_unique_dir"]
+        save_dir = output_dir(config, FYI)
         # zodiacal emission as fcn of beta and lambda, at three wavelengths
         plot_zodiacal_emission_2d(
             wavelength_um,
@@ -409,7 +411,7 @@ def generate_zodiacal_spectrum(
             beta_lat_grid,
             lambda_rel_lon_los,
             beta_lat_los,
-            save_dir + "/zodiacal_emission_2d.png",
+            save_dir + "zodiacal_emission_2d.png",
         )
         # spectrum of zodiacal light along the line-of-sight
         plot_luminosity_and_flux(
@@ -418,7 +420,7 @@ def generate_zodiacal_spectrum(
             I_lambda_los_array_energy,
             "Zodiacal spectrum (no distance correction)\n"
             rf"$\lambda_{{\rm rel}}$={lambda_rel_lon_los}, $\beta$={beta_lat_los}",
-            save_dir + "/zodiacal_spectrum_los.png",
+            save_dir + "zodiacal_spectrum_los.png",
             log_x=True,
         )
 
@@ -458,7 +460,8 @@ def generate_exozodiacal_spectrum(
     # T(r) = 278.3K * Ls^(0.25) * r^-(0.5)
 
     """Exozodiacal disk spectrum (Kennedy 2015 Eqn. 1: Sigma_m * BB(lambda, T(r)))
-    integrated over the disk; returns photon and energy luminosity per um.
+    integrated over the disk; returns photon and energy luminosity per um (plot:
+    fyi_plots/exozodiacal_spectrum.png).
     """
 
     def T_temp(r: u.Quantity) -> u.Quantity:
@@ -608,7 +611,7 @@ def generate_exozodiacal_spectrum(
             luminosity_photons_exozodi_disk,
             luminosity_energy_disk_lambda,
             "Exozodiacal disk spectrum (no distance correction)",
-            config["dirs"]["save_s2n_data_unique_dir"] + "/exozodiacal_spectrum.png",
+            output_dir(config, FYI) + "exozodiacal_spectrum.png",
             log_x=False,
         )
 
@@ -635,12 +638,13 @@ GENERATED_SPECTRA_FILENAMES = {
 
 
 def bind_astrophysical_sources_library(config: configparser.ConfigParser) -> None:
-    """Point generated-source library entries at spectra in save_s2n_data_unique_dir."""
-    output_dir = Path(config["dirs"]["save_s2n_data_unique_dir"]).resolve()
+    """Point generated-source library entries at the spectra written to this run's
+    intermediate/ directory."""
+    spectra_dir = Path(output_dir(config, INTERMEDIATE)).resolve()
     if not config.has_section("astrophysical_sources_library"):
         config.add_section("astrophysical_sources_library")
     for source, filename in GENERATED_SPECTRA_FILENAMES.items():
-        config.set("astrophysical_sources_library", source, str(output_dir / filename))
+        config.set("astrophysical_sources_library", source, str(spectra_dir / filename))
 
 
 def create_sample_data(
@@ -649,7 +653,8 @@ def create_sample_data(
     plot: bool = False,
 ) -> None:
     """
-    Create sample spectral data files for testing.
+    Create sample spectral data files (text tables in this run's intermediate/
+    directory; FYI plots in fyi_plots/ if plot).
 
     Args:
         config: ConfigParser object
@@ -659,8 +664,7 @@ def create_sample_data(
     Returns:
         None (writes to file)
     """
-    output_dir = Path(config["dirs"]["save_s2n_data_unique_dir"]).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    spectra_dir = Path(output_dir(config, INTERMEDIATE)).resolve()
     bind_astrophysical_sources_library(config)
 
     # Create wavelength grid
@@ -725,7 +729,7 @@ def create_sample_data(
     }
 
     for filename, data in sample_data.items():
-        filepath = output_dir / filename
+        filepath = spectra_dir / filename
 
         if filepath.exists() and not overwrite:
             logger.info("Skipping %s (already exists)", filename)
