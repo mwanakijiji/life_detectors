@@ -177,7 +177,7 @@ def pass_from_aperture_to_detector(
     """
     Inject enabled ``InstrumentBackground`` spectra into the post-aperture
     beam (still in photon units). Detector QE is applied later in
-    ``disperse_astro_signals_on_detector``.
+    ``disperse_astro_signals``.
 
     With plot=True, writes one FYI figure per angle of everything entering the
     detector stage (sources + backgrounds, per output):

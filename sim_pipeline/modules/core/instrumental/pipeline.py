@@ -170,9 +170,9 @@ class InstrumentDepTerms:
             plot=plot,
         )
 
-    def disperse_astro_signals_on_detector(self, plot: bool = False) -> None:
+    def disperse_astro_signals(self, plot: bool = False) -> None:
         """Stage: disperse the post-aperture signals onto each channel's detector."""
-        dispersion.disperse_astro_signals_on_detector(
+        dispersion.disperse_astro_signals(
             self.config,
             self.prop_dict,
             self.output_channels,
@@ -182,9 +182,9 @@ class InstrumentDepTerms:
             plot=plot,
         )
 
-    def apply_detector_effects(self) -> None:
+    def expose_plus_detector_effects(self) -> None:
         """Stage: expose each readout and apply the enabled detector effects."""
-        effects.apply_detector_effects(
+        effects.expose_plus_detector_effects(
             self.output_channels,
             self.detector_effects,
             t_frame=float(self.config["observation"]["t_int_frame"]) * u.second,

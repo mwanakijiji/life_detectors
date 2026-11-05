@@ -334,8 +334,6 @@ def run_single_calculation(
                     )
                 )
 
-        ipdb.set_trace()
-
         # put all the objects into the scene
         logger.info("Generating on-sky scene...")
         # ( returns {source_name: cube (n_wavel, n_pix, n_pix)}: each source placed on
@@ -351,8 +349,6 @@ def run_single_calculation(
             incident_dict=sources_astroph, plot=plot
         )
 
-        ipdb.set_trace()
-
         # instantiate instrument effects, OutputChannel objects
         logger.info("Passing astrophysical flux through telescope aperture...")
         # ( holds the instrument-side state: sources_astroph, prop_dict, the four
@@ -366,8 +362,6 @@ def run_single_calculation(
             sources_astroph = sources_astroph,
             sources_to_include = sources_to_include,
         )
-
-        ipdb.set_trace()
 
         # pristine copy of incident astrophysical source spectra, before any screen/aperture steps
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
@@ -398,10 +392,8 @@ def run_single_calculation(
                 # ( clears per-angle effect state, e.g. persistence; nothing written )
                 effect.reset()
 
-            ipdb.set_trace()
-
             # generate the transmission screens specific to this angle (one per output)
-            logger.info("Generating transmission screens...")
+            logger.info("Generating transmission screens ... ")
             # ( returns numpy array with slices (ch1, ch2, ch3, ch4, grad_y, grad_x) )
             # ( screens from the aperture-array YAML phases, normalised, rotated by
             #   angle_deg; dark outputs get a small manual stellar mask if
@@ -423,8 +415,6 @@ def run_single_calculation(
                 )
             )
 
-            ipdb.set_trace()
-
             # pass astrophysical scene through transmission screens
             logger.info("Passing astrophysical flux through transmission screens ...")
             # ( updates instrument_dep_terms.sources_astroph in place )
@@ -445,8 +435,6 @@ def run_single_calculation(
                 plot = plot,
             )
 
-            ipdb.set_trace()
-
             # Pass through telescope aperture
             # output units: photons/sec/etc.
             logger.info(
@@ -462,8 +450,6 @@ def run_single_calculation(
             #          {save_dir}poster_post_aperture_flux_<out>.pdf
             instrument_dep_terms.pass_through_aperture(plot=plot)
 
-            ipdb.set_trace()
-
             # Pass from aperture to detector
             logger.info("Passing from aperture to detector...")
             # ( adds each enabled instrument background as its own prop_dict entry,
@@ -477,16 +463,14 @@ def run_single_calculation(
             #          band-integrated background fraction of the total)
             instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
 
-            ipdb.set_trace()
-
-            # disperse astrophysical signals on the detector (i.e., update the
+            # disperse astrophysical signals (i.e., update the
             # OutputChannel objects; note that input astrophysical signals should still
             # be photons, not electrons)
             # output units:
             #   ph/sec/um
             #   ph/sec/wavel_bin
             #   ph/sec/pix
-            logger.info("Dispersing signals on channel detectors ...")
+            logger.info("Dispersing spectral signals ...")
             # ( per channel: creates the Detector if needed, sets its trace footprint,
             #   sums each source over the sky, rebins onto the channel's wavelength
             #   bins, applies QE, and stores channel.astroph_signal[source] (per um,
@@ -496,18 +480,18 @@ def run_single_calculation(
             #          plot only, per channel: {save_dir}footprint_bool_<channel>.png,
             #          {save_dir}astro_ph_sec_pixel_<channel>.csv (ph/s/pix per source
             #          + cumulative) and {save_dir}astro_ph_sec_pixel_<channel>.pdf
-            instrument_dep_terms.disperse_astro_signals_on_detector(plot=plot)
-
-            ipdb.set_trace()
+            instrument_dep_terms.disperse_astro_signals(plot=plot)
 
             # expose 2D detector frames per readout and apply detector effects
-            logger.info("Applying detector effects to readout frames ...")
+            logger.info(
+                "Exposing detector to science signal and stamping detector effects to readout frames ..."
+                )
             # ( per channel and readout ([observation] N_int_per_angle): exposes the
             #   detector for t_int_frame (DetectorFrames: source_e, systematics_e,
             #   total_e) and runs each effect; stores channel.readout_frames )
             # FYI out: log "Applied <n> detector effect(s) over <n> readout(s) for
             #          <channel>"
-            instrument_dep_terms.apply_detector_effects()
+            instrument_dep_terms.expose_plus_detector_effects()
 
             # write the detector readouts to FITS (one HDU per output channel):
             # a cutout around the spectral trace at every angle, plus one full-frame
@@ -542,6 +526,7 @@ def run_single_calculation(
                     os.path.abspath(full_example_file_name),
                     size_str,
                 )
+            ipdb.set_trace()
             readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
                 angle_deg, qe
             )

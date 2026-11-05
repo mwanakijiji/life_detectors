@@ -557,7 +557,7 @@ def _independent_detector_flux_from_prop_dict(instr, source_name, qe, flux_rate_
     """
     Recompute detector-grid flux for one source from post-aperture cubes.
 
-    Mirrors disperse_astro_signals_on_detector without reading astroph_signal.
+    Mirrors disperse_astro_signals without reading astroph_signal.
     """
     wavel_bins = next(iter(instr.output_channels.values())).bin_centers
     wavel_bin_values = (
@@ -617,7 +617,7 @@ def _photons_and_adu_from_detector_footprint(
 
 def _independent_adu_from_readouts(instr, sources_to_include, file_name):
     """Sum per-source spectra box-summed from the readout FITS (production path)."""
-    instr.apply_detector_effects()
+    instr.expose_plus_detector_effects()
     instr.write_detector_readouts(file_name)
     instr.extract_spectra_from_readouts()
     total_adu = 0.0 * u.adu
@@ -672,7 +672,7 @@ class TestRunSingleCalculation:
         # disperse astrophysical signals on the detector (i.e., update the OutputChannel
         # objects; note that input astrophysical signals should still be photons, not
         # electrons)
-        instr.disperse_astro_signals_on_detector(plot=False)
+        instr.disperse_astro_signals(plot=False)
 
         # is flux conserved before and after transmissions screens? (per source and
         # total)
@@ -995,7 +995,7 @@ class TestRunSingleCalculation:
         expected_angles = list(np.linspace(0, 360, num=2, endpoint=False))
         assert mock_instrument.generate_instrument_transmission.call_count == 2
         assert mock_effect.reset.call_count == 2
-        assert mock_instrument.apply_detector_effects.call_count == 2
+        assert mock_instrument.expose_plus_detector_effects.call_count == 2
         assert mock_instrument.write_detector_readouts.call_count == 3
         assert mock_instrument.extract_spectra_from_readouts.call_count == 2
         written = [

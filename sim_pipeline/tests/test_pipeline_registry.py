@@ -12,8 +12,8 @@ EXPECTED_NODES = {
     "pass_through_transmission_screens",
     "pass_through_aperture",
     "pass_from_aperture_to_detector",
-    "disperse_astro_signals_on_detector",
-    "apply_detector_effects",
+    "disperse_astro_signals",
+    "expose_plus_detector_effects",
     "write_detector_readouts",
     "extract_spectra_from_readouts",
     "assemble_extracted_spectra_cubes",
@@ -26,9 +26,9 @@ EXPECTED_EDGES = {
     ("generate_instrument_transmission", "pass_through_transmission_screens"),
     ("pass_through_transmission_screens", "pass_through_aperture"),
     ("pass_through_aperture", "pass_from_aperture_to_detector"),
-    ("pass_from_aperture_to_detector", "disperse_astro_signals_on_detector"),
-    ("disperse_astro_signals_on_detector", "apply_detector_effects"),
-    ("apply_detector_effects", "write_detector_readouts"),
+    ("pass_from_aperture_to_detector", "disperse_astro_signals"),
+    ("disperse_astro_signals", "expose_plus_detector_effects"),
+    ("expose_plus_detector_effects", "write_detector_readouts"),
     ("write_detector_readouts", "extract_spectra_from_readouts"),
     ("extract_spectra_from_readouts", "record_info_at_angle_and_qe"),
     ("record_info_at_angle_and_qe", "assemble_extracted_spectra_cubes"),
@@ -38,7 +38,7 @@ EXPECTED_EDGES = {
 def test_registry_includes_expected_stages():
     registry = ensure_stages_registered()
     assert set(registry) == EXPECTED_NODES
-    assert registry["apply_detector_effects"].planned is False
+    assert registry["expose_plus_detector_effects"].planned is False
 
 
 def test_graph_edges_match_pipeline_dag():

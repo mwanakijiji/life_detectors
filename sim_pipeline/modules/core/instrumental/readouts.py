@@ -30,7 +30,7 @@ def _readout_cube_adu(output_channel: OutputChannel) -> tuple[list[str], np.ndar
     if not frames_list:
         raise RuntimeError(
             f"{output_channel.name} has no readout frames; run "
-            "apply_detector_effects() first"
+            "expose_plus_detector_effects() first"
         )
     gain_e_per_adu = output_channel.detector.gain.to_value(u.electron / u.adu)
     components = list(frames_list[0].source_e) + [SYSTEMATICS_KEY]
@@ -52,7 +52,7 @@ def _readout_cube_adu(output_channel: OutputChannel) -> tuple[list[str], np.ndar
     return components, cube / gain_e_per_adu
 
 
-@pipeline_stage(depends_on=("apply_detector_effects",))
+@pipeline_stage(depends_on=("expose_plus_detector_effects",))
 def write_detector_readouts(
     output_channels: dict,
     file_name: str,
@@ -67,8 +67,10 @@ def write_detector_readouts(
     (n_components, n_readouts, ny, nx) in ADU. The components are each source
     and the detector systematics, named in the header as COMP0, COMP1, ...
 
-    With ``cutout=True`` only the bounding box of the spectral trace is written;
-    Y0/X0 give its lower-left pixel on the full frame (FULLNY x FULLNX).
+    With ``cutout=True`` only the bounding box of the spectral trace is written,
+    grown by the detector's [detector] buffer_footprint (y, x) pixels on each side
+    (clipped to the detector) so some unilluminated pixels are visible; Y0/X0 give
+    its lower-left pixel on the full frame (FULLNY x FULLNX), BUFFY/BUFFX the buffer.
     """
     primary = fits.PrimaryHDU()
     primary.header["TFRAME"] = (
@@ -83,8 +85,11 @@ def write_detector_readouts(
         components, cube_adu = _readout_cube_adu(output_channel)
         n_y_full, n_x_full = cube_adu.shape[-2:]
         y0, x0 = 0, 0
+        buffer_y, buffer_x = 0, 0
         if cutout:
-            y0, y1, x0, x1 = output_channel.detector.footprint_bbox()
+            det = output_channel.detector
+            buffer_y, buffer_x = det.footprint_buffer_yx
+            y0, y1, x0, x1 = det.footprint_bbox(buffer_yx=(buffer_y, buffer_x))
             cube_adu = cube_adu[..., y0:y1, x0:x1]
         hdu = fits.ImageHDU(data=cube_adu, name=FITS_CHANNEL_NAMES[output_channel.name])
         hdu.header["BUNIT"] = "adu"
@@ -92,6 +97,8 @@ def write_detector_readouts(
         hdu.header["X0"] = (x0, "Cutout lower column on the full frame (0-based)")
         hdu.header["FULLNY"] = (n_y_full, "Full-frame rows")
         hdu.header["FULLNX"] = (n_x_full, "Full-frame columns")
+        hdu.header["BUFFY"] = (buffer_y, "Cutout rows of buffer around the trace")
+        hdu.header["BUFFX"] = (buffer_x, "Cutout columns of buffer around the trace")
         hdu.header["GAIN"] = (
             output_channel.detector.gain.to_value(u.electron / u.adu),
             "Detector gain [e-/ADU]",
@@ -138,7 +145,8 @@ def _trace_profile_and_fractions(
     """
     For the cutout box: the trace's spatial profile (1, ny, nx), normalized to sum
     to 1 down each illuminated column, and each column's fractional coverage by
-    each wavelength bin (n_bins, nx).
+    each wavelength bin (n_bins, nx). Unilluminated columns (e.g. the cutout
+    buffer) get a zero profile and zero fractions, so they add nothing.
     """
     fp = det.footprint_cube[:, y0 : y0 + n_y, x0 : x0 + n_x]
     image = fp.sum(axis=0)

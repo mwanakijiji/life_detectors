@@ -143,7 +143,7 @@ class DispersionLaw:
 
 
 @pipeline_stage(depends_on=("pass_from_aperture_to_detector",))
-def disperse_astro_signals_on_detector(
+def disperse_astro_signals(
     config: ConfigLike,
     prop_dict: dict,
     output_channels: dict,
@@ -168,6 +168,7 @@ def disperse_astro_signals_on_detector(
             )
         logging.info("Dispersing signals on detector for %s", output_channel.name)
 
+        # return footprint in shape (n_bins, n_pix_y, n_pix_x)
         footprint_cube = dispersion_law.make_footprint(
             output_channel.detector.n_pix_y,
             output_channel.detector.n_pix_x,
@@ -225,7 +226,7 @@ def disperse_astro_signals_on_detector(
                 flux_astro_1d_interpolated_ph_sec_wavel_bin / n_pix_per_wavel_bin
             )
 
-            # Detector QE (intrinsic to the sensor)
+            # detector QE
             det = output_channel.detector
             flux_astro_1d_interpolated_ph_sec_pixel = det.apply_qe(
                 flux_astro_1d_interpolated_ph_sec_pixel

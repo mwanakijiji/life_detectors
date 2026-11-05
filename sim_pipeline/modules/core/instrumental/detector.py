@@ -46,6 +46,25 @@ def detector_shape_from_config(config: ConfigLike) -> tuple[int, int]:
     return int(size), int(size)
 
 
+def footprint_buffer_from_config(config: ConfigLike) -> tuple[int, int]:
+    """
+    (buffer_y, buffer_x) in pixels from [detector] buffer_footprint = y, x (a single
+    value applies to both axes); (0, 0) if unset.
+    """
+    raw = _config_get(config, "detector", "buffer_footprint")
+    if raw is None or not str(raw).strip():
+        return 0, 0
+    parts = [int(p.strip()) for p in str(raw).split(",") if p.strip()]
+    if len(parts) == 1:
+        parts = parts * 2
+    if len(parts) != 2 or min(parts) < 0:
+        raise ValueError(
+            f"[detector] buffer_footprint must be 'y, x' non-negative integers; "
+            f"got {raw!r}"
+        )
+    return parts[0], parts[1]
+
+
 class Detector:
     """Sensor model: geometry, quantum efficiency, gain, read noise and dark current."""
 
@@ -78,6 +97,11 @@ class Detector:
         )
         logger.info(
             "Dark current array is %s e-/pix/sec", self.dark_current_rate_e_pix_sec
+        )
+
+        # unilluminated margin (y, x) kept around the trace in readout cutouts
+        self.footprint_buffer_yx: tuple[int, int] = footprint_buffer_from_config(
+            config
         )
 
         self.footprint_cube: np.ndarray | None = None
@@ -114,15 +138,24 @@ class Detector:
         bin_map[self.footprint_image() <= 0] = -1
         return bin_map
 
-    def footprint_bbox(self) -> tuple[int, int, int, int]:
-        """(y0, y1, x0, x1) bounding box of the
-        illuminated footprint (end-exclusive).
+    def footprint_bbox(
+        self, buffer_yx: tuple[int, int] = (0, 0)
+    ) -> tuple[int, int, int, int]:
+        """(y0, y1, x0, x1) bounding box of the illuminated footprint (end-exclusive),
+        grown by buffer_yx = (buffer_y, buffer_x) pixels on each side and clipped to
+        the detector.
         """
         self._require_footprint()
         on_footprint = self.footprint_image() > 0
         rows = np.flatnonzero(on_footprint.any(axis=1))
         cols = np.flatnonzero(on_footprint.any(axis=0))
-        return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
+        buffer_y, buffer_x = buffer_yx
+        return (
+            max(int(rows[0]) - buffer_y, 0),
+            min(int(rows[-1]) + 1 + buffer_y, self.n_pix_y),
+            max(int(cols[0]) - buffer_x, 0),
+            min(int(cols[-1]) + 1 + buffer_x, self.n_pix_x),
+        )
 
     def apply_qe(self, flux: u.Quantity | np.ndarray) -> u.Quantity | np.ndarray:
         """Apply detector quantum efficiency to a photon-rate quantity or array."""

@@ -214,8 +214,8 @@ def build_detector_effects(config: ConfigLike) -> List[DetectorEffect]:
     return effects
 
 
-@pipeline_stage(depends_on=("disperse_astro_signals_on_detector",))
-def apply_detector_effects(
+@pipeline_stage(depends_on=("disperse_astro_signals",))
+def expose_plus_detector_effects(
     output_channels: dict,
     effects: List[DetectorEffect],
     t_frame: u.Quantity,

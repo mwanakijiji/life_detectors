@@ -21,8 +21,8 @@ from modules.core.instrumental.effects import (
     DetectorEffect,
     DetectorFrames,
     HotPixelsEffect,
-    apply_detector_effects,
     build_detector_effects,
+    expose_plus_detector_effects,
 )
 from modules.core.instrumental.pipeline import InstrumentDepTerms
 from modules.core.instrumental.readouts import (
@@ -533,7 +533,7 @@ class TestGenerateInstrumentTransmission:
         assert cube[3, center, center] == pytest.approx(0.001, abs=1e-3)
 
 
-class TestDisperseAstroSignalsOnDetector:
+class TestDisperseAstroSignals:
     @patch("modules.core.instrumental.dispersion.DispersionLaw")
     @patch("modules.core.instrumental.dispersion.Detector")
     def test_disperse_populates_astroph_signal_per_output_channel(
@@ -575,7 +575,7 @@ class TestDisperseAstroSignalsOnDetector:
             channel.bin_centers = channel.bin_centers[:n_bins]
             channel.bin_widths = channel.bin_widths[:n_bins]
 
-        instr.disperse_astro_signals_on_detector(plot=False)
+        instr.disperse_astro_signals(plot=False)
 
         channel = instr.output_channels["output_1_bright"]
         assert "star" in channel.astroph_signal
@@ -860,7 +860,7 @@ class TestDetectorEffects:
     ):
         channel, det = channel_with_signal
         effect = _RecordTotalEffect({})
-        apply_detector_effects(
+        expose_plus_detector_effects(
             {channel.name: channel}, [effect], t_frame=1.0 * u.s, n_readouts=2
         )
         total = det.expose(channel.astroph_signal, 1.0 * u.s).total_e.sum()
@@ -871,11 +871,11 @@ class TestDetectorEffects:
         effect.reset()
         assert effect.previous_total is None
 
-    def test_apply_detector_effects_stores_one_frame_set_per_readout(
+    def test_expose_plus_detector_effects_stores_one_frame_set_per_readout(
         self, channel_with_signal
     ):
         channel, det = channel_with_signal
-        apply_detector_effects(
+        expose_plus_detector_effects(
             {channel.name: channel}, [], t_frame=1.0 * u.s, n_readouts=3
         )
         expected = det.expose(channel.astroph_signal, 1.0 * u.s)
@@ -932,7 +932,7 @@ class TestDetectorReadouts:
                 / (u.s * u.pix)
             }
             channels[name] = channel
-        apply_detector_effects(channels, [], t_frame=10.0 * u.s, n_readouts=2)
+        expose_plus_detector_effects(channels, [], t_frame=10.0 * u.s, n_readouts=2)
         return channels
 
     def test_bin_index_map_assigns_shared_pixel_to_majority_bin(
@@ -1050,7 +1050,7 @@ class TestDetectorReadouts:
             }
             channels[name] = channel
         # systematics grow with readout index, so readouts differ
-        apply_detector_effects(
+        expose_plus_detector_effects(
             channels, [_ReadoutRampEffect({})], t_frame=10.0 * u.s, n_readouts=3
         )
         return channels
