@@ -5,11 +5,12 @@ from typing import Sequence
 
 import numpy as np
 import yaml
+from astropy import units as u
 from astropy.io import fits
-from scipy import ndimage
 
 from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.output_dirs import FYI, INTERMEDIATE, output_dir
+from ...utils.helpers.wavelengths import incident_cube_wavelengths
 from ...utils.types import ConfigLike
 from ...viz.transmission import (
     plot_flux_through_screens,
@@ -28,6 +29,9 @@ TRANSMISSION_CUBE_SLICES = (
     ("xx", "Sky x coordinate of each pixel (not rotated)", "arcsec"),
 )
 
+# value of wavel_m that selects screens on the incident-flux wavelength grid
+POLYCHROMATIC = "polychromatic"
+
 
 def format_transmission_fits_name(angle_deg: float) -> str:
     """``transmission_instrument_response_angle_{angle:06.2f}.fits``"""
@@ -38,22 +42,28 @@ def write_transmission_responses_fits(
     file_name: str,
     transmission_cube: np.ndarray,
     header_cards: dict | None = None,
+    wavel_um: np.ndarray | None = None,
 ) -> str:
     """
     Write the transmission responses for one angle to a single FITS file.
 
-    transmission_cube: shape (6, n_pix, n_pix), slices ordered as
-    TRANSMISSION_CUBE_SLICES (outputs 1-4, then y and x sky coordinates).
+    transmission_cube: shape (6, n_pix, n_pix) (monochromatic) or (6, n_wavel, n_pix,
+    n_pix) (polychromatic), slices ordered as TRANSMISSION_CUBE_SLICES (outputs 1-4,
+    then y and x sky coordinates).
 
     HDUs: empty PRIMARY (header_cards, e.g. ANGLE, WAVEL_M), then OUTPUT_1_BRIGHT,
-    OUTPUT_2_BRIGHT, OUTPUT_3_DARK, OUTPUT_4_DARK, YY_ARCSEC, XX_ARCSEC; each image
-    HDU has QUANTITY (what it holds) and BUNIT in its header. Returns file_name.
+    OUTPUT_2_BRIGHT, OUTPUT_3_DARK, OUTPUT_4_DARK (each (n_pix, n_pix), or (n_wavel,
+    n_pix, n_pix) if polychromatic), YY_ARCSEC, XX_ARCSEC (always (n_pix, n_pix)); each
+    image HDU has QUANTITY (what it holds) and BUNIT in its header. If wavel_um is
+    given (polychromatic), also a WAVELENGTH table (column wavel, um), one row per
+    screen slice. Returns file_name.
     """
     if transmission_cube.shape[0] != len(TRANSMISSION_CUBE_SLICES):
         raise ValueError(
             f"Expected {len(TRANSMISSION_CUBE_SLICES)} slices in the transmission "
             f"cube, got shape {transmission_cube.shape}"
         )
+    polychromatic = transmission_cube.ndim == 4
     primary = fits.PrimaryHDU()
     for key, val in (header_cards or {}).items():
         primary.header[key] = val
@@ -61,10 +71,26 @@ def write_transmission_responses_fits(
     for i, (name, quantity, unit) in enumerate(TRANSMISSION_CUBE_SLICES):
         extname = f"{name.upper()}_ARCSEC" if unit == "arcsec" else name.upper()
         data = np.asarray(transmission_cube[i], dtype=float)
+        if polychromatic and unit == "arcsec":
+            data = data[0]  # coordinates do not depend on wavelength
         hdu = fits.ImageHDU(data, name=extname)
         hdu.header["QUANTITY"] = (quantity, "Quantity in this HDU")
         hdu.header["BUNIT"] = (unit, "Unit ('' = dimensionless)")
         hdus.append(hdu)
+    if wavel_um is not None:
+        hdus.append(
+            fits.BinTableHDU.from_columns(
+                [
+                    fits.Column(
+                        name="wavel",
+                        format="D",
+                        unit="um",
+                        array=np.asarray(wavel_um, dtype=float),
+                    )
+                ],
+                name="WAVELENGTH",
+            )
+        )
     fits.HDUList(hdus).writeto(file_name, overwrite=True)
     return file_name
 
@@ -75,37 +101,64 @@ def write_transmission_responses_fits(
 )
 def generate_instrument_transmission(
     config: ConfigLike,
-    wavel_m: float = 11e-6,
+    wavel_m: float | str = 11e-6,
     override_stellar_mask: bool = False,
     normalize: bool = True,
     plot: bool = False,
     angle_deg: float = 0,
 ) -> np.ndarray:
-    # phi_dc_vec_rad, theta_vec_2d_asec,
-    # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12,
+    # instrument transmission respose over the sky (R_theta_vec, Dannert 2025 Eqn. B12,
     # ignoring polarization for now)
 
     """
     INPUTS:
-    # wavel_m (float): Wavelength in meters (e.g., 1e-6).
+    # wavel_m (float or str): Wavelength in meters (e.g., 11e-6; the default), or
+    # "polychromatic" for one screen per wavelength of the incident-flux cubes
+    # (utils.helpers.wavelengths.incident_cube_wavelengths), so that the screens
+    # multiply the (n_wavel, n_pix, n_pix) scene cubes slice by slice.
     # normalize (bool): If True, normalize transmission to unity maximum. If False, max
     # transmission is N for N identical apertures.
     # plot (bool): If True, write the responses for this angle to
     # transmission_instrument_response_angle_<angle>.fits (one HDU per output plus the
-    # y and x sky coordinates) and differential_dark_angle_<angle>.fits, in the run's
-    # intermediate/ directory.
-    # angle_deg (float): Rotation angle of the transmission screens in degrees.
+    # y and x sky coordinates, and a WAVELENGTH table if polychromatic) and
+    # differential_dark_angle_<angle>.fits, in the run's intermediate/ directory.
+    # angle_deg (float): Rotation angle of the transmission screens in degrees (done
+    # exactly, by rotating the aperture positions; see below).
 
     OUTPUT:
     # Returns:
-    #   transmission_instrument_response: np.ndarray of shape (6, Ny, Nx)
+    #   transmission_instrument_response: np.ndarray of shape (6, Ny, Nx), or
+    #   (6, n_wavel, Ny, Nx) if wavel_m == "polychromatic"
     #     [0]: transmission, bright output 1
     #     [1]: transmission, bright output 2
     #     [2]: transmission, dark output 3
     #     [3]: transmission, dark output 4
-    #     [4]: y-coordinates on sky [arcsec]
-    #     [5]: x-coordinates on sky [arcsec]
+    #     [4]: y-coordinates on sky [arcsec] (same for every wavelength)
+    #     [5]: x-coordinates on sky [arcsec] (same for every wavelength)
     """
+
+    # wavelength(s) of the screens: always computed along a wavelength axis, which is
+    # squeezed out at the end in the monochromatic case
+    if isinstance(wavel_m, str):
+        if wavel_m != POLYCHROMATIC:
+            raise ValueError(
+                f"wavel_m must be a wavelength in m or {POLYCHROMATIC!r}; got "
+                f"{wavel_m!r}"
+            )
+        polychromatic = True
+        wavel_um = incident_cube_wavelengths(config)
+        wavel_m_arr = wavel_um.to_value(u.m)
+        logging.info(
+            "Polychromatic transmission screens: %d wavelengths, %.3g-%.3g um",
+            wavel_m_arr.size,
+            wavel_um[0].value,
+            wavel_um[-1].value,
+        )
+    else:
+        polychromatic = False
+        wavel_um = None
+        wavel_m_arr = np.array([float(wavel_m)])
+    n_wavel = wavel_m_arr.size
 
     # read in array parameters from config file
     aperture_array_definition_file_name = config["telescope"][
@@ -116,19 +169,12 @@ def generate_instrument_transmission(
 
     # construct vectors
     A_vec = []  # amplitudes
-    phi_dc_vec_rad = []  # relative phase offests of each arm (one vector per aperture)
     pos_vec_m = []  # [y_m, x_m] per aperture
-    phase_vector_rad_array = []  # phase vector for each output
     for aperture in aperture_array_definition["apertures"]:
         A_vec.append(aperture["amplitude"])
         pos_vec_m.append([aperture["y_m"], aperture["x_m"]])
-    for output in aperture_array_definition["outputs"]:
-        phase_vector_deg = output["phase_vector_deg"]
-        phase_vector_rad = np.deg2rad(phase_vector_deg)
-        phase_vector_rad_array.append(phase_vector_rad)
-    A_vec = np.array(A_vec)
-    phi_dc_vec_rad = np.array(phi_dc_vec_rad)
-    pos_vec_m = np.array(pos_vec_m)
+    A_vec = np.array(A_vec, dtype=float)
+    pos_vec_m = np.array(pos_vec_m, dtype=float)
 
     n_pix = int(config["onsky_scene"]["n_pix"])
     pix_size_mas = float(config["onsky_scene"]["pix_size_mas"])  # milliarcseconds
@@ -138,9 +184,8 @@ def generate_instrument_transmission(
     sky_xx_arcsec = xx_arcsec
     sky_yy_arcsec = yy_arcsec
     arcsec_to_rad = np.pi / (180.0 * 3600.0)
-    theta_vec_rad_array = np.zeros((2, n_pix, n_pix), dtype=float)
-    theta_vec_rad_array[0] = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad]
-    theta_vec_rad_array[1] = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad]
+    theta_y_rad = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad], (Ny, Nx)
+    theta_x_rad = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad], (Ny, Nx)
 
     # Calculate total number of baselines (unique pairs of apertures)
     N_apertures = len(aperture_array_definition["apertures"])
@@ -149,127 +194,71 @@ def generate_instrument_transmission(
     N_baselines = N_apertures * (N_apertures - 1) // 2
     logging.info("Total number of baselines: %s", N_baselines)
 
-    # if incl_comp_transmission:
-    #    cube_canvas = np.zeros((N_baselines+3, N, N))
+    # rotate the array instead of the screens (exact; no interpolation, no zero-filled
+    # corners): rotating the screen T(θ) by α gives T(R(-α) θ), and
+    # b · R(-α) θ = (R(α) b) · θ, so it is the screen of the array with every aperture
+    # position (hence every baseline) rotated by α. The sense of rotation matches the
+    # previous ndimage.rotate(..., axes=(1, 2)) on the (y, x) pixel grid.
+    alpha_rad = np.deg2rad(float(angle_deg))
+    cos_a, sin_a = np.cos(alpha_rad), np.sin(alpha_rad)
+    # (y, x) -> (y cos α - x sin α, y sin α + x cos α)
+    rot_yx = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+    pos_rot_m = pos_vec_m @ rot_yx.T
 
-    cube_canvas = np.zeros((3, n_pix, n_pix))
+    # normalization: the response peaks at (sum_j A_j)^2 (all arms in phase)
+    max_response = float(np.sum(A_vec)) ** 2 if normalize else 1.0
 
-    # dict to hold bright and dark outputs
-    output_all_responses = {}
+    # 2π/λ along the wavelength axis, shape (n_wavel, 1, 1), to broadcast over the sky
+    k_wave = (2.0 * np.pi / wavel_m_arr)[:, None, None]
 
-    # Sum over all pairs of apertures (j, k) where j < k
-    def R_m(
-        phase_vector_rad: np.ndarray, wavel_m: float, output_name: str
-    ) -> np.ndarray:
-        # response of output m
-        # N_apertures: number of apertures N
-        # phase_vector_deg: phase vector for output m (total number of outputs is not
-        # nec. same as apertures N)
-        # return: response of output m
+    def R_m(phase_vector_rad: np.ndarray, output_name: str) -> np.ndarray:
+        """
+        On-sky response of output m, shape (n_wavel, Ny, Nx) (Dannert 2025 Eqn. B12;
+        Lay 2004 Eqn. 3; see docs/transmission_response_math.pdf).
 
-        # convert phase vector to radians
-        # phase_vector_rad = np.deg2rad(phase_vector_deg)
-        R_theta_vec = np.zeros(np.shape(theta_vec_rad_array[0]))  # shape: (Ny, Nx)
-
-        # sum over all baselines (i.e., over apertures over apertures)
+        The field at output m from a point source at sky position θ is
+            E_m(θ, λ) = sum_j A_j exp(i [φ_mj + (2π/λ) x_j · θ])
+        (A_j: amplitude of arm j; φ_mj: phase of arm j in output m, from the YAML
+        phase_vector_deg; x_j = (y_j, x_j): position of aperture j, rotated by
+        angle_deg). The response is the intensity, which is real:
+            R_m = |E_m|^2 = sum_j sum_k A_j A_k cos(Δφ_jk + (2π/λ) b_jk · θ),
+        with Δφ_jk = φ_mk - φ_mj and baseline b_jk = x_k - x_j. Splitting the double
+        sum:
+          - j = k: Δφ = 0 and b = 0, so each term is A_j^2 (a constant over the sky);
+          - (k, j) is (j, k) with both Δφ and b negated, and cos is even, so the two
+            are equal and the pairs j < k count twice:
+            R_m = sum_j A_j^2 + 2 sum_{j<k} A_j A_k cos(Δφ_jk + (2π/λ) b_jk · θ).
+        b_jk · θ = Δy θ_y + Δx θ_x does not depend on λ, so it is computed once per
+        baseline (Ny, Nx) and scaled by 2π/λ for every wavelength at once. Divided by
+        (sum_j A_j)^2 if normalize, so the maximum is 1.
+        """
+        R_theta_vec = np.full((n_wavel, n_pix, n_pix), np.sum(A_vec**2))
+        phase = np.empty_like(R_theta_vec)  # work buffer, reused for every baseline
         for j in range(N_apertures):
-            for k in range(N_apertures):
-
+            for k in range(j + 1, N_apertures):
                 # Differential phase between apertures j and k [rad]
                 del_phi_dc_jk_rad = phase_vector_rad[k] - phase_vector_rad[j]
-
-                # Baseline from aperture j to aperture k [m]; del_x_jk[0]=Δy,
-                # del_x_jk[1]=Δx
-                del_x_jk = pos_vec_m[k] - pos_vec_m[j]
-
-                # Compute phase term for all sky positions at once using broadcasting
-                # theta_vec_rad_array has shape (2, Ny, Nx), del_x_jk has shape (2,)
-                # We want to compute dot(del_x_jk, theta_vec_rad_array) for all
-                # positions
-                # This gives shape (Ny, Nx)
-                phase_term = (2 * np.pi / wavel_m) * (
-                    del_x_jk[0] * theta_vec_rad_array[0]  # Δy · θ_y
-                    + del_x_jk[1] * theta_vec_rad_array[1]  # Δx · θ_x
-                )
-
-                # Use cosine addition formula: cos(a + b) = cos(a)cos(b) - sin(a)sin(b)
-                # This is more efficient than computing cos and sin separately
-                # Eqn. B12 in Dannert 2025
-                # Eqn. 3 in Lay 2004
-                # phase_term: 2pi/lambda * b dot theta (in some notations)
-                # del_phi_dc_jk_rad: phase offset between apertures j and k [rad]
-                response_jk = (
-                    A_vec[j] * A_vec[k] * np.cos(del_phi_dc_jk_rad + phase_term)
-                )
-
-                # Add contribution from this pair to the total response
-                # if plot:
-                #     plt.clf()
-                #     plt.imshow(response_jk)
-                #     plt.title(f'Baseline {j}-{k}')
-                #     plt.colorbar()
-                #     plt.show()
-                #
-
-                # # if incl_comp_transmission, add this as a separate slice
-                # if incl_comp_transmission:
-                #
-
-                # Add contribution from this pair to the total response
-                R_theta_vec += response_jk
-
-        # cube_canvas[0,:,:] = R_theta_vec
-        cube_canvas[0, :, :] = R_theta_vec
-        cube_canvas[1, :, :] = sky_yy_arcsec  # y [arcsec]
-        cube_canvas[2, :, :] = sky_xx_arcsec  # x [arcsec]
+                # Baseline from aperture j to aperture k [m]; [0] = Δy, [1] = Δx
+                del_x_jk = pos_rot_m[k] - pos_rot_m[j]
+                # b_jk · θ [m rad], (Ny, Nx), same for all wavelengths
+                b_dot_theta = del_x_jk[0] * theta_y_rad + del_x_jk[1] * theta_x_rad
+                # Δφ_jk + (2π/λ) b_jk · θ for every wavelength, in place
+                np.multiply(k_wave, b_dot_theta, out=phase)
+                phase += del_phi_dc_jk_rad
+                np.cos(phase, out=phase)
+                R_theta_vec += (2.0 * A_vec[j] * A_vec[k]) * phase
 
         # conceptual point here! this response to photons is real, not complex! See Lay
         # Eqn. (3): it's the rr*
-
-        # now for the actual transmission
-        transmission_instrument_response = np.zeros(np.shape(cube_canvas))
-        # transmission_instrument_response[0,:,:] =
-        # np.abs(complex_instrument_response[0,:,:])**2 # on-sky transmission
-        transmission_instrument_response[0, :, :] = R_theta_vec  # on-sky transmission
-
-        # transmission_instrument_response[0,:,:] /=
-        # np.max(transmission_instrument_response[0,:,:]) # normalize (TODO: is this
-        # right?)
-        transmission_instrument_response[1:3, :, :] = cube_canvas[
-            1:3, :, :
-        ]  # replicate coordinates
-
-        # amplitude can be >1 due to addition of aperture amplitudes
         if normalize:
-            max_field_amplitude = 0
-            # find the total field amplitude of the apertures, then square for
-            # transmission
-            for aperture in aperture_array_definition["apertures"]:
-                field_amplitude = aperture["amplitude"]
-                max_field_amplitude += field_amplitude
-            max_response = max_field_amplitude**2
-            transmission_instrument_response /= max_response
+            R_theta_vec /= max_response
             logging.info(
                 "Normalized transmission instrument response to unity, based on way "
                 "bookkeeping is done downstream"
             )
 
-        # rotate the transmission screens
-        if angle_deg != 0:
-            transmission_screens_only_rot = ndimage.rotate(
-                transmission_instrument_response[0:4, :, :],
-                angle_deg,
-                axes=(1, 2),
-                reshape=False,
-            )  # rotate the screens, but not the sky coordinates
-            transmission_instrument_response[0:4, :, :] = (
-                # reasssign the rotated screens to the original transmission_screens
-                transmission_screens_only_rot
-            )
-
         # a small override mask is put over the star for now to avoid geometrical
         # leakage ## ## TODO: remove this once the geometry is properly implemented
-        # (important to do this after rotation, to avoid numerical errors)
         # Apply only to dark outputs; bright ports should keep their geometric response.
         if override_stellar_mask and output_name in (
             "output_3_dark",
@@ -281,27 +270,21 @@ def generate_instrument_transmission(
             )
             # mask a central circular region over the star
             mask_radius_pix = 4
-            cy, cx = (
-                transmission_instrument_response.shape[1] // 2,
-                transmission_instrument_response.shape[2] // 2,
-            )
-            y_idx, x_idx = np.ogrid[
-                : transmission_instrument_response.shape[1],
-                : transmission_instrument_response.shape[2],
-            ]
+            cy, cx = n_pix // 2, n_pix // 2
+            y_idx, x_idx = np.ogrid[:n_pix, :n_pix]
             circular_mask = (y_idx - cy) ** 2 + (x_idx - cx) ** 2 <= mask_radius_pix**2
-            transmission_instrument_response[0, circular_mask] = nulling_factor
+            R_theta_vec[..., circular_mask] = nulling_factor
 
-        return transmission_instrument_response
+        return R_theta_vec
 
+    # dict to hold bright and dark outputs, each (n_wavel, Ny, Nx)
+    output_all_responses = {}
     for output in aperture_array_definition["outputs"]:
         phase_vector_rad = np.deg2rad(output["phase_vector_deg"])
-        transmission_instrument_response = R_m(
+        output_all_responses[output["name"]] = R_m(
             phase_vector_rad=phase_vector_rad,
-            wavel_m=wavel_m,
             output_name=output["name"],
         )
-        output_all_responses[output["name"]] = transmission_instrument_response
 
     # # check: double Bracewell should look like HOSTS
     # if plot:
@@ -385,23 +368,22 @@ def generate_instrument_transmission(
     #     )
     #
 
-    # arrange outputs into a cube, shape (6, n_pix, n_pix), slices ordered as
-    # TRANSMISSION_CUBE_SLICES: 0 = output_1_bright, 1 = output_2_bright,
-    # 2 = output_3_dark, 3 = output_4_dark, 4 = y, 5 = x
+    # arrange outputs into a cube, slices ordered as TRANSMISSION_CUBE_SLICES:
+    # 0 = output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark,
+    # 4 = y, 5 = x; shape (6, n_wavel, n_pix, n_pix), the wavelength axis dropped below
+    # if monochromatic
     transmission_instrument_response_cube = np.zeros(
-        (len(TRANSMISSION_CUBE_SLICES), n_pix, n_pix)
+        (len(TRANSMISSION_CUBE_SLICES), n_wavel, n_pix, n_pix)
     )
     for t, (slice_name, _, _) in enumerate(TRANSMISSION_CUBE_SLICES[:4]):
-        transmission_instrument_response_cube[t, :, :] = output_all_responses[
-            slice_name
-        ][
-            0, :, :
-        ]  # screens
-    # sky coordinates straight from the grid: the per-output copies made in R_m are
-    # rotated along with the screens when angle_deg != 0 (its [0:4] slice covers all
-    # three of its slices), so they are not the sky coordinates any more
-    transmission_instrument_response_cube[4, :, :] = sky_yy_arcsec  # y vals
-    transmission_instrument_response_cube[5, :, :] = sky_xx_arcsec  # x vals
+        transmission_instrument_response_cube[t] = output_all_responses[slice_name]
+    # sky coordinates straight from the grid (not rotated), same at every wavelength
+    transmission_instrument_response_cube[4] = sky_yy_arcsec  # y vals
+    transmission_instrument_response_cube[5] = sky_xx_arcsec  # x vals
+    if not polychromatic:
+        transmission_instrument_response_cube = transmission_instrument_response_cube[
+            :, 0
+        ]
 
     if plot:
         # save all responses for this angle to one FITS file (one HDU per output,
@@ -409,7 +391,11 @@ def generate_instrument_transmission(
         save_dir = output_dir(config, INTERMEDIATE)
         header_cards = {
             "ANGLE": (float(angle_deg), "Screen rotation angle [deg]"),
-            "WAVEL_M": (float(wavel_m), "Wavelength of the responses [m]"),
+            "WAVEL_M": (
+                POLYCHROMATIC if polychromatic else float(wavel_m_arr[0]),
+                "Wavelength of the responses [m]",
+            ),
+            "NWAVEL": (n_wavel, "Number of wavelengths (screen slices)"),
             "NORMALIZ": (bool(normalize), "Normalized to unit maximum transmission"),
             "STARMASK": (
                 bool(override_stellar_mask),
@@ -425,6 +411,7 @@ def generate_instrument_transmission(
             save_dir + format_transmission_fits_name(angle_deg),
             transmission_instrument_response_cube,
             header_cards=header_cards,
+            wavel_um=None if wavel_um is None else wavel_um.value,
         )
         logging.info(
             "Saved transmission instrument responses for angle %.2f deg (HDUs %s) "
@@ -434,10 +421,10 @@ def generate_instrument_transmission(
             file_name_fits,
         )
         # save the differential dark (one file per angle, so angles do not overwrite
-        # each other)
+        # each other); (n_pix, n_pix), or (n_wavel, n_pix, n_pix) if polychromatic
         differential_dark = (
-            output_all_responses["output_3_dark"]
-            - output_all_responses["output_4_dark"]
+            transmission_instrument_response_cube[2]
+            - transmission_instrument_response_cube[3]
         )
         file_name_diff = save_dir + f"differential_dark_angle_{float(angle_deg):06.2f}.fits"
         fits.writeto(file_name_diff, differential_dark, overwrite=True)
@@ -468,10 +455,14 @@ def pass_through_transmission_screens(
         source_cube_no_screen (dict of Quantities): on-sky scene before transmission
             screen; for each key (astro source), value (Quantity array) has shape
             (n_wavel, n_pix, n_pix)
-        transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
+        transmission_screens (np.ndarray): output of generate_instrument_transmission,
+            shape (6, n_pix, n_pix) (monochromatic: the same screen at every
+            wavelength) or (6, n_wavel, n_pix, n_pix) (polychromatic: one screen per
+            wavelength of the scene cubes)
         plot (bool): whether to plot the scene (FYI plots go to fyi_plots/)
 
-    Returns the four transmission-screen slices, shape (4, n_pix, n_pix).
+    Returns the four transmission-screen slices, shape (4, n_pix, n_pix) or (4,
+    n_wavel, n_pix, n_pix).
     """
 
     transmission_screen_order = [
@@ -482,7 +473,20 @@ def pass_through_transmission_screens(
     ]  # ## TODO: insert check to ensure always consistent
     # just keep the transmission slices for now
     # ## TODO: include the yy and xx slices as a check somehow
-    transmission_screens = transmission_screens[0:4, :, :]
+    transmission_screens = transmission_screens[0:4]
+    polychromatic = transmission_screens.ndim == 4
+
+    # polychromatic screens multiply the scene cubes slice by slice, so the wavelength
+    # grids must match (both come from incident_cube_wavelengths)
+    if polychromatic:
+        for source_name, source_val in source_dict_pre_screen.items():
+            if source_val.shape != transmission_screens.shape[1:]:
+                raise ValueError(
+                    f"Scene cube of {source_name} has shape {source_val.shape}, but the "
+                    "polychromatic transmission screens have shape "
+                    f"{transmission_screens.shape[1:]} (n_wavel, n_pix, n_pix): the "
+                    "wavelength grids or sky grids differ"
+                )
 
     # put all the post-screen fluxes (for each source and from each channel) into a
     # single dict
@@ -580,8 +584,10 @@ def pass_through_transmission_screens(
                     idx, :, :
                 ].unit.to_string()
                 transmission_img = transmission_screens[
-                    transmission_screen_order.index(transmission_screen_name), :, :
+                    transmission_screen_order.index(transmission_screen_name)
                 ]
+                if polychromatic:
+                    transmission_img = transmission_img[idx]
                 file_name_plot = (
                     fyi_dir
                     + f"source_transmission_map_triptych_{source_name}"

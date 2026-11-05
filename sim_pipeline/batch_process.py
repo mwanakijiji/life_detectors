@@ -469,21 +469,33 @@ def run_single_calculation(
 
             # generate the transmission screens specific to this angle (one per output)
             logger.info("Generating transmission screens ... ")
-            # ( returns numpy array with slices (ch1, ch2, ch3, ch4, grad_y, grad_x) )
+            # ( returns numpy array with slices (ch1, ch2, ch3, ch4, grad_y, grad_x),
+            #   shape (6, n_pix, n_pix), or (6, n_wavel, n_pix, n_pix) if
+            #   [telescope] transmission_wavel_m = polychromatic (one screen per
+            #   wavelength of the scene cubes) )
             # ( screens from the aperture-array YAML phases, normalised, rotated by
-            #   angle_deg; dark outputs get a small manual stellar mask if
-            #   override_stellar_mask )
+            #   angle_deg (exactly, by rotating the aperture positions); dark outputs
+            #   get a small manual stellar mask if override_stellar_mask )
             # FYI out: log "Normalized transmission instrument response ...",
             #          "Star is manually being nulled to ... on output_3/4_dark";
             #          plot only:
             #          {int}transmission_instrument_response_angle_<angle>.fits
             #          (HDUs OUTPUT_1_BRIGHT, OUTPUT_2_BRIGHT, OUTPUT_3_DARK,
-            #          OUTPUT_4_DARK, YY_ARCSEC, XX_ARCSEC, each with QUANTITY and
-            #          BUNIT; PRIMARY header ANGLE, WAVEL_M, NORMALIZ, STARMASK) and
-            #          {int}differential_dark_angle_<angle>.fits (output 3 - 4);
-            #          log "Saved transmission instrument responses for angle ..."
+            #          OUTPUT_4_DARK (cubes if polychromatic), YY_ARCSEC, XX_ARCSEC,
+            #          each with QUANTITY and BUNIT, and a WAVELENGTH table if
+            #          polychromatic; PRIMARY header ANGLE, WAVEL_M, NWAVEL, NORMALIZ,
+            #          STARMASK) and {int}differential_dark_angle_<angle>.fits
+            #          (output 3 - 4); log "Saved transmission instrument responses ..."
+            transmission_wavel = str(
+                config["telescope"].get("transmission_wavel_m", "11e-6")
+            ).strip()
             transmission_screens = (
                 instrument_dep_terms.generate_instrument_transmission(
+                    wavel_m = (
+                        transmission_wavel
+                        if transmission_wavel == "polychromatic"
+                        else float(transmission_wavel)
+                    ),
                     override_stellar_mask = override_stellar_mask,
                     angle_deg = angle_deg,
                     plot = plot,

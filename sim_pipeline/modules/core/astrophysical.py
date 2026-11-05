@@ -22,6 +22,7 @@ from ..data.spectra import load_spectrum_from_file
 from ..pipeline_registry import pipeline_stage
 from ..utils.helpers.keys import parse_sky_position_arcsec_yx
 from ..utils.helpers.output_dirs import FYI, INTERMEDIATE, output_dir
+from ..utils.helpers.wavelengths import incident_cube_wavelengths
 from ..viz.astrophysical import plot_incident_flux, plot_onsky_scene_fyi
 
 logger = logging.getLogger(__name__)
@@ -379,14 +380,8 @@ class AstrophysicalSources:
         null = self.config.getboolean("nulling", "null")
         logger.info("Nulling of star: %s", null)
 
-        wavelength_incident_cube_points = (
-            np.linspace(
-                float(self.config["wavelength_range"]["min"]),
-                float(self.config["wavelength_range"]["max"]),
-                int(100),
-            )
-            * u.um
-        )
+        # shared with the polychromatic transmission screens
+        wavelength_incident_cube_points = incident_cube_wavelengths(self.config)
 
         if source_name == "exoplanet_model_10pc" or (
             source_name == "exoplanet_bb" and system_params is not None
