@@ -652,6 +652,9 @@ class TestRunSingleCalculation:
             sources_to_include=sources_to_include,
         )
 
+        # define the dispersion on the detectors (once, before any angle)
+        instr.define_dispersion(plot=False)
+
         screens = instr.generate_instrument_transmission(
             wavel_m=11e-6,
             override_stellar_mask=False,
@@ -993,8 +996,11 @@ class TestRunSingleCalculation:
 
         assert result is True
         expected_angles = list(np.linspace(0, 360, num=2, endpoint=False))
+        # dispersion is defined once, before the loop over angles
+        mock_instrument.define_dispersion.assert_called_once_with(plot=False)
         assert mock_instrument.generate_instrument_transmission.call_count == 2
         assert mock_effect.reset.call_count == 2
+        assert mock_instrument.disperse_astro_signals.call_count == 2
         assert mock_instrument.expose_plus_detector_effects.call_count == 2
         assert mock_instrument.write_detector_readouts.call_count == 3
         assert mock_instrument.extract_spectra_from_readouts.call_count == 2

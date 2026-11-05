@@ -575,6 +575,11 @@ class TestDisperseAstroSignals:
             channel.bin_centers = channel.bin_centers[:n_bins]
             channel.bin_widths = channel.bin_widths[:n_bins]
 
+        # once, before the angle loop: detectors + footprints + wavelength solution
+        instr.define_dispersion(plot=False)
+        assert instr.dispersion_law is mock_law
+        mock_law.write_wavel_solution.assert_called_once()
+
         instr.disperse_astro_signals(plot=False)
 
         channel = instr.output_channels["output_1_bright"]
@@ -594,6 +599,37 @@ class TestDisperseAstroSignals:
         assert mock_law.make_footprint.call_count == 4
         mock_law.make_footprint.assert_called_with(5, 5, n_bins)
         assert mock_det.set_footprint.call_count == 4
+
+        # a second angle reuses the footprints: no new law, footprints or file
+        instr.disperse_astro_signals(plot=False)
+        assert mock_law_cls.call_count == 1
+        assert mock_law.make_footprint.call_count == 4
+        mock_law.write_wavel_solution.assert_called_once()
+
+    def test_disperse_without_defined_dispersion_raises(self, disperse_config):
+        instr = InstrumentDepTerms(
+            disperse_config, sources_astroph={}, sources_to_include=[]
+        )
+        with pytest.raises(RuntimeError, match="define_dispersion_on_detectors"):
+            instr.disperse_astro_signals(plot=False)
+
+    def test_define_dispersion_sets_real_footprints(self, disperse_config):
+        instr = InstrumentDepTerms(
+            disperse_config, sources_astroph={}, sources_to_include=[]
+        )
+        instr.define_dispersion(plot=False)
+        n_bins = _geometric_n_bins(4.0, 18.0, 20.0)
+        assert isinstance(instr.dispersion_law, DispersionLaw)
+        for channel in instr.output_channels.values():
+            det = channel.detector
+            assert isinstance(det, Detector)
+            assert det.footprint_cube.shape == (n_bins, 400, 400)
+            assert det.footprint_bbox() == (
+                100,
+                103,
+                300,
+                int(np.ceil(300 + n_bins * 2.2)),
+            )
 
 
 class TestDetector:

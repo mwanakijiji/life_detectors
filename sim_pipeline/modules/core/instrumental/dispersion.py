@@ -315,35 +315,36 @@ class DispersionLaw:
         return np.tensordot(footprint, image_2d, axes=([1, 2], [0, 1]))
 
 
-@pipeline_stage(depends_on=("pass_from_aperture_to_detector",))
-def disperse_astro_signals(
+@pipeline_stage()
+def define_dispersion_on_detectors(
     config: ConfigLike,
-    prop_dict: dict,
     output_channels: dict,
-    source_names: Sequence[str],
-    sources_to_include: Sequence[str],
-    background_source_names: Sequence[str] = (),
     plot: bool = False,
-) -> None:
+) -> DispersionLaw:
     """
-    Disperse post-aperture flux onto each channel detector via DispersionLaw,
-    then apply detector QE.
+    Angle-independent dispersion set-up, run once before the loop over angles:
+    build the DispersionLaw, write the wavelength solution ([extraction]
+    file_name_wavel_solution_write), create each channel's Detector (if needed) and
+    attach its wavelength-bin footprint. Returns the DispersionLaw.
     """
     # ## TODO: allow different dispersion laws for each output channel
     dispersion_law = DispersionLaw(config)
-    # write the wavelength soln to file
-    dispersion_law.write_wavel_solution(config)
 
-    source_names = list(source_names) + list(background_source_names)
+    # write the wavelength soln to file (with the channels' own bins, if set)
+    ref_channel = next(iter(output_channels.values()), None)
+    dispersion_law.write_wavel_solution(
+        config,
+        bin_edges=None if ref_channel is None else ref_channel.bin_edges,
+    )
 
     for output_channel in output_channels.values():
         if output_channel.detector is None:
             output_channel.detector = Detector(
                 config=config, num_wavel_bins=len(output_channel.bin_centers)
             )
-        logging.info("Dispersing signals on detector for %s", output_channel.name)
+        logging.info("Defining dispersion on detector for %s", output_channel.name)
 
-        # return footprint in shape (n_bins, n_pix_y, n_pix_x)
+        # footprint in shape (n_bins, n_pix_y, n_pix_x)
         footprint_cube = dispersion_law.make_footprint(
             output_channel.detector.n_pix_y,
             output_channel.detector.n_pix_x,
@@ -359,10 +360,40 @@ def disperse_astro_signals(
                 + f"footprint_bool_{output_channel.name}.png",
             )
 
+    return dispersion_law
+
+
+@pipeline_stage(
+    depends_on=("pass_from_aperture_to_detector", "define_dispersion_on_detectors")
+)
+def disperse_astro_signals(
+    config: ConfigLike,
+    prop_dict: dict,
+    output_channels: dict,
+    source_names: Sequence[str],
+    sources_to_include: Sequence[str],
+    background_source_names: Sequence[str] = (),
+    plot: bool = False,
+) -> None:
+    """
+    Disperse post-aperture flux onto each channel detector (footprints already set by
+    ``define_dispersion_on_detectors``), then apply detector QE.
+    """
+    source_names = list(source_names) + list(background_source_names)
+
+    for output_channel in output_channels.values():
+        det = output_channel.detector
+        if det is None or det.footprint_cube is None:
+            raise RuntimeError(
+                f"{output_channel.name} has no detector footprint; run "
+                "define_dispersion_on_detectors() before the loop over angles"
+            )
+        logging.info("Dispersing signals on detector for %s", output_channel.name)
+
         n_int_this_angle = int(config["observation"]["N_int_per_angle"])
         logging.info("Number of frames at this angle position: %d", n_int_this_angle)
 
-        n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(footprint_cube)
+        n_pix_per_wavel_bin = DispersionLaw.n_pix_per_bin(det.footprint_cube)
 
         for source_name in source_names:
             if source_name not in prop_dict:
@@ -402,7 +433,6 @@ def disperse_astro_signals(
             )
 
             # detector QE
-            det = output_channel.detector
             flux_astro_1d_interpolated_ph_sec_pixel = det.apply_qe(
                 flux_astro_1d_interpolated_ph_sec_pixel
             )

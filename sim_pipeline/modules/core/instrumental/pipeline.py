@@ -59,6 +59,9 @@ class InstrumentDepTerms:
         self.extracted_spectra_adu: dict = {}
         self.extracted_errors_adu: dict = {}
 
+        # set once (before the angle loop) by define_dispersion
+        self.dispersion_law: dispersion.DispersionLaw | None = None
+
         # Optional detector systematics, applied in order to each readout's 2D frames
         self.detector_effects: List[DetectorEffect] = build_detector_effects(config)
 
@@ -102,6 +105,15 @@ class InstrumentDepTerms:
             output_channel.bin_edges = bin_edges
             output_channel.bin_centers = bin_centers
             output_channel.bin_widths = bin_widths
+
+    def define_dispersion(self, plot: bool = False) -> None:
+        """Stage (once, before the angle loop): build the dispersion law, write the
+        wavelength solution, and set each channel's detector footprint; see
+        dispersion.define_dispersion_on_detectors.
+        """
+        self.dispersion_law = dispersion.define_dispersion_on_detectors(
+            self.config, self.output_channels, plot=plot
+        )
 
     def generate_instrument_transmission(
         self,
@@ -164,7 +176,8 @@ class InstrumentDepTerms:
         )
 
     def disperse_astro_signals(self, plot: bool = False) -> None:
-        """Stage: disperse the post-aperture signals onto each channel's detector."""
+        """Stage: disperse the post-aperture signals onto each channel's detector
+        (needs define_dispersion to have run)."""
         dispersion.disperse_astro_signals(
             self.config,
             self.prop_dict,

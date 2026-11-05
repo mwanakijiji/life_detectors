@@ -366,6 +366,19 @@ def run_single_calculation(
         # pristine copy of incident astrophysical source spectra, before any screen/aperture steps
         sources_astroph_pristine = copy.deepcopy(instrument_dep_terms.sources_astroph)
 
+        # define the dispersion on the detectors (angle-independent, so done once here)
+        logger.info("Defining spectral dispersion on the detectors ...")
+        # ( builds the DispersionLaw (instrument_dep_terms.dispersion_law), and per
+        #   channel creates the Detector and sets its wavelength-bin trace footprint
+        #   ([detector] trace_start_pixel, pix_per_wavel_bin, pix_spectral_width) )
+        # FYI out: [extraction] file_name_wavel_solution_write (wavelength solution:
+        #          HDUs BINS, WAVEL_COL, WAVEL_MAP) and log "Wrote wavelength solution
+        #          ..." (or "... not written" if the key is unset);
+        #          log "Defining dispersion on detector for <channel>",
+        #          "Wavelength bin <i> dispersion footprint is ... pixels";
+        #          plot only, per channel: {save_dir}footprint_bool_<channel>.png
+        instrument_dep_terms.define_dispersion(plot=plot)
+
         # make 1 full rotation
         angles_deg = np.linspace(
             0, 360, num=int(config["observation"]["N_angles"]), endpoint=False
@@ -471,13 +484,13 @@ def run_single_calculation(
             #   ph/sec/wavel_bin
             #   ph/sec/pix
             logger.info("Dispersing spectral signals ...")
-            # ( per channel: creates the Detector if needed, sets its trace footprint,
-            #   sums each source over the sky, rebins onto the channel's wavelength
-            #   bins, applies QE, and stores channel.astroph_signal[source] (per um,
-            #   per bin, per pixel, n_pix_per_wavel_bin) )
+            # ( per channel, using the footprint set by define_dispersion above: sums
+            #   each source over the sky, rebins onto the channel's wavelength bins,
+            #   applies QE, and stores channel.astroph_signal[source] (per um, per
+            #   bin, per pixel, n_pix_per_wavel_bin) )
             # FYI out: log "Dispersing signals on detector for <channel>",
             #          "Number of frames at this angle position: ...";
-            #          plot only, per channel: {save_dir}footprint_bool_<channel>.png,
+            #          plot only, per channel:
             #          {save_dir}astro_ph_sec_pixel_<channel>.csv (ph/s/pix per source
             #          + cumulative) and {save_dir}astro_ph_sec_pixel_<channel>.pdf
             instrument_dep_terms.disperse_astro_signals(plot=plot)
@@ -533,8 +546,9 @@ def run_single_calculation(
             logger.info(
                 "Writing detector readout cutouts to %s ...", readouts_file_name
             )
-            # ( same as above, but only the trace's bounding box (header Y0, X0,
-            #   FULLNY, FULLNX); remembered as the file the extraction reads )
+            # ( same as above, but only the trace's bounding box plus [detector]
+            #   buffer_footprint (header Y0, X0, BUFFY, BUFFX, FULLNY, FULLNX);
+            #   remembered as the file the extraction reads )
             # FYI out: {save_dir}readouts_angle_<angle>_qe_<qe>.fits;
             #          log "Wrote detector readouts to ..."
             instrument_dep_terms.write_detector_readouts(

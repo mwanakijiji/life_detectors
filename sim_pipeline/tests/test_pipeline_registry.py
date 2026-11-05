@@ -8,6 +8,7 @@ from modules.pipeline_registry import (
 EXPECTED_NODES = {
     "calculate_received_astro_fluxes",
     "arrange_onsky_scene",
+    "define_dispersion_on_detectors",
     "generate_instrument_transmission",
     "pass_through_transmission_screens",
     "pass_through_aperture",
@@ -27,6 +28,7 @@ EXPECTED_EDGES = {
     ("pass_through_transmission_screens", "pass_through_aperture"),
     ("pass_through_aperture", "pass_from_aperture_to_detector"),
     ("pass_from_aperture_to_detector", "disperse_astro_signals"),
+    ("define_dispersion_on_detectors", "disperse_astro_signals"),
     ("disperse_astro_signals", "expose_plus_detector_effects"),
     ("expose_plus_detector_effects", "write_detector_readouts"),
     ("write_detector_readouts", "extract_spectra_from_readouts"),
@@ -39,6 +41,7 @@ def test_registry_includes_expected_stages():
     registry = ensure_stages_registered()
     assert set(registry) == EXPECTED_NODES
     assert registry["expose_plus_detector_effects"].planned is False
+    assert registry["define_dispersion_on_detectors"].depends_on == ()
 
 
 def test_graph_edges_match_pipeline_dag():
