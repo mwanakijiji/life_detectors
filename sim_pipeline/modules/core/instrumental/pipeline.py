@@ -91,16 +91,9 @@ class InstrumentDepTerms:
             self.config["detector"]["spec_res"]
         )  # spectral resolution (lambda/del_lambda)
         # bins are spaced geometrically in wavelength space, with recurrence relation
-        # lambda_i = lambda_{0} * (1 + 1/R)**i
-        lambda_min, lambda_max = (
-            float(self.config["wavelength_range"]["min"]) * u.um,
-            float(self.config["wavelength_range"]["max"]) * u.um,
-        )
-        # number of bins that fit fully in [lmin, lmax]
-        n_bins = int(np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / R)))
-
-        # geometric bin edges and centers
-        bin_edges = lambda_min * (1.0 + 1.0 / R) ** np.arange(n_bins + 1)
+        # lambda_i = lambda_{0} * (1 + 1/R)**i, keeping the bins that fit fully in
+        # [lmin, lmax] (shared with the wavelength-solution file, so they agree)
+        bin_edges = dispersion.wavel_bin_edges_from_config(self.config)
         bin_centers = np.sqrt(bin_edges[:-1] * bin_edges[1:])
         # wavelength bin widths (in wavelength units, not pixels)
         bin_widths = bin_edges[1:] - bin_edges[:-1]  # removed units for plotting

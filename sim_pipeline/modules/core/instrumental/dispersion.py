@@ -6,23 +6,40 @@ Independent of detector QE/noise.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Sequence
 
 import astropy.units as u
 import numpy as np
 import pandas as pd
+from astropy.io import fits
 
 from ...pipeline_registry import pipeline_stage
 from ...utils.types import ConfigLike
 from ...viz.aperture import plot_astro_ph_sec_pixel
 from ...viz.detector import plot_detector_footprint
-from .detector import Detector
+from .detector import Detector, detector_shape_from_config
 from .effects import _config_get
 
 logger = logging.getLogger(__name__)
 
 # lower-left corner (y, x) of the first wavelength-bin footprint, if not configured
 DEFAULT_TRACE_START_PIXEL = (100.0, 300.0)
+
+
+def wavel_bin_edges_from_config(config: ConfigLike) -> u.Quantity:
+    """
+    Geometric wavelength-bin edges (um) from [detector] spec_res and
+    [wavelength_range] min/max: lambda_i = lambda_min * (1 + 1/R)**i, keeping only
+    the bins that fit fully in [min, max]. Shape (n_bins + 1,).
+    """
+    spec_res = float(config["detector"]["spec_res"])  # lambda / del_lambda
+    lambda_min = float(config["wavelength_range"]["min"]) * u.um
+    lambda_max = float(config["wavelength_range"]["max"]) * u.um
+    n_bins = int(
+        np.floor(np.log(lambda_max / lambda_min) / np.log(1.0 + 1.0 / spec_res))
+    )
+    return lambda_min * (1.0 + 1.0 / spec_res) ** np.arange(n_bins + 1)
 
 
 class DispersionLaw:
@@ -123,6 +140,162 @@ class DispersionLaw:
 
         return footprint_cube
 
+    def wavel_at_x(self, x_pix: np.ndarray, bin_edges: u.Quantity) -> np.ndarray:
+        """
+        Wavelength (um) at continuous detector x coordinate(s) along the trace; NaN
+        off the trace.
+
+        Pixel k spans x in [k, k + 1) (as in ``make_footprint``), and bin i spans
+        [x0 + i * pix_per_wavel_bin, x0 + (i + 1) * pix_per_wavel_bin). Within a bin,
+        the wavelength is interpolated linearly in log(lambda), consistent with the
+        geometric bin edges.
+        """
+        edges_um = np.asarray(bin_edges.to_value(u.um), dtype=float)
+        x_edges = self.starting_pixel[1] + self.pix_per_wavel_bin * np.arange(
+            edges_um.size
+        )
+        x_pix = np.asarray(x_pix, dtype=float)
+        log_wavel = np.interp(
+            x_pix, x_edges, np.log(edges_um), left=np.nan, right=np.nan
+        )
+        return np.exp(log_wavel)
+
+    def write_wavel_solution(
+        self,
+        config: ConfigLike,
+        bin_edges: u.Quantity | None = None,
+        file_name: str | None = None,
+    ) -> str | None:
+        """
+        Write the wavelength solution of this dispersion law to FITS.
+
+        Args:
+            config: pipeline config; gives the detector size, and (unless given)
+                the bin edges and [extraction] file_name_wavel_solution_write
+            bin_edges: wavelength-bin edges (n_bins + 1,); default: from
+                [detector] spec_res and [wavelength_range] (same as the channels)
+            file_name: output path; default: [extraction]
+                file_name_wavel_solution_write
+
+        HDUs:
+            PRIMARY    header only: trace geometry, spectral resolution, ranges
+            BINS       table, one row per wavelength bin: BIN, WAVEL_LO_UM,
+                       WAVEL_CEN_UM, WAVEL_HI_UM, WIDTH_UM, X_START_PIX, X_END_PIX
+                       (continuous x; pixel k spans [k, k + 1)), Y_START_PIX,
+                       Y_END_PIX (rows, end-exclusive), NPIX (illuminated pixels)
+            WAVEL_COL  (n_pix_x,) wavelength (um) at the centre of each detector
+                       column; NaN off the trace
+            WAVEL_MAP  (n_pix_y, n_pix_x) wavelength (um) of each illuminated pixel
+                       (column-centre value on the trace rows); NaN elsewhere
+
+        Returns the path written, or None if no file name is configured.
+        """
+        if file_name is None:
+            file_name = _config_get(
+                config, "extraction", "file_name_wavel_solution_write"
+            )
+        if not file_name or not str(file_name).strip():
+            logger.info(
+                "No [extraction] file_name_wavel_solution_write; "
+                "wavelength solution not written"
+            )
+            return None
+        file_name = str(file_name).strip()
+
+        if bin_edges is None:
+            bin_edges = wavel_bin_edges_from_config(config)
+        edges_um = np.asarray(bin_edges.to_value(u.um), dtype=float)
+        n_bins = edges_um.size - 1
+        n_pix_y, n_pix_x = detector_shape_from_config(config)
+        self._check_trace_fits(n_pix_y, n_pix_x, n_bins)
+
+        y_start = int(self.starting_pixel[0])
+        y_end = y_start + self.pix_spectral_width
+        x_start = self.starting_pixel[1] + self.pix_per_wavel_bin * np.arange(n_bins)
+        x_end = x_start + self.pix_per_wavel_bin
+        centers_um = np.sqrt(edges_um[:-1] * edges_um[1:])
+        npix_per_bin = self.pix_per_wavel_bin * self.pix_spectral_width
+
+        bins_hdu = fits.BinTableHDU.from_columns(
+            [
+                fits.Column(name="BIN", format="J", array=np.arange(n_bins)),
+                fits.Column(
+                    name="WAVEL_LO_UM", format="D", unit="um", array=edges_um[:-1]
+                ),
+                fits.Column(
+                    name="WAVEL_CEN_UM", format="D", unit="um", array=centers_um
+                ),
+                fits.Column(
+                    name="WAVEL_HI_UM", format="D", unit="um", array=edges_um[1:]
+                ),
+                fits.Column(
+                    name="WIDTH_UM",
+                    format="D",
+                    unit="um",
+                    array=edges_um[1:] - edges_um[:-1],
+                ),
+                fits.Column(name="X_START_PIX", format="D", unit="pix", array=x_start),
+                fits.Column(name="X_END_PIX", format="D", unit="pix", array=x_end),
+                fits.Column(
+                    name="Y_START_PIX",
+                    format="J",
+                    unit="pix",
+                    array=np.full(n_bins, y_start),
+                ),
+                fits.Column(
+                    name="Y_END_PIX",
+                    format="J",
+                    unit="pix",
+                    array=np.full(n_bins, y_end),
+                ),
+                fits.Column(
+                    name="NPIX",
+                    format="D",
+                    unit="pix",
+                    array=np.full(n_bins, npix_per_bin),
+                ),
+            ],
+            name="BINS",
+        )
+        bins_hdu.header["COMMENT"] = (
+            "Continuous x: pixel k spans [k, k+1); Y_END_PIX is end-exclusive"
+        )
+
+        wavel_col = self.wavel_at_x(np.arange(n_pix_x) + 0.5, bin_edges)
+        col_hdu = fits.ImageHDU(data=wavel_col, name="WAVEL_COL")
+        col_hdu.header["BUNIT"] = "um"
+        col_hdu.header["QUANTITY"] = "Wavelength at each detector column centre"
+
+        wavel_map = np.full((n_pix_y, n_pix_x), np.nan)
+        wavel_map[y_start:y_end, :] = wavel_col
+        map_hdu = fits.ImageHDU(data=wavel_map, name="WAVEL_MAP")
+        map_hdu.header["BUNIT"] = "um"
+        map_hdu.header["QUANTITY"] = "Wavelength of each illuminated pixel"
+
+        primary = fits.PrimaryHDU()
+        header = primary.header
+        header["SPECRES"] = (
+            float(config["detector"]["spec_res"]),
+            "Spectral resolution lambda/dlambda",
+        )
+        header["NBINS"] = (n_bins, "Number of wavelength bins")
+        header["LAMMIN"] = (edges_um[0], "[um] Lower edge of the first bin")
+        header["LAMMAX"] = (edges_um[-1], "[um] Upper edge of the last bin")
+        header["PIXPBIN"] = (self.pix_per_wavel_bin, "Pixels per wavelength bin (x)")
+        header["TRWIDTH"] = (self.pix_spectral_width, "Trace width in rows (y)")
+        header["TRACEY0"] = (self.starting_pixel[0], "Trace start row (y)")
+        header["TRACEX0"] = (self.starting_pixel[1], "Trace start x (continuous)")
+        header["NPIXY"] = (n_pix_y, "Detector rows")
+        header["NPIXX"] = (n_pix_x, "Detector columns")
+        header["COMMENT"] = "Wavelength interpolated linearly in log(lambda) along x"
+
+        Path(file_name).parent.mkdir(parents=True, exist_ok=True)
+        fits.HDUList([primary, bins_hdu, col_hdu, map_hdu]).writeto(
+            file_name, overwrite=True
+        )
+        logger.info("Wrote wavelength solution (%d bins) to %s", n_bins, file_name)
+        return file_name
+
     @staticmethod
     def n_pix_per_bin(footprint_cube: np.ndarray) -> u.Quantity:
         """Pixels (or fractional pixels) illuminated in each wavelength bin."""
@@ -158,6 +331,8 @@ def disperse_astro_signals(
     """
     # ## TODO: allow different dispersion laws for each output channel
     dispersion_law = DispersionLaw(config)
+    # write the wavelength soln to file
+    dispersion_law.write_wavel_solution(config)
 
     source_names = list(source_names) + list(background_source_names)
 
