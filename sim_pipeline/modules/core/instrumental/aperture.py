@@ -9,6 +9,7 @@ import numpy as np
 from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.spectra import compute_collecting_area_m2
 from ...viz.aperture import (
+    plot_beam_to_detector,
     plot_integrated_flux_by_output,
     plot_poster_post_aperture_flux,
 )
@@ -142,6 +143,24 @@ def pass_through_aperture(
     logging.info("Passed astrophysical flux through telescope aperture...")
 
 
+def _sky_integrated_spectra_by_output(prop_dict: dict, output_names) -> dict:
+    """{output: {component: (wavel, flux summed over the sky plane, ph/s/um)}} for
+    every prop_dict entry (astrophysical sources and instrument backgrounds)."""
+    return {
+        output_name: {
+            comp_name: (
+                comp["wavel"],
+                np.sum(
+                    comp["flux_cube_post_screen_post_aperture_ph_sec_um"][output_name],
+                    axis=(1, 2),
+                ),
+            )
+            for comp_name, comp in prop_dict.items()
+        }
+        for output_name in output_names
+    }
+
+
 @pipeline_stage(depends_on=("pass_through_aperture",))
 def pass_from_aperture_to_detector(
     config,
@@ -154,6 +173,10 @@ def pass_from_aperture_to_detector(
     Inject enabled ``InstrumentBackground`` spectra into the post-aperture
     beam (still in photon units). Detector QE is applied later in
     ``disperse_astro_signals_on_detector``.
+
+    With plot=True, writes one FYI figure per angle of everything entering the
+    detector stage (sources + backgrounds, per output):
+    ``beam_to_detector_angle_<angle>.png`` in save_s2n_data_unique_dir.
     """
     if not prop_dict:
         logging.warning(
@@ -186,7 +209,16 @@ def pass_from_aperture_to_detector(
         }
         logging.info("Added instrument background %r into post-aperture beam", bg.name)
 
-    if plot:
-        pass
+    if plot:  # pragma: no cover
+        angle_deg = next(iter(output_channels.values())).angle_deg
+        angle_tag = f"_angle_{angle_deg:06.2f}" if angle_deg is not None else ""
+        plot_beam_to_detector(
+            _sky_integrated_spectra_by_output(prop_dict, output_names),
+            background_names=[bg.name for bg in instrument_backgrounds],
+            config=config,
+            out_path=str(config["dirs"]["save_s2n_data_unique_dir"])
+            + f"beam_to_detector{angle_tag}.png",
+            angle_deg=angle_deg,
+        )
 
     return

@@ -199,6 +199,45 @@ def generate_zodiacal_scene(
     return flux_zodiacal[:, None, None] * kernel_zodiacal[None, :, :]
 
 
+def _cube_values(q) -> np.ndarray:
+    """Strip units (if any) for saving as a FITS image."""
+    return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
+
+
+def write_onsky_scene_fits(
+    file_name: str,
+    scene_cubes: dict,
+    total_cube,
+    wavel,
+    sky_yy_arcsec: np.ndarray,
+    sky_xx_arcsec: np.ndarray,
+) -> str:
+    """
+    Write the on-sky scene to FITS: PRIMARY = sum of all sources, then one image HDU
+    per source (EXTNAME = source name in upper case), each (n_wavel, n_pix, n_pix),
+    followed by YY_ARCSEC, XX_ARCSEC and WAVEL_UM. Returns file_name.
+    """
+    flux_unit = str(getattr(total_cube, "unit", ""))
+    primary = fits.PrimaryHDU(_cube_values(total_cube))
+    primary.header["BUNIT"] = flux_unit
+    primary.header["NSOURCE"] = (len(scene_cubes), "Number of source HDUs")
+    hdus = [primary]
+    for i, (source_name, cube) in enumerate(scene_cubes.items()):
+        primary.header[f"SOURCE{i}"] = source_name
+        hdu = fits.ImageHDU(_cube_values(cube), name=source_name.upper())
+        hdu.header["BUNIT"] = str(getattr(cube, "unit", flux_unit))
+        hdus.append(hdu)
+    hdus.append(fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"))
+    hdus.append(fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"))
+    hdus.append(
+        fits.ImageHDU(
+            np.asarray(getattr(wavel, "value", wavel), dtype=float), name="WAVEL_UM"
+        )
+    )
+    fits.HDUList(hdus).writeto(file_name, overwrite=True)
+    return file_name
+
+
 class AstrophysicalSources:
     """
     Calculates photon flux from astrophysical sources (incl. noise)
@@ -488,7 +527,8 @@ class AstrophysicalSources:
 
         INPUTS:
             incident_dict: dictionary of incident flux for each source
-            plot: whether to plot the on-sky scene
+            plot: whether to plot the on-sky scene (and write it to
+                scene_no_screen.fits: the total plus one HDU per placed source)
 
         OUTPUTS:
             dict_source_layered_scene: dictionary of the on-sky scene for each source
@@ -596,6 +636,12 @@ class AstrophysicalSources:
                 canvas_3D_dict[source_name] = generate_zodiacal_scene(
                     flux_dict[source_name], n_pix, pix_size_arcsec
                 )
+            else:
+                logger.warning(
+                    "No on-sky scene model for source %r; it is left out of the scene "
+                    "(and of everything downstream)",
+                    source_name,
+                )
 
         # collapse the sources into a single cube (wavel, y, x)
         source_collapsed_scene_no_screen = None
@@ -607,48 +653,33 @@ class AstrophysicalSources:
 
         # Prepare list of all per-source 3D cubes
         dict_source_layered_scene = canvas_3D_dict  # vestigial
-        if plot:  # pragma: no cover
-            file_name_plot = (
-                str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                + "/scene_no_screen_fyi.png"
+
+        if plot and not canvas_3D_dict:
+            logger.warning(
+                "On-sky scene is empty; scene_no_screen FYI plot and FITS not written"
             )
+        elif plot:  # pragma: no cover
+            save_dir = str(self.config["dirs"]["save_s2n_data_unique_dir"])
             plot_onsky_scene_fyi(
                 canvas_3D_dict,
                 source_collapsed_scene_no_screen,
-                file_name_plot,
+                save_dir + "/scene_no_screen_fyi.png",
             )
 
-        def _cube_values(q):
-            """
-            Strip units (if any) for saving as FITS file
-            """
-            return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
-
-        if plot:
-            # save the scene to FITS file
-            wavel_array = incident_dict["exoplanet_model_10pc"][
-                "wavel"
-            ]  # ## TODO: GENERALIZE THIS
-            file_name_fits = (
-                str(self.config["dirs"]["save_s2n_data_unique_dir"])
-                + "scene_no_screen.fits"
+            # save the scene to FITS: total + one HDU per source in the scene (all
+            # sources share the incident wavelength grid)
+            file_name_fits = write_onsky_scene_fits(
+                save_dir + "scene_no_screen.fits",
+                canvas_3D_dict,
+                source_collapsed_scene_no_screen,
+                incident_dict[next(iter(canvas_3D_dict))]["wavel"],
+                sky_yy_arcsec,
+                sky_xx_arcsec,
             )
-            hdul = fits.HDUList(
-                [
-                    fits.PrimaryHDU(_cube_values(source_collapsed_scene_no_screen)),
-                    fits.ImageHDU(
-                        _cube_values(dict_source_layered_scene["star"]), name="STAR"
-                    ),
-                    fits.ImageHDU(
-                        _cube_values(dict_source_layered_scene["exoplanet_model_10pc"]),
-                        name="PLANET",
-                    ),
-                    fits.ImageHDU(sky_yy_arcsec, name="YY_ARCSEC"),
-                    fits.ImageHDU(sky_xx_arcsec, name="XX_ARCSEC"),
-                    fits.ImageHDU(wavel_array.value, name="WAVEL_UM"),
-                ]
+            logger.info(
+                "Saved on-sky scene (total + %s) to %s",
+                ", ".join(canvas_3D_dict),
+                file_name_fits,
             )
-            hdul.writeto(file_name_fits, overwrite=True)
-            logger.info("Saved scene to %s", file_name_fits)
 
         return dict_source_layered_scene

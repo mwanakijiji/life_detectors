@@ -81,7 +81,12 @@ def plot_onsky_scene_fyi(
     ax.set_title("Total (z-scale)")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     plt.tight_layout()
-    plt.suptitle("FYI: On-Sky Scene for Each Source (Sum Across Wavelength)", y=1.02)
+    source_list = ", ".join(scene_names)
+    plt.suptitle(
+        f"FYI: On-sky scene: {source_list}\n"
+        "(unresolved objects are infinitely small)",
+        y=1.02,
+    )
     plt.subplots_adjust(top=0.85)
     plt.savefig(out_path, bbox_inches="tight")
     logger.info("FYI scene plot written to %s", out_path)
