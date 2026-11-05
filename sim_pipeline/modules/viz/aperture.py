@@ -208,8 +208,12 @@ def plot_beam_to_detector(
             )
             if not np.any(flux_vals > 0):
                 # keep it in the legend so a missing curve is not mistaken for a bug
-                ax.plot([], [], linestyle="--" if is_background else "-",
-                        label=f"{label} (all zero)")
+                ax.plot(
+                    [],
+                    [],
+                    linestyle="--" if is_background else "-",
+                    label=f"{label} (all zero)",
+                )
                 continue
             ax.plot(
                 wavel_vals,
@@ -256,7 +260,7 @@ def plot_beam_to_detector(
 
     for ax in axes[-1, :]:
         ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=12)
-    for ax in list(axes.flat)[len(output_names):]:
+    for ax in list(axes.flat)[len(output_names) :]:
         ax.set_visible(False)
 
     angle_str = f" (angle {angle_deg:.2f} deg)" if angle_deg is not None else ""

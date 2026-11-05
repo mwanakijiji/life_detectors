@@ -462,17 +462,55 @@ class TestGenerateInstrumentTransmission:
         assert np.any(cube[5] != 0.0)
         assert mock_writeto.call_count == 0
 
-    @patch("modules.core.instrumental.transmission.fits.writeto")
-    def test_writes_fits_when_plot_true(self, mock_writeto, transmission_config):
-        instr = InstrumentDepTerms(
-            transmission_config,
-            sources_astroph={},
-            sources_to_include=[],
+    def test_writes_one_fits_per_angle_when_plot_true(self, transmission_config):
+        # small sky grid keeps the rotation and the file small
+        config = {
+            **transmission_config,
+            "onsky_scene": {**transmission_config["onsky_scene"], "n_pix": "101"},
+        }
+        save_dir = Path(config["dirs"]["save_s2n_data_unique_dir"])
+        save_dir.mkdir(parents=True, exist_ok=True)
+        instr = InstrumentDepTerms(config, sources_astroph={}, sources_to_include=[])
+
+        cube = instr.generate_instrument_transmission(
+            wavel_m=11e-6, plot=True, angle_deg=30.0, override_stellar_mask=True
         )
 
-        instr.generate_instrument_transmission(wavel_m=11e-6, plot=True)
+        path = save_dir / "transmission_instrument_response_angle_030.00.fits"
+        assert path.exists()
+        # no more one-file-per-output responses
+        assert not list(save_dir.glob("transmission_instrument_response_output_*"))
+        assert (save_dir / "differential_dark.fits").exists()
+        with fits.open(path) as hdul:
+            assert [h.name for h in hdul] == [
+                "PRIMARY",
+                "OUTPUT_1_BRIGHT",
+                "OUTPUT_2_BRIGHT",
+                "OUTPUT_3_DARK",
+                "OUTPUT_4_DARK",
+                "YY_ARCSEC",
+                "XX_ARCSEC",
+            ]
+            header = hdul[0].header
+            assert header["ANGLE"] == 30.0
+            assert header["WAVEL_M"] == pytest.approx(11e-6)
+            assert header["STARMASK"] is True
+            assert header["NULLFAC"] == pytest.approx(0.001)
+            assert (
+                hdul["OUTPUT_3_DARK"].header["QUANTITY"]
+                == "On-sky transmission of dark output 3"
+            )
+            assert hdul["OUTPUT_3_DARK"].header["BUNIT"] == ""
+            assert hdul["YY_ARCSEC"].header["BUNIT"] == "arcsec"
+            assert "y coordinate" in hdul["YY_ARCSEC"].header["QUANTITY"]
+            for i, hdu in enumerate(hdul[1:]):
+                np.testing.assert_allclose(hdu.data, cube[i])
 
-        assert mock_writeto.call_count >= 5  # 4 outputs + differential dark
+        # the coordinates are the sky grid, not rotated with the screens
+        axis = (np.arange(101) - 50) * 10.7 / 1000.0
+        xx, yy = np.meshgrid(axis, axis, indexing="xy")
+        np.testing.assert_allclose(cube[4], yy)
+        np.testing.assert_allclose(cube[5], xx)
 
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_override_stellar_mask_reduces_center_transmission(

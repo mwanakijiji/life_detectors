@@ -408,8 +408,13 @@ def run_single_calculation(
             #   override_stellar_mask )
             # FYI out: log "Normalized transmission instrument response ...",
             #          "Star is manually being nulled to ... on output_3/4_dark";
-            #          plot only: {save_dir}transmission_instrument_response_<output>.fits
-            #          (x4) and {save_dir}differential_dark.fits (output 3 - output 4)
+            #          plot only:
+            #          {save_dir}transmission_instrument_response_angle_<angle>.fits
+            #          (HDUs OUTPUT_1_BRIGHT, OUTPUT_2_BRIGHT, OUTPUT_3_DARK,
+            #          OUTPUT_4_DARK, YY_ARCSEC, XX_ARCSEC, each with QUANTITY and
+            #          BUNIT; PRIMARY header ANGLE, WAVEL_M, NORMALIZ, STARMASK) and
+            #          {save_dir}differential_dark.fits (output 3 - output 4);
+            #          log "Saved transmission instrument responses for angle ..."
             transmission_screens = (
                 instrument_dep_terms.generate_instrument_transmission(
                     override_stellar_mask=override_stellar_mask,
@@ -421,9 +426,7 @@ def run_single_calculation(
             ipdb.set_trace()
 
             # pass astrophysical scene through transmission screens
-            logger.info(
-                "Passing astrophysical flux through transmission screens ..."
-                )
+            logger.info("Passing astrophysical flux through transmission screens ...")
             # ( updates instrument_dep_terms.sources_astroph in place )
             # ( adds per source, per output: "flux_cube_post_screen_ph_sec_m2_um"
             #   (scene x screen) and "flux_integrated_post_screen_ph_sec_m2_um"
@@ -462,9 +465,7 @@ def run_single_calculation(
             ipdb.set_trace()
 
             # Pass from aperture to detector
-            logger.info(
-                "Passing from aperture to detector..."
-                )
+            logger.info("Passing from aperture to detector...")
             # ( adds each enabled instrument background as its own prop_dict entry,
             #   spread uniformly over the sky plane (telescope_thermal is zeros for
             #   now) )

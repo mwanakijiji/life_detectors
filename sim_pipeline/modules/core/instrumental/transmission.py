@@ -15,6 +15,57 @@ from ...viz.transmission import (
     plot_source_transmission_triptych,
 )
 
+# slice order of the transmission-response cube returned by
+# generate_instrument_transmission, with the quantity each slice holds
+TRANSMISSION_CUBE_SLICES = (
+    ("output_1_bright", "On-sky transmission of bright output 1", ""),
+    ("output_2_bright", "On-sky transmission of bright output 2", ""),
+    ("output_3_dark", "On-sky transmission of dark output 3", ""),
+    ("output_4_dark", "On-sky transmission of dark output 4", ""),
+    ("yy", "Sky y coordinate of each pixel (not rotated)", "arcsec"),
+    ("xx", "Sky x coordinate of each pixel (not rotated)", "arcsec"),
+)
+
+
+def format_transmission_fits_name(angle_deg: float) -> str:
+    """``transmission_instrument_response_angle_{angle:06.2f}.fits``"""
+    return f"transmission_instrument_response_angle_{float(angle_deg):06.2f}.fits"
+
+
+def write_transmission_responses_fits(
+    file_name: str,
+    transmission_cube: np.ndarray,
+    header_cards: dict | None = None,
+) -> str:
+    """
+    Write the transmission responses for one angle to a single FITS file.
+
+    transmission_cube: shape (6, n_pix, n_pix), slices ordered as
+    TRANSMISSION_CUBE_SLICES (outputs 1-4, then y and x sky coordinates).
+
+    HDUs: empty PRIMARY (header_cards, e.g. ANGLE, WAVEL_M), then OUTPUT_1_BRIGHT,
+    OUTPUT_2_BRIGHT, OUTPUT_3_DARK, OUTPUT_4_DARK, YY_ARCSEC, XX_ARCSEC; each image
+    HDU has QUANTITY (what it holds) and BUNIT in its header. Returns file_name.
+    """
+    if transmission_cube.shape[0] != len(TRANSMISSION_CUBE_SLICES):
+        raise ValueError(
+            f"Expected {len(TRANSMISSION_CUBE_SLICES)} slices in the transmission "
+            f"cube, got shape {transmission_cube.shape}"
+        )
+    primary = fits.PrimaryHDU()
+    for key, val in (header_cards or {}).items():
+        primary.header[key] = val
+    hdus = [primary]
+    for i, (name, quantity, unit) in enumerate(TRANSMISSION_CUBE_SLICES):
+        extname = f"{name.upper()}_ARCSEC" if unit == "arcsec" else name.upper()
+        data = np.asarray(transmission_cube[i], dtype=float)
+        hdu = fits.ImageHDU(data, name=extname)
+        hdu.header["QUANTITY"] = (quantity, "Quantity in this HDU")
+        hdu.header["BUNIT"] = (unit, "Unit ('' = dimensionless)")
+        hdus.append(hdu)
+    fits.HDUList(hdus).writeto(file_name, overwrite=True)
+    return file_name
+
 
 @pipeline_stage(
     cluster="instrument transmission (per angle)",
@@ -37,7 +88,9 @@ def generate_instrument_transmission(
     # wavel_m (float): Wavelength in meters (e.g., 1e-6).
     # normalize (bool): If True, normalize transmission to unity maximum. If False, max
     # transmission is N for N identical apertures.
-    # plot (bool): If True, generate plots and write FITS cubes.
+    # plot (bool): If True, write the responses for this angle to
+    # transmission_instrument_response_angle_<angle>.fits (one HDU per output plus the
+    # y and x sky coordinates) and differential_dark.fits.
     # angle_deg (float): Rotation angle of the transmission screens in degrees.
 
     OUTPUT:
@@ -327,27 +380,54 @@ def generate_instrument_transmission(
     #     )
     #
 
+    # arrange outputs into a cube, shape (6, n_pix, n_pix), slices ordered as
+    # TRANSMISSION_CUBE_SLICES: 0 = output_1_bright, 1 = output_2_bright,
+    # 2 = output_3_dark, 3 = output_4_dark, 4 = y, 5 = x
+    transmission_instrument_response_cube = np.zeros(
+        (len(TRANSMISSION_CUBE_SLICES), n_pix, n_pix)
+    )
+    for t, (slice_name, _, _) in enumerate(TRANSMISSION_CUBE_SLICES[:4]):
+        transmission_instrument_response_cube[t, :, :] = output_all_responses[
+            slice_name
+        ][
+            0, :, :
+        ]  # screens
+    # sky coordinates straight from the grid: the per-output copies made in R_m are
+    # rotated along with the screens when angle_deg != 0 (its [0:4] slice covers all
+    # three of its slices), so they are not the sky coordinates any more
+    transmission_instrument_response_cube[4, :, :] = sky_yy_arcsec  # y vals
+    transmission_instrument_response_cube[5, :, :] = sky_xx_arcsec  # x vals
+
     if plot:
-        # save all responses to FITS files
-        # output_all_responses contains output_1_bright, output_2_bright, output_3_dark,
-        # output_4_dark
+        # save all responses for this angle to one FITS file (one HDU per output,
+        # plus the y and x sky coordinates)
         save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
-        for (
-            output_name,
-            transmission_instrument_response,
-        ) in output_all_responses.items():
-            fits.writeto(
-                save_dir + f"transmission_instrument_response_{output_name}.fits",
-                transmission_instrument_response,
-                overwrite=True,
+        header_cards = {
+            "ANGLE": (float(angle_deg), "Screen rotation angle [deg]"),
+            "WAVEL_M": (float(wavel_m), "Wavelength of the responses [m]"),
+            "NORMALIZ": (bool(normalize), "Normalized to unit maximum transmission"),
+            "STARMASK": (
+                bool(override_stellar_mask),
+                "Manual stellar mask on the dark outputs",
+            ),
+        }
+        if override_stellar_mask:
+            header_cards["NULLFAC"] = (
+                float(config["nulling"]["nulling_factor"]),
+                "Transmission inside the manual stellar mask",
             )
-            logging.info(
-                "Saved transmission instrument response for %s to "
-                "%stransmission_instrument_response_%s.fits",
-                output_name,
-                save_dir,
-                output_name,
-            )
+        file_name_fits = write_transmission_responses_fits(
+            save_dir + format_transmission_fits_name(angle_deg),
+            transmission_instrument_response_cube,
+            header_cards=header_cards,
+        )
+        logging.info(
+            "Saved transmission instrument responses for angle %.2f deg (HDUs %s) "
+            "to %s",
+            angle_deg,
+            ", ".join(name for name, _, _ in TRANSMISSION_CUBE_SLICES),
+            file_name_fits,
+        )
         # save the differential dark
         differential_dark = (
             output_all_responses["output_3_dark"]
@@ -359,35 +439,6 @@ def generate_instrument_transmission(
             overwrite=True,
         )
         logging.info("Saved differential dark to %sdifferential_dark.fits", save_dir)
-
-    # arrange outputs into a cube, shape (4, n_pix, n_pix), slices order 0 =
-    # output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark
-    # for-loop to preserve order
-    keys_ordered = [
-        "output_1_bright",
-        "output_2_bright",
-        "output_3_dark",
-        "output_4_dark",
-        "yy",
-        "xx",
-    ]
-    transmission_instrument_response_cube = np.zeros((6, n_pix, n_pix))
-    for t in range(4):
-        transmission_instrument_response_cube[t, :, :] = output_all_responses[
-            keys_ordered[t]
-        ][
-            0, :, :
-        ]  # screens
-    transmission_instrument_response_cube[4, :, :] = output_all_responses[
-        "output_1_bright"
-    ][
-        1, :, :
-    ]  # y vals
-    transmission_instrument_response_cube[5, :, :] = output_all_responses[
-        "output_1_bright"
-    ][
-        2, :, :
-    ]  # x vals
 
     return transmission_instrument_response_cube
 
