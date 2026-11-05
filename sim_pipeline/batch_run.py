@@ -102,7 +102,8 @@ def main() -> None:
     #                                               spectra, bin geometry, wavelength
     #                                               solution, electrons)
     #           products_counts_vs_time/      extracted_cube_qe_{qe}_dc_{dc}.fits and
-    #                                         counts_vs_<x>_qe_{qe}_dc_{dc}_*.png
+    #                                         counts_vs_<x>_qe_{qe}_dc_{dc}_*.fits
+#                                         (always) and .png (if plotting)
     #           products_snr/                 S/N cubes and plots (S/N is disabled
     #                                         for now, while chopping is removed)
     #

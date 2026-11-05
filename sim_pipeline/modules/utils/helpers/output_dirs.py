@@ -8,7 +8,8 @@ Every run writes into a fresh tree, so files from previous runs are never mixed 
             fyi_plots/                 FYI / diagnostic plots (only if plotting)
             intermediate/              intermediate FITS, HDF5 and text files
             products_counts_vs_time/   extracted-spectra cubes and the 2D
-                                       counts vs. wavelength and time plots
+                                       counts vs. wavelength and time FITS
+                                       (always) and plots (if plotting)
             products_snr/              S/N cubes and S/N plots
 
 Writers call ``output_dir(config, kind)``; the run root is

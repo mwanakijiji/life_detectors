@@ -131,3 +131,34 @@ def test_plot_for_cubes_writes_total_per_dc_and_components_once(cube_files):
     for path in written:
         assert os.path.exists(path)
     assert sum(p.endswith("_total.png") for p in written) == 2
+
+
+def test_fits_matches_plot_panels(cube_files, tmp_path):
+    # pylint: disable-next=import-outside-toplevel
+    from astropy.io import fits
+
+    cube = read_extracted_cube(cube_files[0])
+    out = tmp_path / "counts.fits"
+    time_series.write_counts_vs_time_fits(cube, str(out), component="star")
+    with fits.open(out) as hdul:
+        names = [hdu.name for hdu in hdul]
+        assert names[1:] == list(cube["channels"]) + [
+            "CHOPPED",
+            "WAVELENGTH",
+            "XEDGES",
+        ]
+        star_e = cube["components_adu"]["star"] * GAIN
+        np.testing.assert_allclose(hdul["CH3DK"].data, star_e[:, :, 2])
+        np.testing.assert_allclose(
+            hdul["CHOPPED"].data, star_e[:, :, 2] - star_e[:, :, 3]
+        )
+        assert hdul["XEDGES"].data["edge"].size == cube["angle_deg"].size + 1
+        assert hdul[0].header["COMPONT"] == "star"
+
+
+def test_products_without_plot_write_fits_only(cube_files):
+    written = time_series.counts_vs_time_products_for_cubes(
+        cube_files, x_axis="angle", plot=False
+    )
+    assert len(written) == 1 + 3 + 1
+    assert all(p.endswith(".fits") and os.path.exists(p) for p in written)

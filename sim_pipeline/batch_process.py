@@ -10,7 +10,7 @@ Every run writes into a fresh output tree (modules/utils/helpers/output_dirs.py)
     <[dirs] save_s2n_data_unique_dir>/run_<YYYYMMDDHHMMSS>/[<planet folder>/]
         fyi_plots/                 {fyi}       FYI plots (only if plotting)
         intermediate/              {int}       intermediate FITS, HDF5, text files
-        products_counts_vs_time/   {counts}    extracted cubes + 2D counts plots
+        products_counts_vs_time/   {counts}    extracted cubes + 2D counts FITS/plots
         products_snr/              {snr}       S/N cubes and plots
 
 When the job is finished, a copy of the log file is placed in the run_<...>/ root.
@@ -85,7 +85,7 @@ from modules.utils.helpers.spectra import (
     merge_psg_spectra_to_planet_population,
 )
 from modules.viz.spectra import plot_planet_population_sample
-from modules.viz.time_series import plot_counts_vs_time_for_cubes
+from modules.viz.time_series import counts_vs_time_products_for_cubes
 
 # Module-level logger so it's available everywhere in this file
 logger = logging.getLogger(__name__)
@@ -680,21 +680,28 @@ def run_single_calculation(
             save_dir=output_dir(config, COUNTS_TIME),
         )
 
-        # 2D plots of counts (e-) vs. wavelength and frame/time/angle, per channel and
-        # for the chopped signal (a final data product, next to the cubes)
-        if plot:
-            x_axis = config.get("plotting", "counts_vs_time_x_axis", fallback="frame")
-            logger.info("Plotting counts vs. wavelength and %s ...", x_axis)
-            # ( for each cube: total counts; for the first cube also each component;
-            #   5 panels each: CH1BR, CH2BR, CH3DK, CH4DK, chopped CH3DK - CH4DK;
-            #   e- = ADU x gain; x axis from [plotting] counts_vs_time_x_axis =
-            #   frame (default), time or angle )
-            # FYI out: {counts}counts_vs_<x_axis>_qe_<qe>_dc_<dc>_total.png per DC,
-            #          and ..._<component>.png per component (first DC only);
-            #          log "Saved counts-vs-<x_axis> plot (...) to ..."
-            plot_counts_vs_time_for_cubes(
-                cube_file_names, x_axis=x_axis, config=config
-            )
+        # 2D counts (e-) vs. wavelength and frame/time/angle, per channel and for the
+        # chopped signal (a final data product, next to the cubes): FITS always, PNG
+        # plots only if plot
+        x_axis = config.get("plotting", "counts_vs_time_x_axis", fallback="frame")
+        logger.info(
+            "Writing counts vs. wavelength and %s (FITS%s) ...",
+            x_axis,
+            " + plots" if plot else "",
+        )
+        # ( for each cube: total counts; for the first cube also each component;
+        #   5 panels each: CH1BR, CH2BR, CH3DK, CH4DK, chopped CH3DK - CH4DK;
+        #   e- = ADU x gain; x axis from [plotting] counts_vs_time_x_axis =
+        #   frame (default), time or angle )
+        # out:     {counts}counts_vs_<x_axis>_qe_<qe>_dc_<dc>_total.fits per DC, and
+        #          ..._<component>.fits per component (first DC only): one image HDU
+        #          per panel (n_bins, n_readouts_total) in e-, WAVELENGTH and XEDGES
+        #          tables; log "Wrote counts-vs-<x_axis> FITS (...) to ..."
+        # FYI out: the same names with .png (if plot);
+        #          log "Saved counts-vs-<x_axis> plot (...) to ..."
+        counts_vs_time_products_for_cubes(
+            cube_file_names, x_axis=x_axis, config=config, write_fits=True, plot=plot
+        )
 
         logger.info(
             "Detector outputs for QE %.2f under %s:\n"
