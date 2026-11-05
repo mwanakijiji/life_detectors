@@ -6,7 +6,7 @@ spectral data from files and handling different spectral formats.
 """
 
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -38,8 +38,8 @@ class SpectralData:
         wavelength_unit: str,
         flux_unit: str,
         source_name: str,
-        metadata: Dict[str, any],
-    ):
+        metadata: Optional[Dict[str, Any]],
+    ) -> None:
         self.wavelength = wavelength
         self.flux = flux
         self.wavelength_unit = wavelength_unit

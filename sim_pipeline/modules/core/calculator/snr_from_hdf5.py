@@ -3,7 +3,8 @@
 import glob
 import logging
 import os
-from typing import Dict, Optional, Tuple
+from pathlib import Path
+from typing import Dict, Optional, Tuple, Union
 
 import astropy.units as u
 import h5py
@@ -26,6 +27,7 @@ from ...utils.helpers.keys import (
     resolve_float_key,
 )
 from ...utils.loader import config_getboolean
+from ...utils.types import ConfigLike
 from ...viz.snr import plot_snr_vs_wavelength
 from .s2n_cube import S2NCube, _config_to_dict, save_s2n_cube
 
@@ -105,7 +107,9 @@ def read_hdf5_slots(read_dir: str, *, qe: Optional[float] = None) -> Dict[str, d
     return by_dc_qe
 
 
-def _compute_snr_lambda_for_slot(slot: dict, config) -> Tuple[np.ndarray, float]:
+def _compute_snr_lambda_for_slot(
+    slot: dict, config: ConfigLike
+) -> Tuple[np.ndarray, float]:
     """Compute per-bin and total SNR for one dc/qe slot (Dannert+ 2022 Eqn. 19-20)."""
     gain = float(config["detector"]["gain"]) * u.electron / u.adu
     angles = sorted(slot["S_p"].keys())
@@ -196,7 +200,7 @@ def _build_base_title(
     )
 
 
-def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
+def build_s2n_cube_from_hdf5(read_dir: str, config: ConfigLike) -> S2NCube:
     """
     Read pipeline HDF5 files and assemble S/N on a (wavelength, DC, QE) cube.
 
@@ -286,8 +290,11 @@ def build_s2n_cube_from_hdf5(read_dir: str, config) -> S2NCube:
 
 
 def calculate_s2n_post_rotation(
-    read_dir, config, *, save_cube_path_stem: Optional[str] = None
-):
+    read_dir: Union[str, Path],
+    config: ConfigLike,
+    *,
+    save_cube_path_stem: Optional[str] = None,
+) -> S2NCube:
     """
     Calculate the S/N of the chopped dark outputs and optionally save an S/N cube.
 

@@ -6,13 +6,14 @@ Independent of detector QE/noise.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Sequence
+from typing import Sequence
 
 import astropy.units as u
 import numpy as np
 import pandas as pd
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.types import ConfigLike
 from ...viz.aperture import plot_astro_ph_sec_pixel
 from ...viz.detector import plot_detector_footprint
 from .detector import Detector
@@ -33,10 +34,10 @@ class DispersionLaw:
 
     def __init__(
         self,
-        config: Dict,
+        config: ConfigLike,
         *,
         starting_pixel: Sequence[float] | None = None,
-    ):
+    ) -> None:
         self.config = config
         self.pix_per_wavel_bin = float(config["detector"]["pix_per_wavel_bin"])
         self.pix_spectral_width = int(config["detector"]["pix_spectral_width"])
@@ -143,14 +144,14 @@ class DispersionLaw:
 
 @pipeline_stage(depends_on=("pass_from_aperture_to_detector",))
 def disperse_astro_signals_on_detector(
-    config,
+    config: ConfigLike,
     prop_dict: dict,
     output_channels: dict,
     source_names: Sequence[str],
     sources_to_include: Sequence[str],
     background_source_names: Sequence[str] = (),
     plot: bool = False,
-):
+) -> None:
     """
     Disperse post-aperture flux onto each channel detector via DispersionLaw,
     then apply detector QE.
@@ -246,6 +247,8 @@ def disperse_astro_signals_on_detector(
                 "flux_astro_1d_interpolated_ph_sec_pixel": per_pixel,
                 "n_pix_per_wavel_bin": n_pix_per_wavel_bin.decompose(),
             }
+    import ipdb
+    ipdb.set_trace()
 
     if plot:  # pragma: no cover
 
@@ -333,3 +336,4 @@ def disperse_astro_signals_on_detector(
                 config,
                 file_name_plot,
             )
+        ipdb.set_trace()

@@ -5,6 +5,7 @@ import glob
 import logging
 import os
 from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,7 @@ from astropy import units as u
 from astropy.modeling.physical_models import BlackBody
 
 from ...viz.spectra import plot_luminosity_and_flux, plot_zodiacal_emission_2d
+from ..types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +46,8 @@ def merge_psg_spectra_to_planet_population(
 
 
 def generate_star_spectrum(
-    config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False
-) -> np.ndarray:
+    config: configparser.ConfigParser, wavelength_um: u.Quantity, plot: bool = False
+) -> Tuple[u.Quantity, u.Quantity]:
 
     # host star radius
     """Blackbody stellar spectrum (photon and energy luminosity per um) from the
@@ -97,8 +99,8 @@ def generate_star_spectrum(
 
 
 def generate_planet_bb_spectrum(
-    config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False
-) -> np.ndarray:
+    config: configparser.ConfigParser, wavelength_um: u.Quantity, plot: bool = False
+) -> Tuple[u.Quantity, u.Quantity]:
     """
     Generate a BB spectrum corresponding to the planet
 
@@ -226,8 +228,8 @@ def generate_planet_bb_spectrum(
 
 
 def generate_zodiacal_spectrum(
-    config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False
-) -> np.ndarray:
+    config: configparser.ConfigParser, wavelength_um: u.Quantity, plot: bool = False
+) -> Tuple[u.Quantity, u.Quantity, u.Quantity]:
 
     # Generates a zodiacal background
     # See Sec. 2.2.3 in Dannert+ 2022
@@ -437,8 +439,8 @@ def generate_zodiacal_spectrum(
 
 
 def generate_exozodiacal_spectrum(
-    config: configparser.ConfigParser, wavelength_um: np.ndarray, plot: bool = False
-) -> np.ndarray:
+    config: configparser.ConfigParser, wavelength_um: u.Quantity, plot: bool = False
+) -> Tuple[u.Quantity, u.Quantity]:
     # exozodiacal dust spectrum
     # flux_exozodi = 1e8 * wavelength_um ** (-1.5)
     # luminosity_photons_exozodi = flux_exozodi * (const.h * const.c / wavelength_um)
@@ -459,7 +461,7 @@ def generate_exozodiacal_spectrum(
     integrated over the disk; returns photon and energy luminosity per um.
     """
 
-    def T_temp(r):
+    def T_temp(r: u.Quantity) -> u.Quantity:
         # r: radius in disk (units AU)
 
         # ## TODO: peg this to the stellar temp, if possible
@@ -469,7 +471,9 @@ def generate_exozodiacal_spectrum(
 
         return T
 
-    def Sigma_m(r, r0, alpha, z, Sigma_m_0):
+    def Sigma_m(
+        r: u.Quantity, r0: u.Quantity, alpha: float, z: float, Sigma_m_0: float
+    ) -> u.Quantity:
         # r: radius in disk (units AU)
         # r0: reference radius (units AU)
         # alpha: power law index
@@ -486,7 +490,14 @@ def generate_exozodiacal_spectrum(
     # Eqn. 16 in Dannert+ 2022 A&A 664:A22
     # Slight variation in notation: Eqn. 1 in Kennedy+ 2015 ApJSS 216:23
     # N.b. Kennedy uses 'S' instead of 'I'
-    def I_disk_lambda_r(r, r0, alpha, z, Sigma_m_0, wavel_array):
+    def I_disk_lambda_r(
+        r: u.Quantity,
+        r0: u.Quantity,
+        alpha: float,
+        z: float,
+        Sigma_m_0: float,
+        wavel_array: u.Quantity,
+    ) -> u.Quantity:
 
         bb = BlackBody(
             temperature=T_temp(r=r), scale=1.0 * u.W / (u.m**2 * u.micron * u.sr)
@@ -498,7 +509,14 @@ def generate_exozodiacal_spectrum(
 
     # surface brightness as function of wavelength I(lambda): I_disk_lambda_r integrated
     # over dA = r dr dtheta
-    def I_disk_lambda(r_array, r0, alpha, z, Sigma_m_0, wavel_array):
+    def I_disk_lambda(
+        r_array: u.Quantity,
+        r0: u.Quantity,
+        alpha: float,
+        z: float,
+        Sigma_m_0: float,
+        wavel_array: u.Quantity,
+    ) -> u.Quantity:
 
         # don't give r_array units, because it messes up the list comprehension &
         # np.array below
@@ -597,7 +615,7 @@ def generate_exozodiacal_spectrum(
     return luminosity_photons_exozodi_disk, luminosity_energy_disk_lambda
 
 
-def compute_collecting_area_m2(config: dict) -> float:
+def compute_collecting_area_m2(config: ConfigLike) -> float:
     """Geometric collecting area from aperture YAML and single-mirror diameter."""
 
     tel = config["telescope"]

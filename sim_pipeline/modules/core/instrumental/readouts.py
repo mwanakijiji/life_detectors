@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict
+from typing import TYPE_CHECKING, Dict, Sequence
 
 import astropy.units as u
 import numpy as np
@@ -15,10 +15,14 @@ from .channels import FITS_CHANNEL_NAMES
 from .detector import SYSTEMATICS_KEY
 from .sharp_birchall import SharpBirchallExtractor, rebin_columns_to_bins
 
+if TYPE_CHECKING:
+    from .channels import OutputChannel
+    from .detector import Detector
+
 logger = logging.getLogger(__name__)
 
 
-def _readout_cube_adu(output_channel) -> tuple[list[str], np.ndarray]:
+def _readout_cube_adu(output_channel: OutputChannel) -> tuple[list[str], np.ndarray]:
     """Stack a channel's readout frames into
     (n_components, n_readouts, n_pix, n_pix) ADU.
     """
@@ -128,7 +132,9 @@ def _model_variance_adu2(
     return charge_e / gain_e_per_adu**2 + (read_noise_e / gain_e_per_adu) ** 2
 
 
-def _trace_profile_and_fractions(det, y0: int, x0: int, n_y: int, n_x: int):
+def _trace_profile_and_fractions(
+    det: Detector, y0: int, x0: int, n_y: int, n_x: int
+) -> tuple[np.ndarray, np.ndarray]:
     """
     For the cutout box: the trace's spatial profile (1, ny, nx), normalized to sum
     to 1 down each illuminated column, and each column's fractional coverage by
@@ -149,7 +155,9 @@ def _trace_profile_and_fractions(det, y0: int, x0: int, n_y: int, n_x: int):
     return profile[np.newaxis], fraction
 
 
-def _box_sum_spectra(det, data_adu, y0, x0):
+def _box_sum_spectra(
+    det: Detector, data_adu: np.ndarray, y0: int, x0: int
+) -> np.ndarray:
     n_y, n_x = data_adu.shape[-2:]
     bin_map = det.bin_index_map()[y0 : y0 + n_y, x0 : x0 + n_x]
     on_footprint = bin_map >= 0
@@ -171,7 +179,14 @@ def _box_sum_spectra(det, data_adu, y0, x0):
     )
 
 
-def _sharp_birchall_spectra(det, data_adu, y0, x0, dc_rates, t_frame_s):
+def _sharp_birchall_spectra(
+    det: Detector,
+    data_adu: np.ndarray,
+    y0: int,
+    x0: int,
+    dc_rates: np.ndarray,
+    t_frame_s: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Returns flux (n_dc, n_comp, n_read, n_bins), error
     and vark (n_dc, n_read, n_bins).
     """
@@ -217,7 +232,7 @@ def extract_spectra_from_readouts(
     *,
     method: str = "sharp_birchall",
     t_frame: u.Quantity | None = None,
-    dc_rates=None,
+    dc_rates: Sequence[float] | np.ndarray | None = None,
 ) -> Dict[str, Dict[str, u.Quantity]]:
     """
     Read the readout FITS file (cutout or full frame) back in and extract each

@@ -9,6 +9,7 @@ from astropy.io import fits
 from scipy import ndimage
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.types import ConfigLike
 from ...viz.transmission import (
     plot_flux_through_screens,
     plot_pre_aperture_all_sources,
@@ -72,13 +73,13 @@ def write_transmission_responses_fits(
     cluster_color="#e41a1c",
 )
 def generate_instrument_transmission(
-    config,
+    config: ConfigLike,
     wavel_m: float = 11e-6,
-    override_stellar_mask=False,
+    override_stellar_mask: bool = False,
     normalize: bool = True,
     plot: bool = False,
     angle_deg: float = 0,
-):
+) -> np.ndarray:
     # phi_dc_vec_rad, theta_vec_2d_asec,
     # instrument transmission respose over the sky (R_theta_vec,Dannert 2025 Eqn. B12,
     # ignoring polarization for now)
@@ -155,7 +156,9 @@ def generate_instrument_transmission(
     output_all_responses = {}
 
     # Sum over all pairs of apertures (j, k) where j < k
-    def R_m(phase_vector_rad: np.ndarray, wavel_m: float, output_name: str):
+    def R_m(
+        phase_vector_rad: np.ndarray, wavel_m: float, output_name: str
+    ) -> np.ndarray:
         # response of output m
         # N_apertures: number of apertures N
         # phase_vector_deg: phase vector for output m (total number of outputs is not
@@ -447,14 +450,14 @@ def generate_instrument_transmission(
     depends_on=("arrange_onsky_scene", "generate_instrument_transmission"),
 )
 def pass_through_transmission_screens(
-    config,
+    config: ConfigLike,
     sources_astroph: dict,
     sources_to_include: Sequence[str],
-    fyi_angle,
+    fyi_angle: float,
     source_dict_pre_screen: dict,
     transmission_screens: np.ndarray,
     plot: bool = False,
-):
+) -> np.ndarray:
     """
     Pass each astrophysical source through the transmission screens, and update
     prop_dict with the propagated terms
@@ -467,6 +470,8 @@ def pass_through_transmission_screens(
             (n_wavel, n_pix, n_pix)
         transmission_screen (np.ndarray): transmission screen, shape (n_pix, n_pix)
         plot (bool): whether to plot the scene
+
+    Returns the four transmission-screen slices, shape (4, n_pix, n_pix).
     """
 
     transmission_screen_order = [

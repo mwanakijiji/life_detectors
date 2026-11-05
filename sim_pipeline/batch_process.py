@@ -19,7 +19,7 @@ import os
 import time
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import astropy.units as u
 import numpy as np
@@ -79,7 +79,7 @@ def run_single_calculation(
     override_stellar_mask: bool = True,
     overwrite: bool = True,
     plot: bool = False,
-    system_params: Optional[dict] = None,
+    system_params: Optional[dict | pd.Series] = None,
     lum_types: Optional[dict] = None,
     output_root: Optional[str] = None,
     smoke_test: bool = False,
@@ -362,9 +362,9 @@ def run_single_calculation(
         # FYI out: "Loaded <effect> map from ..." per file-based effect; WARNING if
         #          read noise / dark current are listed as systematics
         instrument_dep_terms = InstrumentDepTerms(
-            config,
-            sources_astroph=sources_astroph,
-            sources_to_include=sources_to_include,
+            config = config,
+            sources_astroph = sources_astroph,
+            sources_to_include = sources_to_include,
         )
 
         ipdb.set_trace()
@@ -417,9 +417,9 @@ def run_single_calculation(
             #          log "Saved transmission instrument responses for angle ..."
             transmission_screens = (
                 instrument_dep_terms.generate_instrument_transmission(
-                    override_stellar_mask=override_stellar_mask,
-                    angle_deg=angle_deg,
-                    plot=plot,
+                    override_stellar_mask = override_stellar_mask,
+                    angle_deg = angle_deg,
+                    plot = plot,
                 )
             )
 
@@ -439,10 +439,10 @@ def run_single_calculation(
             #          _output_<out>.png (x4, wavelength slice 15); plus
             #          {save_dir}photoelectrons_all_sources_pre_aperture.png
             instrument_dep_terms.pass_through_transmission_screens(
-                fyi_angle=angle_deg,
-                source_dict_pre_screen=astro_scene_perfect_no_screen,
-                transmission_screens=transmission_screens,
-                plot=plot,
+                fyi_angle = angle_deg,
+                source_dict_pre_screen = astro_scene_perfect_no_screen,
+                transmission_screens = transmission_screens,
+                plot = plot,
             )
 
             ipdb.set_trace()
@@ -476,6 +476,8 @@ def run_single_calculation(
             #          each instrument background (dashed) and the total, plus the
             #          band-integrated background fraction of the total)
             instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
+
+            ipdb.set_trace()
 
             # disperse astrophysical signals on the detector (i.e., update the
             # OutputChannel objects; note that input astrophysical signals should still
@@ -649,11 +651,11 @@ def batch_qe_nint_process(
     base_filename: str = "s2n",
     overwrite: bool = True,
     plot: bool = False,
-    system_params: Optional[dict] = None,
+    system_params: Optional[dict | pd.Series] = None,
     lum_types: Optional[dict] = None,
     output_root: Optional[str] = None,
     smoke_test: bool = False,
-) -> List[Tuple[int, str, bool]]:
+) -> bool:
     """
     Run batch processing with multiple QE and n_int values.
 
@@ -670,7 +672,7 @@ def batch_qe_nint_process(
         smoke_test: force smoke-test mode for every run
 
     Returns:
-        List of tuples (n_int, output_path, success)
+        True if run_single_calculation succeeded for every QE value
     """
     # Create output directory if it doesn't exist
     # Path(output_dir).mkdir(parents=True, exist_ok=True)

@@ -13,6 +13,7 @@ import h5py
 import numpy as np
 
 from ...utils.helpers.formatting import format_plot_title
+from ...utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class S2NCube:
     config: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 
-def _config_to_dict(config) -> Dict[str, Dict[str, str]]:
+def _config_to_dict(config: ConfigLike) -> Dict[str, Dict[str, str]]:
     if isinstance(config, configparser.ConfigParser):
         return {section: dict(config[section]) for section in config.sections()}
     return {

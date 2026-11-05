@@ -6,6 +6,7 @@ from typing import Dict, List
 import astropy.units as u
 import numpy as np
 
+from ...utils.types import ConfigLike
 from . import aperture, dispersion, effects, readouts, transmission
 from .aperture import (
     BACKGROUND_REGISTRY,
@@ -28,7 +29,12 @@ class InstrumentDepTerms:
     function so the stages can be tested and registered on their own.
     """
 
-    def __init__(self, config: Dict, sources_astroph: dict, sources_to_include: list):
+    def __init__(
+        self,
+        config: ConfigLike,
+        sources_astroph: dict,
+        sources_to_include: List[str],
+    ) -> None:
         """
         Args:
             config: Configuration dictionary
@@ -69,7 +75,7 @@ class InstrumentDepTerms:
             self.background_source_names.append(bg.name)
 
         # initialize output channels
-        self.output_channels = {
+        self.output_channels: Dict[str, OutputChannel] = {
             name: OutputChannel(name=name)
             for name in [
                 "output_1_bright",
@@ -104,23 +110,47 @@ class InstrumentDepTerms:
             output_channel.bin_centers = bin_centers
             output_channel.bin_widths = bin_widths
 
-    def generate_instrument_transmission(self, *args, **kwargs):
-        """Transmission screens for each output; see
+    def generate_instrument_transmission(
+        self,
+        wavel_m: float = 11e-6,
+        override_stellar_mask: bool = False,
+        normalize: bool = True,
+        plot: bool = False,
+        angle_deg: float = 0,
+    ) -> np.ndarray:
+        """Transmission screens for each output, shape (6, n_pix, n_pix); see
         transmission.generate_instrument_transmission.
         """
         return transmission.generate_instrument_transmission(
-            self.config, *args, **kwargs
+            self.config,
+            wavel_m=wavel_m,
+            override_stellar_mask=override_stellar_mask,
+            normalize=normalize,
+            plot=plot,
+            angle_deg=angle_deg,
         )
 
-    def pass_through_transmission_screens(self, *args, **kwargs):
-        """Apply the transmission screens to the sky scene; see
-        transmission.pass_through_transmission_screens.
+    def pass_through_transmission_screens(
+        self,
+        fyi_angle: float,
+        source_dict_pre_screen: dict,
+        transmission_screens: np.ndarray,
+        plot: bool = False,
+    ) -> np.ndarray:
+        """Apply the transmission screens to the sky scene (updates sources_astroph
+        in place); see transmission.pass_through_transmission_screens.
         """
         return transmission.pass_through_transmission_screens(
-            self.config, self.sources_astroph, self.sources_to_include, *args, **kwargs
+            self.config,
+            self.sources_astroph,
+            self.sources_to_include,
+            fyi_angle=fyi_angle,
+            source_dict_pre_screen=source_dict_pre_screen,
+            transmission_screens=transmission_screens,
+            plot=plot,
         )
 
-    def pass_through_aperture(self, plot: bool = False):
+    def pass_through_aperture(self, plot: bool = False) -> None:
         """Stage: pass the screened sources through the telescope aperture."""
         aperture.pass_through_aperture(
             self.config,
@@ -130,7 +160,7 @@ class InstrumentDepTerms:
             plot=plot,
         )
 
-    def pass_from_aperture_to_detector(self, plot: bool = False):
+    def pass_from_aperture_to_detector(self, plot: bool = False) -> None:
         """Stage: add instrument backgrounds to the post-aperture beam."""
         aperture.pass_from_aperture_to_detector(
             self.config,
@@ -140,7 +170,7 @@ class InstrumentDepTerms:
             plot=plot,
         )
 
-    def disperse_astro_signals_on_detector(self, plot: bool = False):
+    def disperse_astro_signals_on_detector(self, plot: bool = False) -> None:
         """Stage: disperse the post-aperture signals onto each channel's detector."""
         dispersion.disperse_astro_signals_on_detector(
             self.config,
@@ -152,7 +182,7 @@ class InstrumentDepTerms:
             plot=plot,
         )
 
-    def apply_detector_effects(self):
+    def apply_detector_effects(self) -> None:
         """Stage: expose each readout and apply the enabled detector effects."""
         effects.apply_detector_effects(
             self.output_channels,
@@ -163,7 +193,7 @@ class InstrumentDepTerms:
 
     def write_detector_readouts(
         self, file_name: str, header_cards: dict | None = None, cutout: bool = True
-    ):
+    ) -> str:
         """Stage: write the readout frames to FITS (cutout
         by default); returns the path.
         """
@@ -179,7 +209,7 @@ class InstrumentDepTerms:
             self.readouts_file_name = written
         return written
 
-    def extract_spectra_from_readouts(self):
+    def extract_spectra_from_readouts(self) -> None:
         """Stage: extract spectra from the readout FITS with the configured method."""
         method = str(
             _config_get(self.config, "extraction", "method", "sharp_birchall")

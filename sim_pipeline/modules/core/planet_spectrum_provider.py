@@ -1,7 +1,7 @@
 """Planet spectrum providers: from a planet-population row, or one model file."""
 
 import logging
-from typing import Protocol
+from typing import Optional, Protocol, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -16,13 +16,18 @@ from ..data.spectra import (
 
 logger = logging.getLogger(__name__)
 
+# one planet-population row (a DataFrame row, or an equivalent dict)
+SystemParams = Union[dict, pd.Series]
+
 
 class PlanetSpectrumProvider(Protocol):
     """Top-level source of a planet's spectrum: population-derived, or a single read-in
     file.
     """
 
-    def get_spectrum(self, system_params=None) -> SpectralData:
+    def get_spectrum(
+        self, system_params: Optional[SystemParams] = None
+    ) -> SpectralData:
         """Return the planet spectrum, given population parameters where relevant."""
 
 
@@ -30,17 +35,17 @@ class PlanetSpectrumProvider(Protocol):
 class PopulationSpectrumGenerator(Protocol):
     """Turns one planet-population row into a spectrum."""
 
-    def generate(self, system_params) -> SpectralData:
+    def generate(self, system_params: SystemParams) -> SpectralData:
         """Return the spectrum for one planet-population row."""
 
 
 class BlackbodyFromParamsGenerator:
     """Blackbody spectrum from a population row's temperature (Tp) and radius (Rp)."""
 
-    def __init__(self, wavelength_range):
+    def __init__(self, wavelength_range: Tuple[float, float]) -> None:
         self.wavelength_range = wavelength_range
 
-    def generate(self, system_params):
+    def generate(self, system_params: SystemParams) -> SpectralData:
         """Blackbody spectrum of the planet described by system_params."""
         return create_blackbody_spectrum(
             temperature=system_params["Tp"],
@@ -53,7 +58,7 @@ class BlackbodyFromParamsGenerator:
 class PSGSpectrumGenerator:
     """Spectrum read from the PSG file named in the population row."""
 
-    def generate(self, system_params):
+    def generate(self, system_params: SystemParams) -> SpectralData:
         """Load the PSG spectrum named by
         system_params['abs_file_name_psg_spectrum'].
         """
@@ -65,10 +70,10 @@ class PopulationSpectrumProvider:
     row, via a swappable generator.
     """
 
-    def __init__(self, generator: PopulationSpectrumGenerator):
+    def __init__(self, generator: PopulationSpectrumGenerator) -> None:
         self.generator = generator
 
-    def get_spectrum(self, system_params) -> SpectralData:
+    def get_spectrum(self, system_params: SystemParams) -> SpectralData:
         """Spectrum of the planet described by system_params (one population row)."""
         return self.generator.generate(system_params)
 
@@ -85,10 +90,12 @@ class SingleModelFileProvider:
     Distance scaling is applied later by ``_calculate_flux_from_spectrum``.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self.path = path
 
-    def get_spectrum(self, system_params=None) -> SpectralData:
+    def get_spectrum(
+        self, system_params: Optional[SystemParams] = None
+    ) -> SpectralData:
         """Read the model file (system_params is ignored: one fixed spectrum)."""
         del system_params
         df = pd.read_csv(

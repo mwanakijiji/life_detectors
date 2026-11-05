@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 
 def parse_sky_position_arcsec_yx(pos_str: str) -> tuple[float, float]:
@@ -115,7 +115,7 @@ def parse_dc_qe_group(dc_qe_str: str) -> tuple[float, float]:
 
 def lookup_float_key(
     mapping: dict, key: float, *, label: str = "key", decimals: int = 6
-):
+) -> Any:
     """Dict lookup tolerant of tiny float formatting differences."""
     resolved = resolve_float_key(mapping, key, label=label, decimals=decimals)
     return mapping[resolved]

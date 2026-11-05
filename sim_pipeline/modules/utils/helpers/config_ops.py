@@ -1,14 +1,20 @@
 """Config path and sweep helpers."""
 
+from __future__ import annotations
+
 import configparser
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 
 from ..loader import config_getboolean
+from ..types import ConfigLike
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +91,7 @@ def apply_output_root_override(config_path: str, output_root: Optional[str]) -> 
     return config_path
 
 
-def _smoke_test_items(config) -> dict:
+def _smoke_test_items(config: ConfigLike) -> dict:
     """The [smoke_test] section as a plain dict (ConfigParser or load_config dict)."""
     if isinstance(config, configparser.ConfigParser):
         if not config.has_section(SMOKE_TEST_SECTION):
@@ -94,14 +100,14 @@ def _smoke_test_items(config) -> dict:
     return dict(config.get(SMOKE_TEST_SECTION, {}) or {})
 
 
-def smoke_test_enabled(config, force: bool = False) -> bool:
+def smoke_test_enabled(config: ConfigLike, force: bool = False) -> bool:
     """True if smoke-test mode is forced (e.g. --smoke) or [smoke_test] enabled."""
     return bool(force) or config_getboolean(
         config, SMOKE_TEST_SECTION, "enabled", default=False
     )
 
 
-def smoke_test_limits(config, force: bool = False) -> dict:
+def smoke_test_limits(config: ConfigLike, force: bool = False) -> dict:
     """
     Run-size limits for smoke-test mode: max_qe_values, max_planets (None = no
     limit) and write_full_frame_example. No-op defaults when smoke mode is off.
@@ -120,7 +126,9 @@ def smoke_test_limits(config, force: bool = False) -> dict:
     return limits
 
 
-def apply_smoke_test_overrides(config_path: str, force: bool = False) -> list:
+def apply_smoke_test_overrides(
+    config_path: str, force: bool = False
+) -> list[tuple[str, str, str]]:
     """
     In smoke-test mode, apply every [smoke_test] "section.key = value" override to
     the config file in place (as apply_output_root_override does).
@@ -194,7 +202,7 @@ def modify_config_file_sweep(
 def modify_config_file_pl_system_params(
     config_path: str,
     base_filename: str,
-    system_params: dict,
+    system_params: dict | pd.Series | None,
     lum_types: dict,
     run_id: Optional[str] = None,
 ) -> str:

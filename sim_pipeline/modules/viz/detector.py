@@ -5,14 +5,18 @@ from __future__ import annotations
 import logging
 
 import matplotlib.pyplot as plt
+import numpy as np
 from astropy.visualization import ImageNormalize, ZScaleInterval
 
 from ..utils.helpers.formatting import format_plot_title
+from ..utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
 
-def plot_detector_footprint(footprint_sum, config, out_path: str) -> None:
+def plot_detector_footprint(
+    footprint_sum: np.ndarray, config: ConfigLike, out_path: str
+) -> None:
     """Plot the wavelength-summed detector spectral footprint."""
     plt.clf()
     plt.title(format_plot_title("Detector spectral footprint (True)", config))

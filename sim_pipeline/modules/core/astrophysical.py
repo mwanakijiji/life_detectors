@@ -9,6 +9,7 @@ Sky coordinate convention: y first, x second (see instrumental.py module doc).
 
 import configparser
 import logging
+from typing import Optional
 
 import astropy.constants as const
 import numpy as np
@@ -51,12 +52,12 @@ def _exozodi_kernel(
     n_pix: int,
     idx_y: int,
     idx_x: int,
-    pix_size_arcsec: float,
-    dist_pc: float,
-    r0_au=1 * u.au,
-    alpha=0.34,
-    z_exozodiacal=1,
-    Sigma_m_0=7.12e-08,
+    pix_size_arcsec: u.Quantity,
+    dist_pc: u.Quantity,
+    r0_au: u.Quantity = 1 * u.au,
+    alpha: float = 0.34,
+    z_exozodiacal: float = 1,
+    Sigma_m_0: float = 7.12e-08,
 ) -> np.ndarray:
     """
     Conical exozodi kernel (centred on the array; idx_y/idx_x are accepted for
@@ -114,7 +115,7 @@ def _exozodi_kernel(
     return kernel
 
 
-def _zodiacal_kernel(n_pix: int, pix_size_arcsec: float) -> np.ndarray:
+def _zodiacal_kernel(n_pix: int, pix_size_arcsec: u.Quantity) -> np.ndarray:
     """
     Zodiacal background kernel (uniform; pix_size_arcsec is accepted for interface
     symmetry with the other kernels but not used)
@@ -166,8 +167,8 @@ def generate_exozodi_scene(
     n_pix: int,
     idx_y_exozodi: int,
     idx_x_exozodi: int,
-    pix_size_arcsec: float,
-    dist_pc: float,
+    pix_size_arcsec: u.Quantity,
+    dist_pc: u.Quantity,
     z_exozodiacal: float,
 ) -> u.Quantity:
     """
@@ -187,7 +188,7 @@ def generate_exozodi_scene(
 
 
 def generate_zodiacal_scene(
-    flux_zodiacal: u.Quantity, n_pix: int, pix_size_arcsec: float
+    flux_zodiacal: u.Quantity, n_pix: int, pix_size_arcsec: u.Quantity
 ) -> u.Quantity:
     """
     Spread zodiacal flux onto a 3D on-sky canvas (n_wavel, n_pix, n_pix).
@@ -199,7 +200,7 @@ def generate_zodiacal_scene(
     return flux_zodiacal[:, None, None] * kernel_zodiacal[None, :, :]
 
 
-def _cube_values(q) -> np.ndarray:
+def _cube_values(q: u.Quantity | np.ndarray) -> np.ndarray:
     """Strip units (if any) for saving as a FITS image."""
     return np.asarray(q.value if hasattr(q, "value") else q, dtype=float)
 
@@ -207,8 +208,8 @@ def _cube_values(q) -> np.ndarray:
 def write_onsky_scene_fits(
     file_name: str,
     scene_cubes: dict,
-    total_cube,
-    wavel,
+    total_cube: u.Quantity | np.ndarray,
+    wavel: u.Quantity | np.ndarray,
     sky_yy_arcsec: np.ndarray,
     sky_xx_arcsec: np.ndarray,
 ) -> str:
@@ -247,7 +248,7 @@ class AstrophysicalSources:
         self,
         config: configparser.ConfigParser,
         planet_spectrum_provider: PlanetSpectrumProvider,
-    ):
+    ) -> None:
         """
         Initialize astrophysical noise calculator.
 
@@ -300,7 +301,7 @@ class AstrophysicalSources:
         self,
         source_name: str,
         wavelength: u.Quantity,
-        distance_set: float = None,
+        distance_set: Optional[float] = None,
         null: bool = False,
     ) -> u.Quantity:
         """
@@ -351,8 +352,11 @@ class AstrophysicalSources:
 
     @pipeline_stage(cluster="astrophysics", cluster_color="#377eb8")
     def calculate_received_astro_fluxes(
-        self, source_name: str, plot: bool = False, system_params: dict = None
-    ) -> np.ndarray:
+        self,
+        source_name: str,
+        plot: bool = False,
+        system_params: Optional[dict] = None,
+    ) -> dict | np.ndarray:
         """
         Calculate local (at Earth) flux from an emitted spectrum at a given distance
 
@@ -364,7 +368,8 @@ class AstrophysicalSources:
                 population)
 
         Returns:
-            Flux array, with units # in photons/sec/m^2/micron
+            {"wavel", "pre_screen_astro_flux_ph_sec_m2_um"} (flux in
+            photons/sec/m^2/micron), or an empty array for an unknown source
         """
 
         incident_dict = {}
@@ -520,7 +525,9 @@ class AstrophysicalSources:
         cluster="astrophysics",
         cluster_color="#377eb8",
     )
-    def arrange_onsky_scene(self, incident_dict: dict, plot: bool = False):
+    def arrange_onsky_scene(
+        self, incident_dict: dict, plot: bool = False
+    ) -> dict[str, u.Quantity]:
         """
         Construct the on-sky scene from the incident flux dictionary and positions of
         objects as set in the config file.

@@ -5,18 +5,25 @@ from __future__ import annotations
 import logging
 from typing import Mapping
 
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.visualization import ZScaleInterval
 from matplotlib.colors import LogNorm
 
 from ..utils.helpers.formatting import format_plot_title
+from ..utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
 
 def plot_incident_flux(
-    wavel, flux, source_name, config, out_path: str, distance_pc: float
+    wavel: u.Quantity,
+    flux: u.Quantity,
+    source_name: str,
+    config: ConfigLike,
+    out_path: str,
+    distance_pc: float,
 ) -> None:
     """Plot incident flux vs wavelength for one astrophysical source."""
     plt.clf()
@@ -40,8 +47,8 @@ def plot_incident_flux(
 
 
 def plot_onsky_scene_fyi(
-    scene_cubes: Mapping[str, object],
-    total_cube,
+    scene_cubes: Mapping[str, u.Quantity],
+    total_cube: u.Quantity,
     out_path: str,
 ) -> None:
     """Plot per-source and total on-sky scene collapsed over wavelength."""

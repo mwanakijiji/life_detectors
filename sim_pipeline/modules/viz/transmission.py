@@ -5,18 +5,21 @@ from __future__ import annotations
 import logging
 from typing import Mapping
 
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from astropy.visualization import ZScaleInterval
 
 from ..utils.helpers.formatting import format_astro_source_label, format_plot_title
+from ..utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
 
 def plot_flux_through_screens(
-    wavel,
-    flux_by_screen: Mapping[str, object],
-    pre_screen_flux,
+    wavel: u.Quantity,
+    flux_by_screen: Mapping[str, u.Quantity],
+    pre_screen_flux: u.Quantity,
     source_name: str,
     out_path: str,
 ) -> None:
@@ -41,20 +44,26 @@ def plot_flux_through_screens(
 
 
 def plot_source_transmission_triptych(
-    source_img,
-    transmission_img,
+    source_img: np.ndarray,
+    transmission_img: np.ndarray,
     source_name: str,
     screen_name: str,
     wavel_idx: int,
     source_unit: str,
     out_path: str,
 ) -> None:
-    """Triptych: source map, transmission map, and product."""
-    source_times_transmission_img = source_img * transmission_img
+    """Triptych: source map, transmission map, and product. The source and product
+    panels use a ZScale color stretch; the transmission panel uses the full range."""
+    source_img = np.asarray(source_img, dtype=float)
+    source_times_transmission_img = source_img * np.asarray(
+        transmission_img, dtype=float
+    )
+    zscale = ZScaleInterval()
     fig, axs = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-    im0 = axs[0].imshow(source_img, origin="lower", cmap="gray")
+    vmin, vmax = zscale.get_limits(source_img)
+    im0 = axs[0].imshow(source_img, origin="lower", cmap="gray", vmin=vmin, vmax=vmax)
     fig.suptitle(f"Source: {source_name}, idx_wavel: {wavel_idx}")
-    axs[0].set_title("Source")
+    axs[0].set_title("Source (ZScale)")
     axs[0].set_xlabel("x (pixel)")
     axs[0].set_ylabel("y (pixel)")
     fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04, label=f"{source_unit}")
@@ -63,21 +72,30 @@ def plot_source_transmission_triptych(
     axs[1].set_xlabel("x (pixel)")
     axs[1].set_ylabel("y (pixel)")
     fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04, label="transmission")
-    im2 = axs[2].imshow(source_times_transmission_img, origin="lower", cmap="gray")
+    vmin, vmax = zscale.get_limits(source_times_transmission_img)
+    im2 = axs[2].imshow(
+        source_times_transmission_img,
+        origin="lower",
+        cmap="gray",
+        vmin=vmin,
+        vmax=vmax,
+    )
     axs[2].set_title(
-        f"Source * Transmission ({screen_name})\n"
+        f"Source * Transmission ({screen_name}; ZScale)\n"
         f"({np.sum(source_times_transmission_img) / np.sum(source_img):.2f} "
         "transmitted; not chopped)"
     )
-    fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
+    axs[2].set_xlabel("x (pixel)")
+    axs[2].set_ylabel("y (pixel)")
+    fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04, label=f"{source_unit}")
     fig.savefig(out_path)
     plt.close(fig)
     logging.info("Saved source/transmission triptych to %s", out_path)
 
 
 def plot_pre_aperture_all_sources(
-    flux_by_source: Mapping[str, tuple],
-    config,
+    flux_by_source: Mapping[str, tuple[u.Quantity, u.Quantity]],
+    config: ConfigLike,
     out_path: str,
 ) -> None:
     """Overplot pre-screen incident fluxes for all included sources."""

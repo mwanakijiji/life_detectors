@@ -4,10 +4,11 @@ import configparser
 from typing import Optional
 
 from ..loader import config_getboolean
+from ..types import ConfigLike
 
 
 def _config_get(
-    config, section: str, key: str, default: Optional[str] = None
+    config: ConfigLike, section: str, key: str, default: Optional[str] = None
 ) -> Optional[str]:
     try:
         if isinstance(config, configparser.ConfigParser):
@@ -21,7 +22,7 @@ def _config_get(
     return default
 
 
-def _config_set_plot_title_context(config, value: str) -> None:
+def _config_set_plot_title_context(config: ConfigLike, value: str) -> None:
     if not value:
         return
     if isinstance(config, configparser.ConfigParser):
@@ -32,7 +33,7 @@ def _config_set_plot_title_context(config, value: str) -> None:
         config.setdefault("plotting", {})["title_context"] = value
 
 
-def _get_plot_title_context(config) -> str:
+def _get_plot_title_context(config: ConfigLike) -> str:
     if isinstance(config, configparser.ConfigParser):
         if config.has_section("plotting"):
             return config["plotting"].get("title_context", "").strip()
@@ -42,7 +43,7 @@ def _get_plot_title_context(config) -> str:
     return ""
 
 
-def build_system_params_title(config) -> str:
+def build_system_params_title(config: ConfigLike) -> str:
     """Plot-title text listing telescope and target parameters from the config."""
     lines = []
 
@@ -105,7 +106,7 @@ def build_system_params_title(config) -> str:
     return "\n".join(lines)
 
 
-def build_observation_detector_title(config) -> str:
+def build_observation_detector_title(config: ConfigLike) -> str:
     """Plot-title text listing observation and detector parameters from the config."""
     lines = []
 
@@ -149,7 +150,7 @@ def build_observation_detector_title(config) -> str:
     return "\n".join(lines)
 
 
-def ensure_plot_title_context(config) -> str:
+def ensure_plot_title_context(config: ConfigLike) -> str:
     """Return the cached plot-title context, building and caching it if absent."""
     existing = _get_plot_title_context(config)
     if existing:
@@ -163,7 +164,7 @@ def ensure_plot_title_context(config) -> str:
     return built
 
 
-def _config_section_keys(config, section: str) -> list[str]:
+def _config_section_keys(config: ConfigLike, section: str) -> list[str]:
     if isinstance(config, configparser.ConfigParser):
         if not config.has_section(section):
             return []
@@ -173,7 +174,7 @@ def _config_section_keys(config, section: str) -> list[str]:
     return []
 
 
-def build_astrophysical_sources_to_use_title(config) -> str:
+def build_astrophysical_sources_to_use_title(config: ConfigLike) -> str:
     """Format [astrophysical_sources_to_use] flags for plot title side column."""
     keys = _config_section_keys(config, "astrophysical_sources_to_use")
     if not keys:
@@ -205,7 +206,7 @@ def _join_two_column_text(left: str, right: str, gap: int = 4) -> str:
     return "\n".join(rows)
 
 
-def format_plot_title(base_title: str, config) -> str:
+def format_plot_title(base_title: str, config: ConfigLike) -> str:
     """Return base_title underlined, followed by the config context columns."""
     title_context = _get_plot_title_context(config)
     sources_context = build_astrophysical_sources_to_use_title(config)

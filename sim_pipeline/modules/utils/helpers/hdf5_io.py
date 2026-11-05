@@ -28,7 +28,7 @@ def _extracted_group_name(qe: float) -> str:
     return f"__extracted_qe_{canonical_qe(qe):04.2f}"
 
 
-def _to_value(quantity, unit: str) -> np.ndarray:
+def _to_value(quantity: u.Quantity | np.ndarray, unit: str) -> np.ndarray:
     return np.asarray(
         quantity.to_value(unit) if hasattr(quantity, "to_value") else quantity
     )

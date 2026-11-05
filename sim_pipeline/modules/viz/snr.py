@@ -5,17 +5,19 @@ from __future__ import annotations
 import logging
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from ..utils.helpers.formatting import format_plot_title
+from ..utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
 
 def plot_snr_vs_wavelength(
-    snr_lambda,
-    wavel_bin_edges,
+    snr_lambda: np.ndarray,
+    wavel_bin_edges: np.ndarray,
     base_title: str,
-    config,
+    config: ConfigLike,
     out_path: str,
 ) -> None:
     """Stairs plot of SNR vs wavelength for one DC/QE slot."""

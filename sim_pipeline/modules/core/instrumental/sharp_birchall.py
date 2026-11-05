@@ -54,7 +54,7 @@ class SharpBirchallExtractor:
 
     def __init__(
         self, profiles: np.ndarray, variance: np.ndarray, read_noise: float = 0.0
-    ):
+    ) -> None:
         self.phi = np.asarray(profiles, dtype=float)  # (i, j, k) = (spec, y, x)
         if self.phi.ndim != 3:
             raise ValueError("profiles must have shape (n_spec, ny, nx)")
@@ -129,7 +129,7 @@ class SharpBirchallExtractor:
 
 def rebin_columns_to_bins(
     fraction: np.ndarray, flux: np.ndarray, var: np.ndarray | None = None
-):
+) -> tuple[np.ndarray, np.ndarray | None]:
     """
     Rebin per-column values into wavelength bins.
 

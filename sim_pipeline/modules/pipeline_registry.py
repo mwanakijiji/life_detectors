@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
+
+# any callable; the decorator returns it unchanged, so its signature is kept
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @dataclass(frozen=True)
@@ -51,14 +54,14 @@ def pipeline_stage(
     cluster: Optional[str] = None,
     cluster_color: Optional[str] = None,
     planned: bool = False,
-):
+) -> Callable[[F], F]:
     """
     Register a callable as a pipeline stage for docs / discovery.
 
     ``depends_on`` lists immediate predecessor stage ids (DAG parents).
     """
 
-    def decorator(fn):
+    def decorator(fn: F) -> F:
         stage_id = name or fn.__name__
         _REGISTRY[stage_id] = StageSpec(
             id=stage_id,

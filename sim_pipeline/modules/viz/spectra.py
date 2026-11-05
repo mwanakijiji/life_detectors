@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,14 +44,14 @@ def plot_planet_population_sample(  # pragma: no cover
 
 
 def plot_luminosity_and_flux(  # pragma: no cover
-    wavelength_um,
-    luminosity,
-    flux,
+    wavelength_um: u.Quantity,
+    luminosity: u.Quantity,
+    flux: u.Quantity,
     title: str,
     out_path: str,
     *,
     log_x: bool = True,
-    xlim=None,
+    xlim: tuple[float, float] | None = None,
 ) -> None:
     """
     Twin-axis spectrum plot: luminosity (left, blue) and flux (right, red) vs
@@ -86,8 +87,8 @@ def plot_luminosity_and_flux(  # pragma: no cover
 
 
 def plot_zodiacal_emission_2d(  # pragma: no cover
-    wavelength_um,
-    wavelengths_to_plot_2d,
+    wavelength_um: u.Quantity,
+    wavelengths_to_plot_2d: Sequence[u.Quantity],
     maps_mjy_sr: dict,
     lambda_rel_lon_grid: np.ndarray,
     beta_lat_grid: np.ndarray,

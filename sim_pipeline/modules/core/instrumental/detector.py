@@ -5,11 +5,11 @@ law).
 from __future__ import annotations
 
 import logging
-from typing import Dict
 
 import astropy.units as u
 import numpy as np
 
+from ...utils.types import ConfigLike
 from .effects import DetectorFrames, _config_get
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def _parse_dark_current_rates(dark_current_str: str) -> np.ndarray:
     return np.fromstring(dark_current_str, sep=",")
 
 
-def detector_shape_from_config(config: Dict) -> tuple[int, int]:
+def detector_shape_from_config(config: ConfigLike) -> tuple[int, int]:
     """
     (n_pix_y, n_pix_x) from [detector] size_y and size_x; a single [detector] size
     (older configs) gives a square array.
@@ -49,7 +49,7 @@ def detector_shape_from_config(config: Dict) -> tuple[int, int]:
 class Detector:
     """Sensor model: geometry, quantum efficiency, gain, read noise and dark current."""
 
-    def __init__(self, config: Dict, num_wavel_bins: int):
+    def __init__(self, config: ConfigLike, num_wavel_bins: int) -> None:
         self.n_pix_y, self.n_pix_x = detector_shape_from_config(config)
         self.pitch_pix = float(config["detector"]["pitch_pix"])
         self.num_wavel_bins = num_wavel_bins
@@ -124,7 +124,7 @@ class Detector:
         cols = np.flatnonzero(on_footprint.any(axis=0))
         return int(rows[0]), int(rows[-1]) + 1, int(cols[0]), int(cols[-1]) + 1
 
-    def apply_qe(self, flux):
+    def apply_qe(self, flux: u.Quantity | np.ndarray) -> u.Quantity | np.ndarray:
         """Apply detector quantum efficiency to a photon-rate quantity or array."""
         return flux * self.quantum_efficiency
 

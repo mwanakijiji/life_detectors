@@ -5,23 +5,25 @@ from __future__ import annotations
 import logging
 from typing import Mapping, Sequence
 
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import LogLocator
 
 from ..utils.helpers.formatting import format_astro_source_label, format_plot_title
+from ..utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
 
 def plot_astro_ph_sec_pixel(
     channel_name: str,
-    bin_edges,
-    bin_centers,
-    signals_by_source: Mapping[str, object],
-    cumulative_signal,
-    y_unit,
-    config,
+    bin_edges: u.Quantity | np.ndarray,
+    bin_centers: u.Quantity,
+    signals_by_source: Mapping[str, np.ndarray],
+    cumulative_signal: np.ndarray,
+    y_unit: u.UnitBase,
+    config: ConfigLike,
     out_path: str,
 ) -> None:
     """Stairs plot of photon rate per pixel for one output channel."""
@@ -77,14 +79,14 @@ def plot_astro_ph_sec_pixel(
 
 
 def plot_integrated_flux_by_output(
-    flux_by_source: Mapping[str, tuple],
+    flux_by_source: Mapping[str, tuple[u.Quantity, u.Quantity]],
     output_name: str,
     title: str,
-    config,
+    config: ConfigLike,
     out_path: str,
 ) -> None:
     """Overplot spatially integrated flux vs wavelength for one output."""
-    fig, ax = plt.subplots(figsize=(10, 12))
+    fig, ax = plt.subplots(figsize=(30, 12))
     flux_unit = None
     wavel_unit = None
     for source_name, (wavel, flux_integrated) in flux_by_source.items():
@@ -98,21 +100,24 @@ def plot_integrated_flux_by_output(
     ax.set_xlabel(f"Wavelength ({wavel_unit})", fontsize=22)
     ax.set_ylabel(f"Flux ({flux_unit})", fontsize=22)
     ax.tick_params(axis="both", which="major", labelsize=18)
+    ax.legend(fontsize=18, loc="upper right")
+    # monospace keeps the space-padded columns of the title context aligned
     ax.set_title(
         format_plot_title(f"{title} — {output_name}", config),
         loc="left",
-        fontsize=2,
+        fontsize=16,
+        fontfamily="monospace",
     )
     fig.tight_layout()
-    fig.savefig(out_path)
+    fig.savefig(out_path, bbox_inches="tight", pad_inches=0.5)
     plt.close(fig)
     logging.info("Saved plot to %s", out_path)
 
 
 def plot_poster_post_aperture_flux(
-    flux_by_source: Mapping[str, tuple],
+    flux_by_source: Mapping[str, tuple[u.Quantity, u.Quantity]],
     output_name: str,
-    config,
+    config: ConfigLike,
     out_path: str,
 ) -> None:
     """Poster-style post-aperture flux panel for one output channel."""
@@ -158,9 +163,9 @@ def plot_poster_post_aperture_flux(
 
 
 def plot_beam_to_detector(
-    spectra_by_output: Mapping[str, Mapping[str, tuple]],
+    spectra_by_output: Mapping[str, Mapping[str, tuple[u.Quantity, u.Quantity]]],
     background_names: Sequence[str],
-    config,
+    config: ConfigLike,
     out_path: str,
     angle_deg: float | None = None,
 ) -> None:

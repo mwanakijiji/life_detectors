@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ConfigValidator:
     """Validates configuration dictionaries for the modules package."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the validator with required fields."""
         self.required_sections = [
             "telescope",
@@ -47,15 +47,15 @@ class ConfigValidator:
 
         self.required_wavelength_fields = ["min", "max", "n_points"]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: Dict[str, Any]) -> None:
         """
         Validate a configuration dictionary.
 
         Args:
             config: Configuration dictionary to validate
 
-        Returns:
-            List of validation error messages (empty if valid)
+        Problems are logged at ERROR level (nothing is returned); a value that cannot
+        be converted to float raises ValueError.
         """
 
         # Check for required sections
@@ -83,7 +83,7 @@ class ConfigValidator:
         if "astrophysical_sources" in config:
             self._validate_astrophysical_sources(config["astrophysical_sources"])
 
-    def _validate_telescope(self, telescope_config: Dict[str, Any]) -> List[str]:
+    def _validate_telescope(self, telescope_config: Dict[str, Any]) -> None:
         """Validate telescope configuration section."""
 
         for field in self.required_telescope_fields:
@@ -97,7 +97,7 @@ class ConfigValidator:
                         "Invalid telescope %s: must be positive number", field
                     )
 
-    def _validate_target(self, target_config: Dict[str, Any]) -> List[str]:
+    def _validate_target(self, target_config: Dict[str, Any]) -> None:
         """Validate target configuration section."""
 
         for field in self.required_target_fields:
@@ -109,16 +109,14 @@ class ConfigValidator:
                     # all values here should be convertable to floats
                     logging.error("Invalid target %s: must be positive number", field)
 
-    def _validate_detector(self, detector_config: Dict[str, Any]) -> List[str]:
+    def _validate_detector(self, detector_config: Dict[str, Any]) -> None:
         """Validate detector configuration section."""
 
         for field in self.required_detector_fields:
             if field not in detector_config:
                 logging.error("Missing detector field: %s", field)
 
-    def _validate_wavelength_range(
-        self, wavelength_config: Dict[str, Any]
-    ) -> List[str]:
+    def _validate_wavelength_range(self, wavelength_config: Dict[str, Any]) -> None:
         """Validate wavelength range configuration section."""
 
         for field in self.required_wavelength_fields:
@@ -136,9 +134,7 @@ class ConfigValidator:
             if float(wavelength_config["min"]) >= float(wavelength_config["max"]):
                 logging.error("wavelength_range min must be less than max")
 
-    def _validate_astrophysical_sources(
-        self, sources_config: Dict[str, Any]
-    ) -> List[str]:
+    def _validate_astrophysical_sources(self, sources_config: Dict[str, Any]) -> None:
         """Validate astrophysical sources configuration section."""
 
         expected_sources = ["star", "exoplanet", "exozodiacal", "zodiacal"]

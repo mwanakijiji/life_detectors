@@ -8,6 +8,7 @@ import numpy as np
 
 from ...pipeline_registry import pipeline_stage
 from ...utils.helpers.spectra import compute_collecting_area_m2
+from ...utils.types import ConfigLike
 from ...viz.aperture import (
     plot_beam_to_detector,
     plot_integrated_flux_by_output,
@@ -16,7 +17,7 @@ from ...viz.aperture import (
 from .effects import _config_get
 
 
-def _enabled_background_names(config) -> List[str]:
+def _enabled_background_names(config: ConfigLike) -> List[str]:
     raw = _config_get(config, "instrument_backgrounds", "enabled", "") or ""
     return [name.strip() for name in str(raw).split(",") if name.strip()]
 
@@ -26,7 +27,7 @@ class InstrumentBackground:
 
     name: str = "instrument_background"
 
-    def flux_ph_sec_um(self, wavel: u.Quantity, config) -> u.Quantity:
+    def flux_ph_sec_um(self, wavel: u.Quantity, config: ConfigLike) -> u.Quantity:
         """Return a 1D spectrum (ph / s / um) to inject into the post-aperture beam."""
         raise NotImplementedError
 
@@ -36,7 +37,7 @@ class TelescopeThermalBackground(InstrumentBackground):
 
     name = "telescope_thermal"
 
-    def flux_ph_sec_um(self, wavel: u.Quantity, config) -> u.Quantity:
+    def flux_ph_sec_um(self, wavel: u.Quantity, config: ConfigLike) -> u.Quantity:
         # Placeholder: zero thermal background until a physical model is filled in.
         return np.zeros(np.shape(wavel)) * u.ph / (u.s * u.um)
 
@@ -48,12 +49,12 @@ BACKGROUND_REGISTRY: dict[str, type[InstrumentBackground]] = {
 
 @pipeline_stage(depends_on=("pass_through_transmission_screens",))
 def pass_through_aperture(
-    config,
+    config: ConfigLike,
     sources_astroph: dict,
     sources_to_include: Sequence[str],
     prop_dict: dict,
     plot: bool = False,
-):
+) -> None:
     # pass each astrophysical source through the telescope aperture, and update
     # prop_dict with the propagated terms
     # photons/sec/m^2 -> photons/sec
@@ -101,7 +102,9 @@ def pass_through_aperture(
     if plot:  # pragma: no cover
         save_dir = str(config["dirs"]["save_s2n_data_unique_dir"])
 
-        def _flux_by_source_for_cube(cube_key):
+        def _flux_by_source_for_cube(
+            cube_key: str,
+        ) -> dict[str, tuple[u.Quantity, u.Quantity]]:
             flux_by_source = {}
             for source_name, source_val in prop_dict.items():
                 if source_name not in sources_to_include:
@@ -143,7 +146,9 @@ def pass_through_aperture(
     logging.info("Passed astrophysical flux through telescope aperture...")
 
 
-def _sky_integrated_spectra_by_output(prop_dict: dict, output_names) -> dict:
+def _sky_integrated_spectra_by_output(
+    prop_dict: dict, output_names: Sequence[str]
+) -> dict[str, dict[str, tuple[u.Quantity, u.Quantity]]]:
     """{output: {component: (wavel, flux summed over the sky plane, ph/s/um)}} for
     every prop_dict entry (astrophysical sources and instrument backgrounds)."""
     return {
@@ -163,12 +168,12 @@ def _sky_integrated_spectra_by_output(prop_dict: dict, output_names) -> dict:
 
 @pipeline_stage(depends_on=("pass_through_aperture",))
 def pass_from_aperture_to_detector(
-    config,
+    config: ConfigLike,
     prop_dict: dict,
     output_channels: dict,
-    instrument_backgrounds: Sequence = (),
+    instrument_backgrounds: Sequence[InstrumentBackground] = (),
     plot: bool = False,
-):
+) -> None:
     """
     Inject enabled ``InstrumentBackground`` spectra into the post-aperture
     beam (still in photon units). Detector QE is applied later in

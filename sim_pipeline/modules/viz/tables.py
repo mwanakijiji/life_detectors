@@ -7,13 +7,15 @@ from typing import Sequence
 
 import astropy.units as u
 import matplotlib.pyplot as plt
+import numpy as np
+from astropy.table import QTable
 
 logger = logging.getLogger(__name__)
 
 
 def plot_debug_final_table(
-    qt,
-    bin_edges,
+    qt: QTable,
+    bin_edges: u.Quantity | np.ndarray,
     output_name: str,
     dc_rate: float,
     sources_to_include: Sequence[str],

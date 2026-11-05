@@ -12,7 +12,7 @@ from batch_process import parameter_sweep
 from modules.utils import loader
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command-line arguments (config paths, output root, smoke test)."""
     parser = argparse.ArgumentParser(
         description="Run a LIFE detector parameter sweep with explicit config paths."
@@ -48,7 +48,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Run a parameter sweep from the command line,
     optionally clearing old HDF5 files.
     """

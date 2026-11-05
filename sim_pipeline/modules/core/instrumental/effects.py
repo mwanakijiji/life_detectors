@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
 
 from ...pipeline_registry import pipeline_stage
+from ...utils.types import ConfigLike
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,9 @@ logger = logging.getLogger(__name__)
 _DETECTOR_NOISE_PARAMS = ("readnoise", "dark_current")
 
 
-def _config_get(config, section: str, key: str, default=None):
+def _config_get(
+    config: ConfigLike, section: str, key: str, default: Any = None
+) -> Any:
     """Read a key from dict-like or ConfigParser configs."""
     if isinstance(config, dict):
         section_data = config.get(section, {})
@@ -31,7 +34,7 @@ def _config_get(config, section: str, key: str, default=None):
     return default
 
 
-def _enabled_effect_names(config) -> List[str]:
+def _enabled_effect_names(config: ConfigLike) -> List[str]:
     raw = _config_get(config, "detector_systematics", "enabled", "") or ""
     return [name.strip() for name in str(raw).split(",") if name.strip()]
 
@@ -63,7 +66,7 @@ class DetectorEffect:
 
     name: str = "detector_effect"
 
-    def __init__(self, config):
+    def __init__(self, config: ConfigLike) -> None:
         self.config = config
 
     def apply(self, frames: DetectorFrames, readout_index: int) -> None:
@@ -79,7 +82,7 @@ class AdditiveMapEffect(DetectorEffect):
 
     file_key: str = ""
 
-    def __init__(self, config):
+    def __init__(self, config: ConfigLike) -> None:
         super().__init__(config)
         file_path = _config_get(config, "detector_systematics", self.file_key)
         if not file_path:
@@ -194,7 +197,7 @@ EFFECT_REGISTRY: dict[str, type[DetectorEffect]] = {
 }
 
 
-def build_detector_effects(config) -> List[DetectorEffect]:
+def build_detector_effects(config: ConfigLike) -> List[DetectorEffect]:
     """Instantiate effects in the order listed in ``[detector_systematics] enabled``."""
     effects: List[DetectorEffect] = []
     for effect_name in _enabled_effect_names(config):
