@@ -25,9 +25,13 @@ Comment convention at each call below:
 import configparser
 import copy
 import logging
+import multiprocessing
 import os
+import sys
 import time
 import uuid
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 
@@ -65,6 +69,7 @@ from modules.utils.helpers.config_ops import (
     smoke_test_limits,
 )
 from modules.utils.helpers.formatting import ensure_plot_title_context
+from modules.utils.helpers.wavelengths import incident_cube_wavelengths
 from modules.utils.helpers.hdf5_io import record_info_at_angle_and_qe
 from modules.utils.helpers.keys import (
     format_angle_qe_fits_readouts_name,
@@ -105,6 +110,488 @@ def _new_run_root_if_generating(
         return output_root
     base = output_root or str(config["dirs"]["save_s2n_data_unique_dir"])
     return make_run_root(base)
+
+
+@dataclass
+class _AngleRunContext:
+    """Read-only state shared by every angle of one run_single_calculation call
+    (each angle works on its own copies of the mutable parts; see
+    _process_one_angle)."""
+
+    config: configparser.ConfigParser
+    instrument_dep_terms: InstrumentDepTerms
+    sources_astroph_pristine: dict
+    astro_scene_perfect_no_screen: dict
+    qe: float
+    override_stellar_mask: bool
+    plot: bool
+    run_limits: dict
+
+
+# state of an angle worker process, set once per worker by _init_angle_worker
+_WORKER_CONTEXT: Optional[_AngleRunContext] = None
+
+
+class _AnglePrefixFilter(logging.Filter):
+    """Prefix log messages from an angle worker with the angle being simulated, so
+    interleaved lines from parallel workers can be told apart."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.angle_deg: Optional[float] = None
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # a record passes through every handler; prefix it only once
+        if self.angle_deg is not None and not getattr(record, "_angle_prefixed", False):
+            record.msg = f"[angle {self.angle_deg:06.2f}] {record.msg}"
+            record._angle_prefixed = True
+        return True
+
+
+_ANGLE_LOG_FILTER = _AnglePrefixFilter()
+
+
+def _limit_blas_threads(n_threads: int) -> None:
+    """Cap the BLAS/OpenMP threads of this process (avoids oversubscribing the CPUs
+    when several worker processes each run multithreaded numpy)."""
+    try:
+        import mkl  # pylint: disable=import-outside-toplevel
+
+        mkl.set_num_threads(n_threads)
+        return
+    except ImportError:
+        pass
+    try:
+        # pylint: disable-next=import-outside-toplevel
+        from threadpoolctl import threadpool_limits
+
+        threadpool_limits(limits=n_threads)
+    except ImportError:
+        logger.debug(
+            "Neither mkl-service nor threadpoolctl is installed; BLAS threads of "
+            "worker processes are not capped"
+        )
+
+
+def _init_angle_worker(ctx: _AngleRunContext, log_files: List[str]) -> None:
+    """Initializer of each angle worker process: keep the shared context, cap BLAS
+    threads, and log to the same file(s) as the parent."""
+    global _WORKER_CONTEXT  # pylint: disable=global-statement
+    _WORKER_CONTEXT = ctx
+    _limit_blas_threads(1)
+
+    root = logging.getLogger()
+    # forked workers inherit the parent's handlers; spawned ones start with none
+    if not any(loader.writes_to_log_file(h) for h in root.handlers):
+        formatter = logging.Formatter(loader.LOG_FORMAT)
+        handlers: List[logging.Handler] = [logging.StreamHandler()]
+        handlers += [logging.FileHandler(f, mode="a") for f in log_files]
+        for handler in handlers:
+            handler.setFormatter(formatter)
+            root.addHandler(handler)
+        root.setLevel(logging.INFO)
+    for handler in root.handlers:
+        handler.addFilter(_ANGLE_LOG_FILTER)
+
+
+def _run_angle_in_worker(i_angle: int, angle_deg: float) -> tuple[float, float]:
+    """Task run in an angle worker: simulate one angle; return (angle, seconds)."""
+    _ANGLE_LOG_FILTER.angle_deg = float(angle_deg)
+    time_0 = time.time()
+    _process_one_angle(_WORKER_CONTEXT, i_angle, angle_deg)
+    return float(angle_deg), time.time() - time_0
+
+
+def _n_cpus_from_config(config: configparser.ConfigParser) -> int:
+    """[compute] n_cpus: number of worker processes for the angle loop (default 1 =
+    serial, in this process); capped at the number of CPUs of this machine."""
+    n_cpus = config.getint("compute", "n_cpus", fallback=1)
+    if n_cpus < 1:
+        logger.warning("[compute] n_cpus = %d is < 1; running serially", n_cpus)
+        return 1
+    n_available = os.cpu_count() or 1
+    if n_cpus > n_available:
+        logger.warning(
+            "[compute] n_cpus = %d exceeds the %d CPUs of this machine; using %d",
+            n_cpus,
+            n_available,
+            n_available,
+        )
+        return n_available
+    return n_cpus
+
+
+def _mp_start_method_from_config(config: configparser.ConfigParser) -> str:
+    """[compute] mp_start_method, default fork where available (workers share the
+    parent's arrays copy-on-write) except on macOS (fork is unsafe there), else
+    spawn (the context is pickled to each worker once)."""
+    available = multiprocessing.get_all_start_methods()
+    default = "fork" if "fork" in available and sys.platform != "darwin" else "spawn"
+    method = config.get("compute", "mp_start_method", fallback=default).strip()
+    if method not in available:
+        logger.warning(
+            "[compute] mp_start_method = %r is not available here (%s); using %r",
+            method,
+            available,
+            default,
+        )
+        return default
+    return method
+
+
+def _available_memory_bytes() -> Optional[int]:
+    """MemAvailable from /proc/meminfo (Linux), or None if unknown."""
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as file:
+            for line in file:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return None
+
+
+def _warn_if_workers_exceed_memory(ctx: _AngleRunContext, n_workers: int) -> None:
+    """Log a rough per-worker memory estimate for one angle, and warn if n_workers of
+    them would not fit in the available memory. Estimate: the transmission-screen
+    cube (6 slices) plus, per scene source, ~12 cube-sized arrays (post-screen and
+    post-aperture cubes for 4 outputs, and temporaries); calibrated on a serial run
+    (n_pix = 1001, 100 wavelengths, 2 sources, polychromatic: ~24 GB peak)."""
+    n_pix = int(ctx.config["onsky_scene"]["n_pix"])
+    n_wavel = int(incident_cube_wavelengths(ctx.config).size)
+    polychromatic = (
+        str(ctx.config["telescope"].get("transmission_wavel_m", "11e-6")).strip()
+        == "polychromatic"
+    )
+    n_sources = max(1, len(ctx.astro_scene_perfect_no_screen))
+    cube_bytes = 8 * n_pix * n_pix * n_wavel
+    screen_bytes = 6 * 8 * n_pix * n_pix * (n_wavel if polychromatic else 1)
+    per_worker = screen_bytes + 12 * n_sources * cube_bytes
+    available = _available_memory_bytes()
+    logger.info(
+        "Estimated memory per angle worker: ~%.1f GB (x %d workers = ~%.1f GB; "
+        "available: %s)",
+        per_worker / 1e9,
+        n_workers,
+        n_workers * per_worker / 1e9,
+        f"{available / 1e9:.1f} GB" if available is not None else "unknown",
+    )
+    if available is not None and n_workers * per_worker > available:
+        logger.warning(
+            "[compute] n_cpus = %d workers may need more memory than is available "
+            "(~%.1f GB vs %.1f GB); consider n_cpus <= %d",
+            n_workers,
+            n_workers * per_worker / 1e9,
+            available / 1e9,
+            max(1, int(available // per_worker)),
+        )
+
+
+def _run_angles(ctx: _AngleRunContext, angles_deg: np.ndarray) -> None:
+    """
+    Simulate every angle (_process_one_angle): serially in this process if
+    [compute] n_cpus = 1, else on a pool of n_cpus worker processes (each angle
+    writes its own files, so the order does not matter). A failure in any angle is
+    raised here, after the pending angles are cancelled.
+    """
+    n_workers = min(_n_cpus_from_config(ctx.config), len(angles_deg))
+    if n_workers <= 1:
+        for i_angle, angle_deg in enumerate(angles_deg):
+            _process_one_angle(ctx, i_angle, angle_deg)
+        return
+
+    start_method = _mp_start_method_from_config(ctx.config)
+    logger.info(
+        "Simulating %d angles on %d worker processes (start method %r)",
+        len(angles_deg),
+        n_workers,
+        start_method,
+    )
+    _warn_if_workers_exceed_memory(ctx, n_workers)
+    log_files = [
+        h.baseFilename
+        for h in logging.getLogger().handlers
+        if loader.writes_to_log_file(h)
+    ]
+    time_0 = time.time()
+    pool = ProcessPoolExecutor(
+        max_workers=n_workers,
+        mp_context=multiprocessing.get_context(start_method),
+        initializer=_init_angle_worker,
+        initargs=(ctx, log_files),
+    )
+    try:
+        futures = [
+            pool.submit(_run_angle_in_worker, i_angle, angle_deg)
+            for i_angle, angle_deg in enumerate(angles_deg)
+        ]
+        for n_done, future in enumerate(as_completed(futures), start=1):
+            angle_deg, seconds = future.result()  # re-raises a worker's exception
+            logger.info(
+                "Angle %.2f deg done in %.1f s (%d/%d)",
+                angle_deg,
+                seconds,
+                n_done,
+                len(angles_deg),
+            )
+    except BaseException:
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+    logger.info(
+        "All %d angles done in %.1f s on %d workers",
+        len(angles_deg),
+        time.time() - time_0,
+        n_workers,
+    )
+
+
+def _process_one_angle(ctx: _AngleRunContext, i_angle: int, angle_deg: float) -> None:
+    """
+    Simulate one rotation angle of the transmission screens: screens -> aperture ->
+    detector -> readouts -> extraction, writing this angle's readout FITS and HDF5
+    file. Angles are independent of each other (all mutable pipeline state is reset
+    at the start), so they can run in any order, in this process or in worker
+    processes (see _run_angles).
+    """
+    config = ctx.config
+    instrument_dep_terms = ctx.instrument_dep_terms
+    sources_astroph_pristine = ctx.sources_astroph_pristine
+    astro_scene_perfect_no_screen = ctx.astro_scene_perfect_no_screen
+    qe = ctx.qe
+    override_stellar_mask = ctx.override_stellar_mask
+    plot = ctx.plot
+    run_limits = ctx.run_limits
+
+
+    # Reset mutable pipeline state
+    instrument_dep_terms.sources_astroph = copy.deepcopy(
+        sources_astroph_pristine
+    )
+    instrument_dep_terms.prop_dict = (
+        {}
+    )  # dict to hold astrophysical terms as propagated through the instrument
+
+    # reset the OutputChannel objects for this new angle
+    for ch in instrument_dep_terms.output_channels.values():
+        ch.angle_deg = angle_deg
+        ch.astroph_signal.clear()
+        ch.readout_frames.clear()
+        ch.extracted_spectra_adu.clear()
+        ch.extracted_error_adu = None
+        ch.extracted_vark_adu2 = None
+    for effect in instrument_dep_terms.detector_effects:
+        # ( clears per-angle effect state, e.g. persistence; nothing written )
+        effect.reset()
+
+    # generate the transmission screens specific to this angle (one per output)
+    logger.info("Generating transmission screens ... ")
+    # ( returns numpy array with slices (ch1, ch2, ch3, ch4, grad_y, grad_x),
+    #   shape (6, n_pix, n_pix), or (6, n_wavel, n_pix, n_pix) if
+    #   [telescope] transmission_wavel_m = polychromatic (one screen per
+    #   wavelength of the scene cubes) )
+    # ( screens from the aperture-array YAML phases, normalised, rotated by
+    #   angle_deg (exactly, by rotating the aperture positions); dark outputs
+    #   get a small manual stellar mask if override_stellar_mask )
+    # FYI out: log "Normalized transmission instrument response ...",
+    #          "Star is manually being nulled to ... on output_3/4_dark";
+    #          plot only:
+    #          {int}transmission_instrument_response_angle_<angle>.fits
+    #          (HDUs OUTPUT_1_BRIGHT, OUTPUT_2_BRIGHT, OUTPUT_3_DARK,
+    #          OUTPUT_4_DARK (cubes if polychromatic), YY_ARCSEC, XX_ARCSEC,
+    #          each with QUANTITY and BUNIT, and a WAVELENGTH table if
+    #          polychromatic; PRIMARY header ANGLE, WAVEL_M, NWAVEL, NORMALIZ,
+    #          STARMASK) and {int}differential_dark_angle_<angle>.fits
+    #          (output 3 - 4); log "Saved transmission instrument responses ..."
+    transmission_wavel = str(
+        config["telescope"].get("transmission_wavel_m", "11e-6")
+    ).strip()
+    transmission_screens = (
+        instrument_dep_terms.generate_instrument_transmission(
+            wavel_m = (
+                transmission_wavel
+                if transmission_wavel == "polychromatic"
+                else float(transmission_wavel)
+            ),
+            override_stellar_mask = override_stellar_mask,
+            angle_deg = angle_deg,
+            plot = plot,
+        )
+    )
+
+    # pass astrophysical scene through transmission screens
+    logger.info("Passing astrophysical flux through transmission screens ...")
+    # ( updates instrument_dep_terms.sources_astroph in place )
+    # ( adds per source, per output: "flux_cube_post_screen_ph_sec_m2_um"
+    #   (scene x screen) and "flux_integrated_post_screen_ph_sec_m2_um"
+    #   (summed over the sky) )
+    # FYI out: log "Flux of <source> passed through transmission screen <out>";
+    #          plot only, per source:
+    #          {fyi}flux_of_<source>_passed_through_transmission_screens
+    #          _angle_<angle>.png and
+    #          {fyi}source_transmission_map_triptych_<source>_angle_<angle>
+    #          _output_<out>.png (x4, wavelength slice 15); plus
+    #          {fyi}photoelectrons_all_sources_pre_aperture.png
+    instrument_dep_terms.pass_through_transmission_screens(
+        fyi_angle = angle_deg,
+        source_dict_pre_screen = astro_scene_perfect_no_screen,
+        transmission_screens = transmission_screens,
+        plot = plot,
+    )
+
+    # Pass through telescope aperture
+    # output units: photons/sec/etc.
+    logger.info(
+        "Passing through telescope aperture (incl. telescope throughput)..."
+    )
+    # ( fills instrument_dep_terms.prop_dict[source] with
+    #   "flux_cube_post_screen_post_aperture_ph_sec_um" = eta_t x collecting
+    #   area x post-screen cube, per output (ph/s/m^2/um -> ph/s/um) )
+    # FYI out: log "Passed astrophysical flux through telescope aperture...";
+    #          plot only, per output:
+    #          {fyi}flux_all_sources_post_screen_pre_aperture_<out>.png,
+    #          {fyi}flux_all_sources_post_screen_post_aperture_<out>.png,
+    #          {fyi}poster_post_aperture_flux_<out>.pdf
+    instrument_dep_terms.pass_through_aperture(plot=plot)
+
+    # Pass from aperture to detector
+    logger.info("Passing from aperture to detector...")
+    # ( adds each enabled instrument background as its own prop_dict entry,
+    #   spread uniformly over the sky plane (telescope_thermal is zeros for
+    #   now) )
+    # FYI out: log "Added instrument background '<name>' into post-aperture
+    #          beam"; WARNING if prop_dict is empty;
+    #          plot only: {fyi}beam_to_detector_angle_<angle>.png (one
+    #          panel per output: sky-summed ph/s/um of each source (solid),
+    #          each instrument background (dashed) and the total, plus the
+    #          band-integrated background fraction of the total)
+    instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
+
+    # disperse astrophysical signals (i.e., update the
+    # OutputChannel objects; note that input astrophysical signals should still
+    # be photons, not electrons)
+    # output units:
+    #   ph/sec/um
+    #   ph/sec/wavel_bin
+    #   ph/sec/pix
+    logger.info("Dispersing spectral signals ...")
+    # ( per channel, using the footprint set by define_dispersion above: sums
+    #   each source over the sky, rebins onto the channel's wavelength bins,
+    #   applies QE, and stores channel.astroph_signal[source] (per um, per
+    #   bin, per pixel, n_pix_per_wavel_bin) )
+    # FYI out: log "Dispersing signals on detector for <channel>",
+    #          "Number of frames at this angle position: ...";
+    #          plot only, per channel:
+    #          {int}astro_ph_sec_pixel_<channel>_angle_<angle>.csv (ph/s/pix
+    #          per source + cumulative) and
+    #          {fyi}astro_ph_sec_pixel_<channel>_angle_<angle>.pdf
+    instrument_dep_terms.disperse_astro_signals(plot=plot)
+
+    # expose 2D detector frames per readout and apply detector effects
+    logger.info(
+        "Exposing detector to science signal and stamping detector effects to readout frames ..."
+        )
+    # ( per channel and readout ([observation] N_int_per_angle): exposes the
+    #   detector for t_int_frame (DetectorFrames: source_e, systematics_e,
+    #   total_e) and runs each effect; stores channel.readout_frames )
+    # FYI out: log "Applied <n> detector effect(s) over <n> readout(s) for
+    #          <channel>"
+    instrument_dep_terms.expose_plus_detector_effects()
+
+    # write the detector readouts to FITS (one HDU per output channel):
+    # a cutout around the spectral trace at every angle, plus one full-frame
+    # example (unless switched off, e.g. in smoke-test mode)
+    save_dir = output_dir(config, INTERMEDIATE)
+    header_cards = {"ANGLE": float(angle_deg), "QE": float(qe)}
+    if i_angle == 0 and run_limits["write_full_frame_example"]:
+        full_example_file_name = save_dir + format_qe_fits_full_example_name(qe)
+        logger.info(
+            "Writing full-frame example readouts to %s ...",
+            full_example_file_name,
+        )
+        # ( writes the full detector frames (first angle only); HDUs CH1BR,
+        #   CH2BR, CH3DK, CH4DK, each (n_components, n_readouts, ny, nx) in
+        #   ADU; header COMP0.., GAIN, TFRAME, ANGLE, QE )
+        # FYI out: {int}readouts_full_example_qe_<qe>.fits;
+        #          log "Wrote detector readouts to ..." (+ size, below)
+        instrument_dep_terms.write_detector_readouts(
+            full_example_file_name, header_cards=header_cards, cutout=False
+        )
+        size_str = (
+            f"{os.path.getsize(full_example_file_name) / 1e6:.1f} MB"
+            if os.path.exists(full_example_file_name)
+            else "size unknown"
+        )
+        logger.info(
+            "Full-frame example readouts (angle %.2f deg; one HDU per channel: "
+            "%s) "
+            "written to %s (%s)",
+            angle_deg,
+            ", ".join(FITS_CHANNEL_NAMES.values()),
+            os.path.abspath(full_example_file_name),
+            size_str,
+        )
+
+    readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
+        angle_deg, qe
+    )
+    logger.info(
+        "Writing detector readout cutouts to %s ...", readouts_file_name
+    )
+    # ( same as above, but only the trace's bounding box plus [detector]
+    #   buffer_footprint (header Y0, X0, BUFFY, BUFFX, FULLNY, FULLNX);
+    #   remembered as the file the extraction reads )
+    # FYI out: {int}readouts_angle_<angle>_qe_<qe>.fits;
+    #          log "Wrote detector readouts to ..."
+    instrument_dep_terms.write_detector_readouts(
+        readouts_file_name, header_cards=header_cards, cutout=True
+    )
+
+    # extract counts vs. wavelength from the readouts ([extraction] method:
+    # Sharp & Birchall or box sum), and put them on the wavelength solution
+    logger.info("Extracting spectra from detector readouts ...")
+    # ( reads the cutout FITS back and extracts, per channel and component,
+    #   spectra of shape (n_dc, n_readouts, n_bins) in ADU, one slice per
+    #   [detector] dark-current value; sets extracted_spectra_adu, and (S&B
+    #   only) extracted_errors_adu = {"error", "vark"};
+    #   then reads the wavelength solution (first angle only; [extraction]
+    #   file_name_wavel_solution_read, else file_name_wavel_solution_write)
+    #   and sets extracted_spectra_wavel[channel] = {"wavel", "wavel_lo",
+    #   "wavel_hi", "width", "spectra_adu", "spectra_adu_per_um", "error_adu",
+    #   "error_adu_per_um"} )
+    # FYI out: log "Extracted spectra (<method>) from detector readouts in ...";
+    #          WARNING that S&B variances are modelled from noiseless frames;
+    #          WARNING if several read-noise values; WARNING "Sharp & Birchall
+    #          solve failed in column ..." on singular columns;
+    #          log "Read wavelength solution (<n> bins, ...) from ..." (or
+    #          WARNING "Wavelength solution file ... not found" -> channel
+    #          bins used);
+    #          plot only: {fyi}extracted_spectra_angle_<angle>.png (one
+    #          panel per channel: each component + total vs. wavelength, first
+    #          readout and DC value, 1-sigma band for S&B)
+    instrument_dep_terms.extract_spectra_from_readouts(plot=plot)
+
+    # write condensed information at this transmission screen angle (to avoid
+    # mem leak)
+    # ( writes the extracted spectra for this angle: group __extracted_qe_<qe>
+    #   with dc_rates, bin geometry (npix, center, width, edges), the
+    #   wavelength solution used (x_start_pix, x_end_pix, wavel_per_column;
+    #   attr wavel_solution_file), <channel>/<component> (n_dc, n_read,
+    #   n_bins) in ADU, __error_total, __vark_total, and the same in electrons
+    #   under <channel>/__electrons/ )
+    # FYI out: {int}angle_<angle>_qe_<qe>.hdf5;
+    #          log "Recorded angle ...: extracted spectra in <file>:<group>"
+    record_info_at_angle_and_qe(
+        angle_deg=angle_deg,
+        qe=qe,
+        output_channels=instrument_dep_terms.output_channels,
+        save_dir=save_dir,
+        t_frame=float(config["observation"]["t_int_frame"]) * u.second,
+        extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
+        extracted_errors_adu=instrument_dep_terms.extracted_errors_adu,
+        extraction_method=instrument_dep_terms.extraction_method,
+        wavel_solution=instrument_dep_terms.wavel_solution,
+    )
 
 
 def run_single_calculation(
@@ -445,236 +932,22 @@ def run_single_calculation(
         angles_deg = np.linspace(
             0, 360, num=int(config["observation"]["N_angles"]), endpoint=False
         )
-        # loop over angles
-        for i_angle, angle_deg in enumerate(angles_deg):
-            # Reset mutable pipeline state
-            instrument_dep_terms.sources_astroph = copy.deepcopy(
-                sources_astroph_pristine
-            )
-            instrument_dep_terms.prop_dict = (
-                {}
-            )  # dict to hold astrophysical terms as propagated through the instrument
-
-            # reset the OutputChannel objects for this new angle
-            for ch in instrument_dep_terms.output_channels.values():
-                ch.angle_deg = angle_deg
-                ch.astroph_signal.clear()
-                ch.readout_frames.clear()
-                ch.extracted_spectra_adu.clear()
-                ch.extracted_error_adu = None
-                ch.extracted_vark_adu2 = None
-            for effect in instrument_dep_terms.detector_effects:
-                # ( clears per-angle effect state, e.g. persistence; nothing written )
-                effect.reset()
-
-            # generate the transmission screens specific to this angle (one per output)
-            logger.info("Generating transmission screens ... ")
-            # ( returns numpy array with slices (ch1, ch2, ch3, ch4, grad_y, grad_x),
-            #   shape (6, n_pix, n_pix), or (6, n_wavel, n_pix, n_pix) if
-            #   [telescope] transmission_wavel_m = polychromatic (one screen per
-            #   wavelength of the scene cubes) )
-            # ( screens from the aperture-array YAML phases, normalised, rotated by
-            #   angle_deg (exactly, by rotating the aperture positions); dark outputs
-            #   get a small manual stellar mask if override_stellar_mask )
-            # FYI out: log "Normalized transmission instrument response ...",
-            #          "Star is manually being nulled to ... on output_3/4_dark";
-            #          plot only:
-            #          {int}transmission_instrument_response_angle_<angle>.fits
-            #          (HDUs OUTPUT_1_BRIGHT, OUTPUT_2_BRIGHT, OUTPUT_3_DARK,
-            #          OUTPUT_4_DARK (cubes if polychromatic), YY_ARCSEC, XX_ARCSEC,
-            #          each with QUANTITY and BUNIT, and a WAVELENGTH table if
-            #          polychromatic; PRIMARY header ANGLE, WAVEL_M, NWAVEL, NORMALIZ,
-            #          STARMASK) and {int}differential_dark_angle_<angle>.fits
-            #          (output 3 - 4); log "Saved transmission instrument responses ..."
-            transmission_wavel = str(
-                config["telescope"].get("transmission_wavel_m", "11e-6")
-            ).strip()
-            transmission_screens = (
-                instrument_dep_terms.generate_instrument_transmission(
-                    wavel_m = (
-                        transmission_wavel
-                        if transmission_wavel == "polychromatic"
-                        else float(transmission_wavel)
-                    ),
-                    override_stellar_mask = override_stellar_mask,
-                    angle_deg = angle_deg,
-                    plot = plot,
-                )
-            )
-
-            # pass astrophysical scene through transmission screens
-            logger.info("Passing astrophysical flux through transmission screens ...")
-            # ( updates instrument_dep_terms.sources_astroph in place )
-            # ( adds per source, per output: "flux_cube_post_screen_ph_sec_m2_um"
-            #   (scene x screen) and "flux_integrated_post_screen_ph_sec_m2_um"
-            #   (summed over the sky) )
-            # FYI out: log "Flux of <source> passed through transmission screen <out>";
-            #          plot only, per source:
-            #          {fyi}flux_of_<source>_passed_through_transmission_screens
-            #          _angle_<angle>.png and
-            #          {fyi}source_transmission_map_triptych_<source>_angle_<angle>
-            #          _output_<out>.png (x4, wavelength slice 15); plus
-            #          {fyi}photoelectrons_all_sources_pre_aperture.png
-            instrument_dep_terms.pass_through_transmission_screens(
-                fyi_angle = angle_deg,
-                source_dict_pre_screen = astro_scene_perfect_no_screen,
-                transmission_screens = transmission_screens,
-                plot = plot,
-            )
-
-            # Pass through telescope aperture
-            # output units: photons/sec/etc.
-            logger.info(
-                "Passing through telescope aperture (incl. telescope throughput)..."
-            )
-            # ( fills instrument_dep_terms.prop_dict[source] with
-            #   "flux_cube_post_screen_post_aperture_ph_sec_um" = eta_t x collecting
-            #   area x post-screen cube, per output (ph/s/m^2/um -> ph/s/um) )
-            # FYI out: log "Passed astrophysical flux through telescope aperture...";
-            #          plot only, per output:
-            #          {fyi}flux_all_sources_post_screen_pre_aperture_<out>.png,
-            #          {fyi}flux_all_sources_post_screen_post_aperture_<out>.png,
-            #          {fyi}poster_post_aperture_flux_<out>.pdf
-            instrument_dep_terms.pass_through_aperture(plot=plot)
-
-            # Pass from aperture to detector
-            logger.info("Passing from aperture to detector...")
-            # ( adds each enabled instrument background as its own prop_dict entry,
-            #   spread uniformly over the sky plane (telescope_thermal is zeros for
-            #   now) )
-            # FYI out: log "Added instrument background '<name>' into post-aperture
-            #          beam"; WARNING if prop_dict is empty;
-            #          plot only: {fyi}beam_to_detector_angle_<angle>.png (one
-            #          panel per output: sky-summed ph/s/um of each source (solid),
-            #          each instrument background (dashed) and the total, plus the
-            #          band-integrated background fraction of the total)
-            instrument_dep_terms.pass_from_aperture_to_detector(plot=plot)
-
-            # disperse astrophysical signals (i.e., update the
-            # OutputChannel objects; note that input astrophysical signals should still
-            # be photons, not electrons)
-            # output units:
-            #   ph/sec/um
-            #   ph/sec/wavel_bin
-            #   ph/sec/pix
-            logger.info("Dispersing spectral signals ...")
-            # ( per channel, using the footprint set by define_dispersion above: sums
-            #   each source over the sky, rebins onto the channel's wavelength bins,
-            #   applies QE, and stores channel.astroph_signal[source] (per um, per
-            #   bin, per pixel, n_pix_per_wavel_bin) )
-            # FYI out: log "Dispersing signals on detector for <channel>",
-            #          "Number of frames at this angle position: ...";
-            #          plot only, per channel:
-            #          {int}astro_ph_sec_pixel_<channel>_angle_<angle>.csv (ph/s/pix
-            #          per source + cumulative) and
-            #          {fyi}astro_ph_sec_pixel_<channel>_angle_<angle>.pdf
-            instrument_dep_terms.disperse_astro_signals(plot=plot)
-
-            # expose 2D detector frames per readout and apply detector effects
-            logger.info(
-                "Exposing detector to science signal and stamping detector effects to readout frames ..."
-                )
-            # ( per channel and readout ([observation] N_int_per_angle): exposes the
-            #   detector for t_int_frame (DetectorFrames: source_e, systematics_e,
-            #   total_e) and runs each effect; stores channel.readout_frames )
-            # FYI out: log "Applied <n> detector effect(s) over <n> readout(s) for
-            #          <channel>"
-            instrument_dep_terms.expose_plus_detector_effects()
-
-            # write the detector readouts to FITS (one HDU per output channel):
-            # a cutout around the spectral trace at every angle, plus one full-frame
-            # example (unless switched off, e.g. in smoke-test mode)
-            save_dir = output_dir(config, INTERMEDIATE)
-            header_cards = {"ANGLE": float(angle_deg), "QE": float(qe)}
-            if i_angle == 0 and run_limits["write_full_frame_example"]:
-                full_example_file_name = save_dir + format_qe_fits_full_example_name(qe)
-                logger.info(
-                    "Writing full-frame example readouts to %s ...",
-                    full_example_file_name,
-                )
-                # ( writes the full detector frames (first angle only); HDUs CH1BR,
-                #   CH2BR, CH3DK, CH4DK, each (n_components, n_readouts, ny, nx) in
-                #   ADU; header COMP0.., GAIN, TFRAME, ANGLE, QE )
-                # FYI out: {int}readouts_full_example_qe_<qe>.fits;
-                #          log "Wrote detector readouts to ..." (+ size, below)
-                instrument_dep_terms.write_detector_readouts(
-                    full_example_file_name, header_cards=header_cards, cutout=False
-                )
-                size_str = (
-                    f"{os.path.getsize(full_example_file_name) / 1e6:.1f} MB"
-                    if os.path.exists(full_example_file_name)
-                    else "size unknown"
-                )
-                logger.info(
-                    "Full-frame example readouts (angle %.2f deg; one HDU per channel: "
-                    "%s) "
-                    "written to %s (%s)",
-                    angle_deg,
-                    ", ".join(FITS_CHANNEL_NAMES.values()),
-                    os.path.abspath(full_example_file_name),
-                    size_str,
-                )
-
-            readouts_file_name = save_dir + format_angle_qe_fits_readouts_name(
-                angle_deg, qe
-            )
-            logger.info(
-                "Writing detector readout cutouts to %s ...", readouts_file_name
-            )
-            # ( same as above, but only the trace's bounding box plus [detector]
-            #   buffer_footprint (header Y0, X0, BUFFY, BUFFX, FULLNY, FULLNX);
-            #   remembered as the file the extraction reads )
-            # FYI out: {int}readouts_angle_<angle>_qe_<qe>.fits;
-            #          log "Wrote detector readouts to ..."
-            instrument_dep_terms.write_detector_readouts(
-                readouts_file_name, header_cards=header_cards, cutout=True
-            )
-
-            # extract counts vs. wavelength from the readouts ([extraction] method:
-            # Sharp & Birchall or box sum), and put them on the wavelength solution
-            logger.info("Extracting spectra from detector readouts ...")
-            # ( reads the cutout FITS back and extracts, per channel and component,
-            #   spectra of shape (n_dc, n_readouts, n_bins) in ADU, one slice per
-            #   [detector] dark-current value; sets extracted_spectra_adu, and (S&B
-            #   only) extracted_errors_adu = {"error", "vark"};
-            #   then reads the wavelength solution (first angle only; [extraction]
-            #   file_name_wavel_solution_read, else file_name_wavel_solution_write)
-            #   and sets extracted_spectra_wavel[channel] = {"wavel", "wavel_lo",
-            #   "wavel_hi", "width", "spectra_adu", "spectra_adu_per_um", "error_adu",
-            #   "error_adu_per_um"} )
-            # FYI out: log "Extracted spectra (<method>) from detector readouts in ...";
-            #          WARNING that S&B variances are modelled from noiseless frames;
-            #          WARNING if several read-noise values; WARNING "Sharp & Birchall
-            #          solve failed in column ..." on singular columns;
-            #          log "Read wavelength solution (<n> bins, ...) from ..." (or
-            #          WARNING "Wavelength solution file ... not found" -> channel
-            #          bins used);
-            #          plot only: {fyi}extracted_spectra_angle_<angle>.png (one
-            #          panel per channel: each component + total vs. wavelength, first
-            #          readout and DC value, 1-sigma band for S&B)
-            instrument_dep_terms.extract_spectra_from_readouts(plot=plot)
-
-            # write condensed information at this transmission screen angle (to avoid
-            # mem leak)
-            # ( writes the extracted spectra for this angle: group __extracted_qe_<qe>
-            #   with dc_rates, bin geometry (npix, center, width, edges), the
-            #   wavelength solution used (x_start_pix, x_end_pix, wavel_per_column;
-            #   attr wavel_solution_file), <channel>/<component> (n_dc, n_read,
-            #   n_bins) in ADU, __error_total, __vark_total, and the same in electrons
-            #   under <channel>/__electrons/ )
-            # FYI out: {int}angle_<angle>_qe_<qe>.hdf5;
-            #          log "Recorded angle ...: extracted spectra in <file>:<group>"
-            record_info_at_angle_and_qe(
-                angle_deg=angle_deg,
+        # simulate every angle (in parallel if [compute] n_cpus > 1)
+        # ( runs _process_one_angle for each angle; see that function for the steps
+        #   and the files each angle writes )
+        _run_angles(
+            _AngleRunContext(
+                config=config,
+                instrument_dep_terms=instrument_dep_terms,
+                sources_astroph_pristine=sources_astroph_pristine,
+                astro_scene_perfect_no_screen=astro_scene_perfect_no_screen,
                 qe=qe,
-                output_channels=instrument_dep_terms.output_channels,
-                save_dir=save_dir,
-                t_frame=float(config["observation"]["t_int_frame"]) * u.second,
-                extracted_spectra_adu=instrument_dep_terms.extracted_spectra_adu,
-                extracted_errors_adu=instrument_dep_terms.extracted_errors_adu,
-                extraction_method=instrument_dep_terms.extraction_method,
-                wavel_solution=instrument_dep_terms.wavel_solution,
-            )
+                override_stellar_mask=override_stellar_mask,
+                plot=plot,
+                run_limits=run_limits,
+            ),
+            angles_deg,
+        )
 
         # cubes of extracted spectra (wavelength, readout, channel), one file per (QE,
         # DC)

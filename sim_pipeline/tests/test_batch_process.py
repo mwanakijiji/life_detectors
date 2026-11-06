@@ -1324,3 +1324,93 @@ class TestParameterSweep:
         )
 
         mock_batch.assert_not_called()
+
+
+def _angle_ctx(tmp_path, n_cpus=None, start_method=None):
+    """Minimal _AngleRunContext for the angle-loop runner (pipeline state unused)."""
+    import batch_process  # pylint: disable=import-outside-toplevel
+
+    config = configparser.ConfigParser()
+    config["dirs"] = {"save_s2n_data_unique_dir": str(tmp_path) + "/"}
+    config["onsky_scene"] = {"n_pix": "11"}
+    config["wavelength_range"] = {"min": "4.0", "max": "18.0"}
+    config["telescope"] = {"transmission_wavel_m": "11e-6"}
+    if n_cpus is not None or start_method is not None:
+        config["compute"] = {}
+        if n_cpus is not None:
+            config["compute"]["n_cpus"] = str(n_cpus)
+        if start_method is not None:
+            config["compute"]["mp_start_method"] = start_method
+    return batch_process._AngleRunContext(  # pylint: disable=protected-access
+        config=config,
+        instrument_dep_terms=None,
+        sources_astroph_pristine={},
+        astro_scene_perfect_no_screen={"star": None},
+        qe=0.6,
+        override_stellar_mask=True,
+        plot=False,
+        run_limits={},
+    )
+
+
+def _touch_angle_file(ctx, i_angle, angle_deg):
+    """Stand-in for _process_one_angle: one file per angle, named by angle and pid."""
+    path = Path(ctx.config["dirs"]["save_s2n_data_unique_dir"])
+    (path / f"angle_{i_angle:03d}_{angle_deg:06.2f}_pid{os.getpid()}").touch()
+
+
+def _fail_at_angle_90(ctx, i_angle, angle_deg):
+    if angle_deg == 90.0:
+        raise RuntimeError("angle 90 failed")
+    _touch_angle_file(ctx, i_angle, angle_deg)
+
+
+class TestRunAngles:
+    @pytest.mark.parametrize(
+        "value, expected", [(None, 1), (1, 1), (3, 3), (0, 1), (-2, 1), (100000, None)]
+    )
+    def test_n_cpus_from_config(self, tmp_path, value, expected):
+        import batch_process  # pylint: disable=import-outside-toplevel
+
+        ctx = _angle_ctx(tmp_path, n_cpus=value)
+        n_cpus = batch_process._n_cpus_from_config(ctx.config)
+        assert n_cpus == (expected if expected is not None else os.cpu_count())
+
+    def test_serial_runs_every_angle_in_this_process(self, tmp_path):
+        import batch_process  # pylint: disable=import-outside-toplevel
+
+        ctx = _angle_ctx(tmp_path, n_cpus=1)
+        with patch.object(batch_process, "_process_one_angle", _touch_angle_file):
+            batch_process._run_angles(ctx, np.linspace(0, 360, 6, endpoint=False))
+        files = sorted(p.name for p in tmp_path.iterdir())
+        assert len(files) == 6
+        assert all(name.endswith(f"_pid{os.getpid()}") for name in files)
+
+    @pytest.mark.skipif(
+        "fork" not in __import__("multiprocessing").get_all_start_methods(),
+        reason="needs the fork start method",
+    )
+    def test_parallel_runs_every_angle_once_in_workers(self, tmp_path):
+        import batch_process  # pylint: disable=import-outside-toplevel
+
+        ctx = _angle_ctx(tmp_path, n_cpus=3, start_method="fork")
+        angles = np.linspace(0, 360, 8, endpoint=False)
+        with patch.object(batch_process, "_process_one_angle", _touch_angle_file):
+            batch_process._run_angles(ctx, angles)
+        files = sorted(p.name for p in tmp_path.iterdir())
+        assert [name.rsplit("_pid", 1)[0] for name in files] == [
+            f"angle_{i:03d}_{a:06.2f}" for i, a in enumerate(angles)
+        ]
+        assert not any(name.endswith(f"_pid{os.getpid()}") for name in files)
+
+    @pytest.mark.skipif(
+        "fork" not in __import__("multiprocessing").get_all_start_methods(),
+        reason="needs the fork start method",
+    )
+    def test_parallel_raises_worker_error(self, tmp_path):
+        import batch_process  # pylint: disable=import-outside-toplevel
+
+        ctx = _angle_ctx(tmp_path, n_cpus=2, start_method="fork")
+        with patch.object(batch_process, "_process_one_angle", _fail_at_angle_90):
+            with pytest.raises(RuntimeError, match="angle 90 failed"):
+                batch_process._run_angles(ctx, np.linspace(0, 360, 4, endpoint=False))
