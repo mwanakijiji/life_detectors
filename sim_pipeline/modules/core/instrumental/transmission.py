@@ -32,6 +32,10 @@ TRANSMISSION_CUBE_SLICES = (
 # value of wavel_m that selects screens on the incident-flux wavelength grid
 POLYCHROMATIC = "polychromatic"
 
+# max elements of the complex field work buffer in generate_instrument_transmission
+# (2e7 complex128 = 320 MB); the wavelengths are processed in chunks of this size
+_FIELD_CHUNK_ELEMENTS = 20_000_000
+
 
 def format_transmission_fits_name(angle_deg: float) -> str:
     """``transmission_instrument_response_angle_{angle:06.2f}.fits``"""
@@ -180,12 +184,10 @@ def generate_instrument_transmission(
     pix_size_mas = float(config["onsky_scene"]["pix_size_mas"])  # milliarcseconds
     pix_size_arcsec = pix_size_mas / 1000.0  # arcsec
     axis_arcsec = (np.arange(n_pix) - (n_pix // 2)) * pix_size_arcsec
-    xx_arcsec, yy_arcsec = np.meshgrid(axis_arcsec, axis_arcsec, indexing="xy")
-    sky_xx_arcsec = xx_arcsec
-    sky_yy_arcsec = yy_arcsec
     arcsec_to_rad = np.pi / (180.0 * 3600.0)
-    theta_y_rad = sky_yy_arcsec * arcsec_to_rad  # θ_y [rad], (Ny, Nx)
-    theta_x_rad = sky_xx_arcsec * arcsec_to_rad  # θ_x [rad], (Ny, Nx)
+    # θ_y varies along rows (axis 0) and θ_x along columns (axis 1) of the sky grid,
+    # both over the same 1-D axis [rad], shape (n_pix,)
+    theta_axis_rad = axis_arcsec * arcsec_to_rad
 
     # Calculate total number of baselines (unique pairs of apertures)
     N_apertures = len(aperture_array_definition["apertures"])
@@ -208,13 +210,33 @@ def generate_instrument_transmission(
     # normalization: the response peaks at (sum_j A_j)^2 (all arms in phase)
     max_response = float(np.sum(A_vec)) ** 2 if normalize else 1.0
 
-    # 2π/λ along the wavelength axis, shape (n_wavel, 1, 1), to broadcast over the sky
-    k_wave = (2.0 * np.pi / wavel_m_arr)[:, None, None]
+    # 2π/λ along the wavelength axis, shape (n_wavel,)
+    k_wave = 2.0 * np.pi / wavel_m_arr
 
-    def R_m(phase_vector_rad: np.ndarray, output_name: str) -> np.ndarray:
+    # The phase of aperture j at sky position θ, (2π/λ) x_j · θ = k (y_j θ_y + x_j θ_x),
+    # is a sum of a row term and a column term, so exp(i ...) factors into a 1-D
+    # factor along y times a 1-D factor along x. These are shared by every output:
+    #   phase_y[λ, iy, j] = exp(i k_λ y_j θ_y[iy]),  shape (n_wavel, n_pix, N_ap)
+    #   phase_x[λ, j, ix] = exp(i k_λ x_j θ_x[ix]),  shape (n_wavel, N_ap, n_pix)
+    phase_y = np.exp(
+        1j
+        * k_wave[:, None, None]
+        * theta_axis_rad[None, :, None]
+        * pos_rot_m[None, None, :, 0]
+    )
+    phase_x = np.exp(
+        1j
+        * k_wave[:, None, None]
+        * pos_rot_m[None, :, 1, None]
+        * theta_axis_rad[None, None, :]
+    )
+    # wavelengths per chunk, so the complex field work buffer stays ~ a few 100 MB
+    n_wavel_chunk = max(1, _FIELD_CHUNK_ELEMENTS // (n_pix * n_pix))
+
+    def R_m(phase_vector_rad: np.ndarray, output_name: str, out: np.ndarray) -> None:
         """
-        On-sky response of output m, shape (n_wavel, Ny, Nx) (Dannert 2025 Eqn. B12;
-        Lay 2004 Eqn. 3; see docs/transmission_response_math.pdf).
+        On-sky response of output m, written into out, shape (n_wavel, Ny, Nx)
+        (Dannert 2025 Eqn. B12; Lay 2004 Eqn. 3; see docs/transmission_response_math.pdf).
 
         The field at output m from a point source at sky position θ is
             E_m(θ, λ) = sum_j A_j exp(i [φ_mj + (2π/λ) x_j · θ])
@@ -222,36 +244,32 @@ def generate_instrument_transmission(
         phase_vector_deg; x_j = (y_j, x_j): position of aperture j, rotated by
         angle_deg). The response is the intensity, which is real:
             R_m = |E_m|^2 = sum_j sum_k A_j A_k cos(Δφ_jk + (2π/λ) b_jk · θ),
-        with Δφ_jk = φ_mk - φ_mj and baseline b_jk = x_k - x_j. Splitting the double
-        sum:
-          - j = k: Δφ = 0 and b = 0, so each term is A_j^2 (a constant over the sky);
-          - (k, j) is (j, k) with both Δφ and b negated, and cos is even, so the two
-            are equal and the pairs j < k count twice:
+        with Δφ_jk = φ_mk - φ_mj and baseline b_jk = x_k - x_j, i.e.
             R_m = sum_j A_j^2 + 2 sum_{j<k} A_j A_k cos(Δφ_jk + (2π/λ) b_jk · θ).
-        b_jk · θ = Δy θ_y + Δx θ_x does not depend on λ, so it is computed once per
-        baseline (Ny, Nx) and scaled by 2π/λ for every wavelength at once. Divided by
-        (sum_j A_j)^2 if normalize, so the maximum is 1.
+
+        It is computed as |E_m|^2 directly. With c_mj = A_j exp(i φ_mj) and the 1-D
+        factors above,
+            E_m[λ, iy, ix] = sum_j (c_mj phase_y[λ, iy, j]) phase_x[λ, j, ix],
+        a (n_pix x N_ap) @ (N_ap x n_pix) matrix product per wavelength, so no
+        per-pixel trig is needed (and taking |E|^2 avoids the cancellation of the
+        cosine sum near a null). Divided by (sum_j A_j)^2 if normalize, so the maximum
+        is 1.
         """
-        R_theta_vec = np.full((n_wavel, n_pix, n_pix), np.sum(A_vec**2))
-        phase = np.empty_like(R_theta_vec)  # work buffer, reused for every baseline
-        for j in range(N_apertures):
-            for k in range(j + 1, N_apertures):
-                # Differential phase between apertures j and k [rad]
-                del_phi_dc_jk_rad = phase_vector_rad[k] - phase_vector_rad[j]
-                # Baseline from aperture j to aperture k [m]; [0] = Δy, [1] = Δx
-                del_x_jk = pos_rot_m[k] - pos_rot_m[j]
-                # b_jk · θ [m rad], (Ny, Nx), same for all wavelengths
-                b_dot_theta = del_x_jk[0] * theta_y_rad + del_x_jk[1] * theta_x_rad
-                # Δφ_jk + (2π/λ) b_jk · θ for every wavelength, in place
-                np.multiply(k_wave, b_dot_theta, out=phase)
-                phase += del_phi_dc_jk_rad
-                np.cos(phase, out=phase)
-                R_theta_vec += (2.0 * A_vec[j] * A_vec[k]) * phase
+        c_m = A_vec * np.exp(1j * phase_vector_rad)  # (N_ap,)
+        weighted_y = phase_y * c_m  # (n_wavel, n_pix, N_ap)
+        for i0 in range(0, n_wavel, n_wavel_chunk):
+            i1 = min(i0 + n_wavel_chunk, n_wavel)
+            field = np.matmul(weighted_y[i0:i1], phase_x[i0:i1])  # (chunk, Ny, Nx)
+            # |E|^2 = Re^2 + Im^2
+            out_chunk = out[i0:i1]
+            np.multiply(field.real, field.real, out=out_chunk)
+            out_chunk += field.imag * field.imag
+            del field
 
         # conceptual point here! this response to photons is real, not complex! See Lay
         # Eqn. (3): it's the rr*
         if normalize:
-            R_theta_vec /= max_response
+            out /= max_response
             logging.info(
                 "Normalized transmission instrument response to unity, based on way "
                 "bookkeeping is done downstream"
@@ -273,18 +291,43 @@ def generate_instrument_transmission(
             cy, cx = n_pix // 2, n_pix // 2
             y_idx, x_idx = np.ogrid[:n_pix, :n_pix]
             circular_mask = (y_idx - cy) ** 2 + (x_idx - cx) ** 2 <= mask_radius_pix**2
-            R_theta_vec[..., circular_mask] = nulling_factor
+            out[..., circular_mask] = nulling_factor
 
-        return R_theta_vec
-
-    # dict to hold bright and dark outputs, each (n_wavel, Ny, Nx)
-    output_all_responses = {}
+    # cube of all outputs, slices ordered as TRANSMISSION_CUBE_SLICES:
+    # 0 = output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark,
+    # 4 = y, 5 = x; shape (6, n_wavel, n_pix, n_pix), the wavelength axis dropped below
+    # if monochromatic. Each output's response is written straight into its slice.
+    transmission_instrument_response_cube = np.empty(
+        (len(TRANSMISSION_CUBE_SLICES), n_wavel, n_pix, n_pix)
+    )
+    output_slice_index = {
+        slice_name: t for t, (slice_name, _, _) in enumerate(TRANSMISSION_CUBE_SLICES[:4])
+    }
+    filled_outputs = set()
     for output in aperture_array_definition["outputs"]:
-        phase_vector_rad = np.deg2rad(output["phase_vector_deg"])
-        output_all_responses[output["name"]] = R_m(
-            phase_vector_rad=phase_vector_rad,
+        if output["name"] not in output_slice_index:
+            logging.warning(
+                "Output %r in %s is not one of %s; its response is not computed",
+                output["name"],
+                aperture_array_definition_file_name,
+                list(output_slice_index),
+            )
+            continue
+        R_m(
+            phase_vector_rad=np.deg2rad(output["phase_vector_deg"]),
             output_name=output["name"],
+            out=transmission_instrument_response_cube[output_slice_index[output["name"]]],
         )
+        filled_outputs.add(output["name"])
+    missing_outputs = set(output_slice_index) - filled_outputs
+    if missing_outputs:
+        raise KeyError(
+            f"Aperture array definition {aperture_array_definition_file_name} has no "
+            f"output(s) {sorted(missing_outputs)}"
+        )
+    # sky coordinates straight from the grid (not rotated), same at every wavelength
+    transmission_instrument_response_cube[4] = axis_arcsec[:, None]  # y vals
+    transmission_instrument_response_cube[5] = axis_arcsec[None, :]  # x vals
 
     # # check: double Bracewell should look like HOSTS
     # if plot:
@@ -368,18 +411,6 @@ def generate_instrument_transmission(
     #     )
     #
 
-    # arrange outputs into a cube, slices ordered as TRANSMISSION_CUBE_SLICES:
-    # 0 = output_1_bright, 1 = output_2_bright, 2 = output_3_dark, 3 = output_4_dark,
-    # 4 = y, 5 = x; shape (6, n_wavel, n_pix, n_pix), the wavelength axis dropped below
-    # if monochromatic
-    transmission_instrument_response_cube = np.zeros(
-        (len(TRANSMISSION_CUBE_SLICES), n_wavel, n_pix, n_pix)
-    )
-    for t, (slice_name, _, _) in enumerate(TRANSMISSION_CUBE_SLICES[:4]):
-        transmission_instrument_response_cube[t] = output_all_responses[slice_name]
-    # sky coordinates straight from the grid (not rotated), same at every wavelength
-    transmission_instrument_response_cube[4] = sky_yy_arcsec  # y vals
-    transmission_instrument_response_cube[5] = sky_xx_arcsec  # x vals
     if not polychromatic:
         transmission_instrument_response_cube = transmission_instrument_response_cube[
             :, 0

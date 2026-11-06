@@ -532,6 +532,65 @@ class TestGenerateInstrumentTransmission:
         assert cube[2, center, center] == pytest.approx(0.001, abs=1e-3)
         assert cube[3, center, center] == pytest.approx(0.001, abs=1e-3)
 
+    @pytest.mark.parametrize("wavel_m", [11e-6, "polychromatic"])
+    @pytest.mark.parametrize("angle_deg", [0.0, 37.0, 90.0])
+    @pytest.mark.parametrize("normalize", [True, False])
+    def test_matches_baseline_cosine_sum(
+        self, transmission_config, wavel_m, angle_deg, normalize
+    ):
+        """The separable |E|^2 computation equals the explicit sum over baselines
+        R = sum_j A_j^2 + 2 sum_{j<k} A_j A_k cos(Δφ_jk + (2π/λ) b_jk · θ)."""
+        import yaml
+
+        from modules.utils.helpers.wavelengths import incident_cube_wavelengths
+
+        n_pix = 51
+        config = {
+            **transmission_config,
+            "onsky_scene": {**transmission_config["onsky_scene"], "n_pix": str(n_pix)},
+        }
+        instr = InstrumentDepTerms(config, sources_astroph={}, sources_to_include=[])
+        cube = instr.generate_instrument_transmission(
+            wavel_m=wavel_m, angle_deg=angle_deg, normalize=normalize, plot=False
+        )
+
+        with open(APERTURE_YAML, "r", encoding="utf-8") as file:
+            array_def = yaml.safe_load(file)
+        amps = np.array([a["amplitude"] for a in array_def["apertures"]], dtype=float)
+        pos = np.array([[a["y_m"], a["x_m"]] for a in array_def["apertures"]])
+        alpha = np.deg2rad(angle_deg)
+        rot = np.array(
+            [[np.cos(alpha), -np.sin(alpha)], [np.sin(alpha), np.cos(alpha)]]
+        )
+        pos = pos @ rot.T
+        if wavel_m == "polychromatic":
+            lam = incident_cube_wavelengths(config).to_value(u.m)
+        else:
+            lam = np.array([wavel_m])
+        axis = (np.arange(n_pix) - n_pix // 2) * 10.7e-3 * np.pi / (180.0 * 3600.0)
+        theta_x, theta_y = np.meshgrid(axis, axis, indexing="xy")
+        k = (2.0 * np.pi / lam)[:, None, None]
+        norm = np.sum(amps) ** 2 if normalize else 1.0
+        names = ["output_1_bright", "output_2_bright", "output_3_dark", "output_4_dark"]
+        outputs = {o["name"]: o for o in array_def["outputs"]}
+        for t, name in enumerate(names):
+            phi = np.deg2rad(outputs[name]["phase_vector_deg"])
+            expected = np.full((lam.size, n_pix, n_pix), np.sum(amps**2))
+            for j in range(len(amps)):
+                for kk in range(j + 1, len(amps)):
+                    b = pos[kk] - pos[j]
+                    expected += (
+                        2.0
+                        * amps[j]
+                        * amps[kk]
+                        * np.cos(
+                            phi[kk] - phi[j] + k * (b[0] * theta_y + b[1] * theta_x)
+                        )
+                    )
+            expected /= norm
+            got = cube[t] if wavel_m == "polychromatic" else cube[t][None]
+            np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-12)
+
 
 class TestDisperseAstroSignals:
     @patch("modules.core.instrumental.dispersion.DispersionLaw")
