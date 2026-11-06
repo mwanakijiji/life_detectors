@@ -51,6 +51,7 @@ from modules.core.calculator.snr_from_hdf5 import (  # noqa: F401
 )
 from modules.core.instrumental.channels import FITS_CHANNEL_NAMES
 from modules.core.instrumental.pipeline import InstrumentDepTerms
+from modules.core.instrumental.transmission import _FIELD_CHUNK_ELEMENTS
 from modules.core.planet_spectrum_provider import (
     BlackbodyFromParamsGenerator,
     PopulationSpectrumProvider,
@@ -254,9 +255,11 @@ def _available_memory_bytes() -> Optional[int]:
 def _warn_if_workers_exceed_memory(ctx: _AngleRunContext, n_workers: int) -> None:
     """Log a rough per-worker memory estimate for one angle, and warn if n_workers of
     them would not fit in the available memory. Estimate: the transmission-screen
-    cube (6 slices) plus, per scene source, ~12 cube-sized arrays (post-screen and
-    post-aperture cubes for 4 outputs, and temporaries); calibrated on a serial run
-    (n_pix = 1001, 100 wavelengths, 2 sources, polychromatic: ~24 GB peak)."""
+    cube (6 slices) and its ~0.3 GB work buffer, plus, only if plot (full post-screen
+    cubes kept), ~12 cube-sized arrays per scene source (post-screen and
+    post-aperture cubes for 4 outputs, and temporaries). Calibrated on serial runs
+    (n_pix = 1001, 100 wavelengths, 2 sources, polychromatic: ~24 GB peak with the
+    full cubes, ~8 GB without, including the scene shared by all workers)."""
     n_pix = int(ctx.config["onsky_scene"]["n_pix"])
     n_wavel = int(incident_cube_wavelengths(ctx.config).size)
     polychromatic = (
@@ -266,7 +269,10 @@ def _warn_if_workers_exceed_memory(ctx: _AngleRunContext, n_workers: int) -> Non
     n_sources = max(1, len(ctx.astro_scene_perfect_no_screen))
     cube_bytes = 8 * n_pix * n_pix * n_wavel
     screen_bytes = 6 * 8 * n_pix * n_pix * (n_wavel if polychromatic else 1)
-    per_worker = screen_bytes + 12 * n_sources * cube_bytes
+    work_buffer_bytes = 16 * min(_FIELD_CHUNK_ELEMENTS, n_pix * n_pix * n_wavel)
+    per_worker = screen_bytes + work_buffer_bytes
+    if ctx.plot:
+        per_worker += 12 * n_sources * cube_bytes
     available = _available_memory_bytes()
     logger.info(
         "Estimated memory per angle worker: ~%.1f GB (x %d workers = ~%.1f GB; "
@@ -425,6 +431,9 @@ def _process_one_angle(ctx: _AngleRunContext, i_angle: int, angle_deg: float) ->
     # ( adds per source, per output: "flux_cube_post_screen_ph_sec_m2_um"
     #   (scene x screen) and "flux_integrated_post_screen_ph_sec_m2_um"
     #   (summed over the sky) )
+    # ( the full scene x screen cubes are kept only if plot; otherwise they are
+    #   stored already summed over the sky, shape (n_wavel, 1, 1), which is all
+    #   the later steps need, and saves ~12 full-size cubes of memory per source )
     # FYI out: log "Flux of <source> passed through transmission screen <out>";
     #          plot only, per source:
     #          {fyi}flux_of_<source>_passed_through_transmission_screens
@@ -437,7 +446,11 @@ def _process_one_angle(ctx: _AngleRunContext, i_angle: int, angle_deg: float) ->
         source_dict_pre_screen = astro_scene_perfect_no_screen,
         transmission_screens = transmission_screens,
         plot = plot,
+        keep_sky_cubes = plot,
     )
+    # the screens are no longer needed for this angle; free them before the next
+    # stages allocate
+    del transmission_screens
 
     # Pass through telescope aperture
     # output units: photons/sec/etc.

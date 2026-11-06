@@ -441,6 +441,100 @@ class TestInstrumentDepTerms:
         np.testing.assert_allclose(net_flux.value, scene.value)
 
 
+class TestSkySummedPostScreenCubes:
+    @pytest.mark.parametrize("polychromatic", [True, False])
+    def test_sky_summed_cube_equals_sum_of_product(self, polychromatic):
+        from modules.core.instrumental.transmission import (
+            sky_summed_post_screen_cube,
+        )
+
+        rng = np.random.default_rng(1)
+        source = rng.random((5, 7, 9)) * u.ph / (u.um * u.m**2 * u.s)
+        screen = rng.random((5, 7, 9) if polychromatic else (7, 9))
+        summed = sky_summed_post_screen_cube(source, screen)
+        assert summed.shape == (5, 1, 1)
+        assert summed.unit == source.unit
+        np.testing.assert_allclose(
+            np.sum(summed, axis=(1, 2)).value,
+            np.sum(source * screen, axis=(1, 2)).value,
+            rtol=1e-13,
+        )
+
+    @pytest.mark.parametrize("wavel_m", [11e-6, "polychromatic"])
+    def test_keep_sky_cubes_false_gives_same_sky_sums(self, transmission_config, wavel_m):
+        n_pix = 51
+        config = {
+            **transmission_config,
+            "onsky_scene": {**transmission_config["onsky_scene"], "n_pix": str(n_pix)},
+            "telescope": {
+                **transmission_config["telescope"],
+                "eta_t": "0.5",
+                "single_mirror_diameter": "3.5",
+            },
+        }
+        from modules.utils.helpers.wavelengths import incident_cube_wavelengths
+
+        n_wavel = incident_cube_wavelengths(config).size
+        rng = np.random.default_rng(2)
+        unit = u.ph / (u.um * u.m**2 * u.s)
+        scenes = {
+            "star": rng.random((n_wavel, n_pix, n_pix)) * unit,
+            "zodiacal": rng.random((n_wavel, n_pix, n_pix)) * unit,
+        }
+
+        def run(keep):
+            sources = {
+                name: {"wavel": np.arange(n_wavel) * u.um} for name in scenes
+            }
+            instr = InstrumentDepTerms(
+                config, sources_astroph=sources, sources_to_include=list(scenes)
+            )
+            screens = instr.generate_instrument_transmission(
+                wavel_m=wavel_m, angle_deg=20.0, override_stellar_mask=True
+            )
+            instr.pass_through_transmission_screens(
+                fyi_angle=20.0,
+                source_dict_pre_screen=scenes,
+                transmission_screens=screens,
+                plot=False,
+                keep_sky_cubes=keep,
+            )
+            instr.pass_through_aperture(plot=False)
+            return instr
+
+        full, summed = run(True), run(False)
+        for name in scenes:
+            for output in ("output_1_bright", "output_2_bright", "output_3_dark",
+                           "output_4_dark"):
+                cube = summed.sources_astroph[name]["flux_cube_post_screen_ph_sec_m2_um"][
+                    output
+                ]
+                assert cube.shape == (n_wavel, 1, 1)
+                for key, store in (
+                    ("flux_integrated_post_screen_ph_sec_m2_um", "sources_astroph"),
+                ):
+                    np.testing.assert_allclose(
+                        getattr(summed, store)[name][key][output].value,
+                        getattr(full, store)[name][key][output].value,
+                        rtol=1e-12,
+                    )
+                np.testing.assert_allclose(
+                    np.sum(
+                        summed.prop_dict[name][
+                            "flux_cube_post_screen_post_aperture_ph_sec_um"
+                        ][output],
+                        axis=(1, 2),
+                    ).value,
+                    np.sum(
+                        full.prop_dict[name][
+                            "flux_cube_post_screen_post_aperture_ph_sec_um"
+                        ][output],
+                        axis=(1, 2),
+                    ).value,
+                    rtol=1e-12,
+                )
+
+
 class TestGenerateInstrumentTransmission:
     @patch("modules.core.instrumental.transmission.fits.writeto")
     def test_returns_six_slice_cube_and_writes_fits(

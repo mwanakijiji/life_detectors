@@ -154,9 +154,12 @@ class InstrumentDepTerms:
         source_dict_pre_screen: dict,
         transmission_screens: np.ndarray,
         plot: bool = False,
+        keep_sky_cubes: bool = True,
     ) -> np.ndarray:
         """Apply the transmission screens to the sky scene (updates sources_astroph
-        in place); see transmission.pass_through_transmission_screens.
+        in place); see transmission.pass_through_transmission_screens (with
+        keep_sky_cubes=False the post-screen cubes are stored sky-summed, shape
+        (n_wavel, 1, 1)).
         """
         return transmission.pass_through_transmission_screens(
             self.config,
@@ -166,6 +169,7 @@ class InstrumentDepTerms:
             source_dict_pre_screen=source_dict_pre_screen,
             transmission_screens=transmission_screens,
             plot=plot,
+            keep_sky_cubes=keep_sky_cubes,
         )
 
     def pass_through_aperture(self, plot: bool = False) -> None:

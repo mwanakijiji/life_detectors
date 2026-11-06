@@ -464,6 +464,33 @@ def generate_instrument_transmission(
     return transmission_instrument_response_cube
 
 
+def sky_summed_post_screen_cube(
+    source_cube: u.Quantity | np.ndarray, screen: np.ndarray
+) -> u.Quantity | np.ndarray:
+    """
+    Sum over the sky of source_cube x screen, without forming the product cube.
+
+    source_cube: (n_wavel, n_pix, n_pix) (Quantity or array); screen: one output's
+    transmission, (n_wavel, n_pix, n_pix) (polychromatic) or (n_pix, n_pix)
+    (monochromatic). Returns shape (n_wavel, 1, 1) with source_cube's unit: a cube
+    whose whole sky is one pixel, so np.sum(..., axis=(1, 2)) of it equals that of
+    the full product.
+    """
+    unit = getattr(source_cube, "unit", None)
+    values = np.asarray(getattr(source_cube, "value", source_cube))
+    n_wavel = values.shape[0]
+    flat_source = values.reshape(n_wavel, -1)
+    if screen.ndim == 3:
+        # per-wavelength dot product over the sky (batched BLAS)
+        summed = np.matmul(
+            flat_source[:, None, :], screen.reshape(n_wavel, -1, 1)
+        )[:, 0, 0]
+    else:
+        summed = flat_source @ screen.ravel()
+    summed = summed[:, None, None]
+    return summed * unit if unit is not None else summed
+
+
 @pipeline_stage(
     depends_on=("arrange_onsky_scene", "generate_instrument_transmission"),
 )
@@ -475,11 +502,20 @@ def pass_through_transmission_screens(
     source_dict_pre_screen: dict,
     transmission_screens: np.ndarray,
     plot: bool = False,
+    keep_sky_cubes: bool = True,
 ) -> np.ndarray:
     """
     Pass each astrophysical source through the transmission screens, and update
     prop_dict with the propagated terms
     photons/sec/m^2 -> photons/sec/m^2
+
+    keep_sky_cubes (bool): if True, "flux_cube_post_screen_ph_sec_m2_um" holds the
+        full post-screen cube (n_wavel, n_pix, n_pix) of each source and output. If
+        False (and not plot), it holds the cube already summed over the sky, with
+        shape (n_wavel, 1, 1): everything downstream (aperture, backgrounds,
+        dispersion) only scales or sky-sums these cubes, so the results are the same
+        (to rounding), without building 4 x n_sources full-size cubes per angle.
+        Forced True if plot (the FYI plots show the post-screen images).
 
     INPUTS:
         fyi_angle (float): angle of the transmission screen (for plotting strings only)
@@ -519,6 +555,9 @@ def pass_through_transmission_screens(
                     "wavelength grids or sky grids differ"
                 )
 
+    # plots need the post-screen images
+    keep_sky_cubes = keep_sky_cubes or plot
+
     # put all the post-screen fluxes (for each source and from each channel) into a
     # single dict
     source_dict_post_screen = {}
@@ -526,11 +565,15 @@ def pass_through_transmission_screens(
         source_dict_post_screen[source_name] = {}
 
         for transmission_screen_name in transmission_screen_order:
+            screen = transmission_screens[
+                transmission_screen_order.index(transmission_screen_name)
+            ]
+            if keep_sky_cubes:
+                post_screen = source_val * screen
+            else:
+                post_screen = sky_summed_post_screen_cube(source_val, screen)
             source_dict_post_screen[source_name][transmission_screen_name] = (
-                source_val
-                * transmission_screens[
-                    transmission_screen_order.index(transmission_screen_name), :, :
-                ]
+                post_screen
             )
             # collapse the sources into a single 3D array (wavel, x, y), for plotting
             # source_dict_post_screen[source_name][transmission_screen_name +
